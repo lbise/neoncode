@@ -1,5 +1,31 @@
 # Workspace Cockpit Architecture Notes
 
+## Current prototype status
+
+The repository now contains the first proof-of-concept skeleton:
+
+```text
+hub/                         Rust WSL/Linux workspace-hub POC
+frontends/windows/           WPF/.NET 8 Windows frontend POC shell
+docs/protocol.md             temporary WebSocket PTY protocol
+```
+
+Run the hub from WSL/Linux:
+
+```bash
+cargo run -p workspace-hub
+```
+
+Then run the Windows frontend from Windows with the .NET 8 SDK installed:
+
+```powershell
+dotnet run --project frontends\windows\WorkspaceCockpit.Windows\WorkspaceCockpit.Windows.csproj
+```
+
+The Windows frontend currently uses a placeholder text box instead of a real terminal renderer. The next major POC step is embedding a real Windows Terminal control and adapting it to the hub protocol.
+
+---
+
 A design document for a native desktop application that provides a single overview of machines, projects, terminal sessions, agents, browsers, and remote desktop tools across work and home environments.
 
 The goal is **not** to build a full IDE or heavily integrated AI-agent environment. The goal is to build a **workspace/session cockpit**: a native GUI that owns layout, panes, tabs, reconnection, and launch orchestration while continuing to rely on proven tools such as SSH, WSL, tmux, Neovim, pi/opencode, browsers, and X2Go.

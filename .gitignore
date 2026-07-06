@@ -1,0 +1,16 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# .NET
+**/bin/
+**/obj/
+*.user
+*.suo
+.vs/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,70 @@
+<Window x:Class="WorkspaceCockpit.Windows.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Workspace Cockpit POC" Height="720" Width="1100"
+        Background="#1e1e1e">
+    <DockPanel Margin="12">
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBox x:Name="EndpointTextBox"
+                     Width="300"
+                     Text="ws://127.0.0.1:44777/ws"
+                     Margin="0,0,8,0" />
+            <Button x:Name="ConnectButton"
+                    Width="90"
+                    Content="Connect"
+                    Click="ConnectButton_Click"
+                    Margin="0,0,8,0" />
+            <Button x:Name="StartShellButton"
+                    Width="100"
+                    Content="Start bash"
+                    IsEnabled="False"
+                    Click="StartShellButton_Click"
+                    Margin="0,0,8,0" />
+            <Button x:Name="ClearButton"
+                    Width="70"
+                    Content="Clear"
+                    Click="ClearButton_Click" />
+            <TextBlock x:Name="StatusTextBlock"
+                       Foreground="#d4d4d4"
+                       VerticalAlignment="Center"
+                       Margin="16,0,0,0"
+                       Text="Disconnected" />
+        </StackPanel>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Temporary terminal placeholder.
+                 This proves the GUI-to-hub protocol before the real Windows Terminal control is embedded. -->
+            <TextBox x:Name="TerminalOutputTextBox"
+                     Grid.Row="0"
+                     Background="#0c0c0c"
+                     Foreground="#cccccc"
+                     FontFamily="Cascadia Mono, Consolas"
+                     FontSize="14"
+                     AcceptsReturn="True"
+                     AcceptsTab="True"
+                     IsReadOnly="True"
+                     TextWrapping="NoWrap"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto" />
+
+            <DockPanel Grid.Row="1" Margin="0,8,0,0">
+                <Button DockPanel.Dock="Right"
+                        x:Name="SendButton"
+                        Width="80"
+                        Content="Send"
+                        IsEnabled="False"
+                        Click="SendButton_Click"
+                        Margin="8,0,0,0" />
+                <TextBox x:Name="InputTextBox"
+                         IsEnabled="False"
+                         KeyDown="InputTextBox_KeyDown"
+                         ToolTip="Type a command and press Enter. A newline is appended automatically." />
+            </DockPanel>
+        </Grid>
+    </DockPanel>
+</Window>
