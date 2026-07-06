@@ -40,9 +40,9 @@ Goal: preserve the known-good proof that the architecture is viable.
 
 Goal: convert the spike into a maintainable prototype without changing the validated architecture.
 
-- [ ] Add `scripts/publish-windows-frontend.ps1`.
-- [ ] Publish script verifies the native Windows Terminal files are present.
-- [ ] Publish script emits a clear run command/path after success.
+- [x] Add `scripts/publish-windows-frontend.ps1`.
+- [x] Publish script verifies the native Windows Terminal files are present.
+- [x] Publish script emits a clear run command/path after success.
 - [ ] Add Windows Terminal dependency bootstrap script or documented reproducible bootstrap flow.
 - [ ] Move Windows Terminal compatibility edits into explicit patch files or deterministic script steps.
 - [ ] Add script validation for required Visual Studio/UWP Build Tools components.
@@ -204,13 +204,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows
 
 ### Acceptance criteria
 
-- [ ] Script works when launched from WSL using `powershell.exe`.
-- [ ] Script works when launched from Windows PowerShell.
-- [ ] Script publishes to a Windows-local path by default.
-- [ ] Script verifies managed app executable exists.
-- [ ] Script verifies native Windows Terminal runtime files exist.
-- [ ] Script exits non-zero on failure.
-- [ ] `dotnet build` still passes.
-- [ ] `cargo check` still passes.
-- [ ] `cargo clippy --all-targets -- -D warnings` still passes.
-- [ ] README or `frontends/windows/README.md` documents the script.
+- [x] Script works when launched from WSL using `powershell.exe`.
+- [x] Script works when launched from Windows PowerShell.
+- [x] Script publishes to a Windows-local path by default.
+- [x] Script verifies managed app executable exists.
+- [x] Script verifies native Windows Terminal runtime files exist.
+- [x] Script exits non-zero on failure.
+- [x] `dotnet build` still passes.
+- [x] `cargo check` still passes.
+- [x] `cargo clippy --all-targets -- -D warnings` still passes.
+- [x] README or `frontends/windows/README.md` documents the script.

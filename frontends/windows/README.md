@@ -37,11 +37,13 @@ dotnet run --project frontends\windows\WorkspaceCockpit.Windows\WorkspaceCockpit
 or publish to a Windows-local folder and run the EXE from there:
 
 ```bash
-powershell.exe -NoProfile -Command 'dotnet publish frontends\\windows\\WorkspaceCockpit.Windows\\WorkspaceCockpit.Windows.csproj -c Debug -o "$env:USERPROFILE\\workspace-cockpit-publish"'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows-frontend.ps1
 ```
 
-```powershell
-$env:USERPROFILE\workspace-cockpit-publish\WorkspaceCockpit.Windows.exe
+The script verifies that the published app includes the required Windows Terminal native files, then prints the exact run command. By default, the app is published to:
+
+```text
+%USERPROFILE%\workspace-cockpit-publish
 ```
 
 Publishing is preferred for testing the native Windows Terminal control because all managed and native runtime files are placed together on the Windows filesystem.
