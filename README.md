@@ -10,19 +10,135 @@ frontends/windows/           WPF/.NET 8 Windows frontend POC shell
 docs/protocol.md             temporary WebSocket PTY protocol
 ```
 
-Run the hub from WSL/Linux:
+The Windows frontend now attempts to host the Windows Terminal renderer through a WPF wrapper and adapts it to the hub protocol. The old textbox renderer remains as a fallback if the native control fails to load.
+
+## Build and publish the Windows app
+
+The recommended test workflow is:
+
+1. build the Rust hub from WSL/Linux;
+2. build the native Windows Terminal control from Windows tooling;
+3. publish the WPF frontend to a Windows-local folder;
+4. run the hub from WSL;
+5. run the published Windows app.
+
+### Prerequisites
+
+Required on WSL/Linux:
+
+- Rust toolchain with Cargo.
+
+Required on Windows:
+
+- .NET 8 SDK;
+- Visual Studio 2022 Build Tools with C++ desktop and UWP/Windows Store C++ tooling;
+- Windows SDK 10.0.22621 or compatible;
+- the external Windows Terminal checkout at:
+
+```text
+C:\Users\13lbise\gitrepo\microsoft-terminal
+```
+
+- vcpkg at:
+
+```text
+C:\Users\13lbise\gitrepo\vcpkg
+```
+
+See `docs/windows-terminal-embedding.md` for the detailed Visual Studio component list and Windows Terminal bootstrap notes.
+
+### 1. Check/build the Rust backend
+
+From the repo root in WSL:
+
+```bash
+cargo check
+cargo clippy --all-targets -- -D warnings
+```
+
+### 2. Build the native Windows Terminal control
+
+From the repo root in WSL:
+
+```bash
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\build-windows-terminal-control.ps1
+```
+
+Expected native output:
+
+```text
+C:\Users\13lbise\gitrepo\microsoft-terminal\bin\x64\Debug\Microsoft.Terminal.Control\Microsoft.Terminal.Control.dll
+```
+
+This step is required before publishing/running the real terminal frontend because the WPF app copies these native files into its output.
+
+### 3. Publish the Windows frontend
+
+From the repo root in WSL:
+
+```bash
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows-frontend.ps1
+```
+
+Default publish output:
+
+```text
+C:\Users\13lbise\workspace-cockpit-publish
+```
+
+The publish script verifies that the output contains:
+
+```text
+WorkspaceCockpit.Windows.exe
+Microsoft.Terminal.Control.dll
+Microsoft.Terminal.Control.pri
+Microsoft.Terminal.Control\
+```
+
+Optional clean publish:
+
+```bash
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows-frontend.ps1 -Clean
+```
+
+### 4. Run the hub
+
+From the repo root in WSL:
 
 ```bash
 cargo run -p workspace-hub
 ```
 
-Then run the Windows frontend from Windows with the .NET 8 SDK installed:
+The frontend expects the hub WebSocket endpoint:
 
-```powershell
-dotnet run --project frontends\windows\WorkspaceCockpit.Windows\WorkspaceCockpit.Windows.csproj
+```text
+ws://127.0.0.1:44777/ws
 ```
 
-The Windows frontend now attempts to host the Windows Terminal renderer through a WPF wrapper and adapts it to the hub protocol. The old textbox renderer remains as a fallback if the native control fails to load.
+### 5. Run the published Windows app
+
+From Windows PowerShell:
+
+```powershell
+& "$env:USERPROFILE\workspace-cockpit-publish\WorkspaceCockpit.Windows.exe"
+```
+
+In the app:
+
+1. keep endpoint `ws://127.0.0.1:44777/ws`;
+2. click `Connect`;
+3. click `Start bash`;
+4. type directly into the terminal.
+
+Useful terminal validation commands:
+
+```bash
+ls --color=always
+printf '\e[31mred\e[0m\n'
+nvim
+tmux
+stty size
+```
 
 ---
 
