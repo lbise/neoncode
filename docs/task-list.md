@@ -12,7 +12,7 @@ poc/windows-terminal-embedded
 
 ```text
 Stage: Phase 1 — clean prototype foundation
-Next task: Add scripts/publish-windows-frontend.ps1
+Next task: Add app-level error reporting for native terminal/backend/session failures
 ```
 
 ## Phase 0 — preserve the spike
@@ -46,7 +46,7 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [ ] Add Windows Terminal dependency bootstrap script or documented reproducible bootstrap flow.
 - [ ] Move Windows Terminal compatibility edits into explicit patch files or deterministic script steps.
 - [ ] Add script validation for required Visual Studio/UWP Build Tools components.
-- [ ] Add a first app config file for local frontend settings.
+- [x] Add a first app config file for local frontend settings.
 - [ ] Add app-level error reporting for native terminal load failure.
 - [ ] Add app-level error reporting for backend disconnect.
 - [ ] Add app-level error reporting for session exit and protocol errors.
@@ -74,9 +74,9 @@ Goal: make the terminal experience trustworthy for daily terminal/TUI use.
 - [ ] Implement or document paste behavior.
 - [ ] Add clean session kill/restart behavior.
 - [ ] Document scrollback behavior and limitations.
-- [ ] Load terminal font from app config.
-- [ ] Load terminal font size from app config.
-- [ ] Load terminal color theme from app config.
+- [x] Load terminal font from app config.
+- [x] Load terminal font size from app config.
+- [x] Load terminal color theme from app config.
 - [ ] Optionally import font/color settings from Windows Terminal `settings.json`.
 
 Validation commands:

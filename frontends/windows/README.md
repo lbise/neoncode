@@ -62,6 +62,31 @@ Click:
 
 If the app falls back to the textbox renderer, use the bottom input box and press Enter.
 
+## Configuration
+
+On first run, the Windows app creates:
+
+```text
+%APPDATA%\WorkspaceCockpit\config.json
+```
+
+Initial settings include terminal font, size, colors, cursor style, and the 16-color table. To use a Powerline/Nerd Font, edit for example:
+
+```json
+{
+  "terminal": {
+    "fontFace": "CaskaydiaCove Nerd Font",
+    "fontSize": 14,
+    "background": "#0C0C0C",
+    "foreground": "#CCCCCC",
+    "selectionBackground": "#666666",
+    "cursorStyle": "BlinkingBlock"
+  }
+}
+```
+
+Restart the app after editing the config. If the configured font is not installed, the native terminal view falls back to `Cascadia Mono` or `Consolas`.
+
 ## Validation commands
 
 ```bash

@@ -130,6 +130,14 @@ In the app:
 3. click `Start bash`;
 4. type directly into the terminal.
 
+On first run, the app creates a local config file at:
+
+```text
+%APPDATA%\WorkspaceCockpit\config.json
+```
+
+Edit `terminal.fontFace` there to use a Powerline/Nerd Font, then restart the app.
+
 Useful terminal validation commands:
 
 ```bash

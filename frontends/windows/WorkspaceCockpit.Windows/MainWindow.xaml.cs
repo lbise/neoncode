@@ -6,6 +6,8 @@ using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using WorkspaceCockpit.Windows.Configuration;
 using WorkspaceCockpit.Windows.Terminal;
 
 namespace WorkspaceCockpit.Windows;
@@ -20,6 +22,7 @@ public partial class MainWindow : Window
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
+    private readonly AppConfig appConfig;
     private ClientWebSocket? socket;
     private CancellationTokenSource? receiveCts;
     private ITerminalView terminalView = null!;
@@ -29,6 +32,7 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        appConfig = AppConfig.LoadOrCreateDefault();
         InitializeComponent();
         InitializeTerminalView();
         terminalView.Input += async bytes => await SendTerminalInputAsync(bytes);
@@ -39,7 +43,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var windowsTerminalView = new WindowsTerminalView();
+            var windowsTerminalView = new WindowsTerminalView(appConfig.Terminal);
             terminalView = windowsTerminalView;
             terminalElement = windowsTerminalView.Element;
             TerminalHost.Content = terminalElement;
@@ -50,10 +54,10 @@ public partial class MainWindow : Window
         {
             var fallbackTextBox = new TextBox
             {
-                Background = System.Windows.Media.Brushes.Black,
-                Foreground = System.Windows.Media.Brushes.LightGray,
-                FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas"),
-                FontSize = 14,
+                Background = ToBrush(appConfig.Terminal.Background, Brushes.Black),
+                Foreground = ToBrush(appConfig.Terminal.Foreground, Brushes.LightGray),
+                FontFamily = new FontFamily($"{appConfig.Terminal.FontFace}, Cascadia Mono, Consolas"),
+                FontSize = appConfig.Terminal.FontSize,
                 AcceptsReturn = true,
                 AcceptsTab = true,
                 IsReadOnly = true,
@@ -68,6 +72,22 @@ public partial class MainWindow : Window
             FallbackInputPanel.Visibility = Visibility.Visible;
             usingFallbackInput = true;
             SetStatus($"Terminal fallback: {ex.Message}");
+        }
+    }
+
+    private static Brush ToBrush(string color, Brush fallback)
+    {
+        try
+        {
+            return (Brush)(new BrushConverter().ConvertFromString(color) ?? fallback);
+        }
+        catch (FormatException)
+        {
+            return fallback;
+        }
+        catch (NotSupportedException)
+        {
+            return fallback;
         }
     }
 

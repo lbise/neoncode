@@ -2,6 +2,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Media;
 using Microsoft.Terminal.Wpf;
+using WorkspaceCockpit.Windows.Configuration;
 using WpfTerminalControl = Microsoft.Terminal.Wpf.TerminalControl;
 
 namespace WorkspaceCockpit.Windows.Terminal;
@@ -10,9 +11,11 @@ public sealed class WindowsTerminalView : ITerminalView
 {
     private readonly WpfTerminalControl control;
     private readonly BridgeConnection connection;
+    private readonly TerminalConfig config;
 
-    public WindowsTerminalView()
+    public WindowsTerminalView(TerminalConfig config)
     {
+        this.config = config;
         connection = new BridgeConnection(this);
         control = new WpfTerminalControl
         {
@@ -57,42 +60,90 @@ public sealed class WindowsTerminalView : ITerminalView
 
     private void ApplyTheme()
     {
+        var background = ParseColor(config.Background, Color.FromRgb(0x0C, 0x0C, 0x0C));
+        var foreground = ParseColor(config.Foreground, Color.FromRgb(0xCC, 0xCC, 0xCC));
+        var selectionBackground = ParseColor(config.SelectionBackground, Color.FromRgb(0x66, 0x66, 0x66));
+        var colorTable = config.ColorTable
+            .Take(16)
+            .Select(color => ToColorRef(ParseColor(color, Colors.Black)))
+            .ToArray();
+
+        if (colorTable.Length != 16)
+        {
+            colorTable = new TerminalConfig().ColorTable
+                .Select(color => ToColorRef(ParseColor(color, Colors.Black)))
+                .ToArray();
+        }
+
         control.SetTheme(
             new TerminalTheme
             {
-                DefaultBackground = ColorRef(0x0C, 0x0C, 0x0C),
-                DefaultForeground = ColorRef(0xCC, 0xCC, 0xCC),
-                DefaultSelectionBackground = ColorRef(0x66, 0x66, 0x66),
-                CursorStyle = CursorStyle.BlinkingBlock,
-                ColorTable =
-                [
-                    ColorRef(0x0C, 0x0C, 0x0C),
-                    ColorRef(0xC5, 0x0F, 0x1F),
-                    ColorRef(0x13, 0xA1, 0x0E),
-                    ColorRef(0xC1, 0x9C, 0x00),
-                    ColorRef(0x00, 0x37, 0xDA),
-                    ColorRef(0x88, 0x17, 0x98),
-                    ColorRef(0x3A, 0x96, 0xDD),
-                    ColorRef(0xCC, 0xCC, 0xCC),
-                    ColorRef(0x76, 0x76, 0x76),
-                    ColorRef(0xE7, 0x48, 0x56),
-                    ColorRef(0x16, 0xC6, 0x0C),
-                    ColorRef(0xF9, 0xF1, 0xA5),
-                    ColorRef(0x3B, 0x78, 0xFF),
-                    ColorRef(0xB4, 0x00, 0x9E),
-                    ColorRef(0x61, 0xD6, 0xD6),
-                    ColorRef(0xF2, 0xF2, 0xF2),
-                ],
+                DefaultBackground = ToColorRef(background),
+                DefaultForeground = ToColorRef(foreground),
+                DefaultSelectionBackground = ToColorRef(selectionBackground),
+                CursorStyle = ParseCursorStyle(config.CursorStyle),
+                ColorTable = colorTable,
             },
-            "Cascadia Mono",
-            14,
-            Color.FromRgb(0x0C, 0x0C, 0x0C));
+            ResolveFontFace(config.FontFace),
+            ToNativeFontSize(config.FontSize),
+            background);
     }
 
-    private static uint ColorRef(byte red, byte green, byte blue)
+    private static short ToNativeFontSize(double configuredFontSize)
+    {
+        return (short)Math.Clamp((int)Math.Round(configuredFontSize), 1, 200);
+    }
+
+    private static string ResolveFontFace(string configuredFontFace)
+    {
+        var fontFace = string.IsNullOrWhiteSpace(configuredFontFace)
+            ? "Cascadia Mono"
+            : configuredFontFace.Trim();
+
+        var installedFontNames = Fonts.SystemFontFamilies.Select(font => font.Source).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (installedFontNames.Contains(fontFace))
+        {
+            return fontFace;
+        }
+
+        return installedFontNames.Contains("Cascadia Mono") ? "Cascadia Mono" : "Consolas";
+    }
+
+    private static CursorStyle ParseCursorStyle(string value)
+    {
+        return Enum.TryParse<CursorStyle>(value, ignoreCase: true, out var cursorStyle)
+            ? cursorStyle
+            : CursorStyle.BlinkingBlock;
+    }
+
+    private static Color ParseColor(string value, Color fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var hex = value.Trim();
+        if (hex.StartsWith('#'))
+        {
+            hex = hex[1..];
+        }
+
+        if (hex.Length != 6 || !int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out var rgb))
+        {
+            return fallback;
+        }
+
+        return Color.FromRgb(
+            (byte)((rgb >> 16) & 0xFF),
+            (byte)((rgb >> 8) & 0xFF),
+            (byte)(rgb & 0xFF));
+    }
+
+    private static uint ToColorRef(Color color)
     {
         // Win32 COLORREF is 0x00BBGGRR.
-        return (uint)(red | (green << 8) | (blue << 16));
+        return (uint)(color.R | (color.G << 8) | (color.B << 16));
     }
 
     private sealed class BridgeConnection : Microsoft.Terminal.Wpf.ITerminalConnection
