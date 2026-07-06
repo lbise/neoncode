@@ -22,7 +22,74 @@ Then run the Windows frontend from Windows with the .NET 8 SDK installed:
 dotnet run --project frontends\windows\WorkspaceCockpit.Windows\WorkspaceCockpit.Windows.csproj
 ```
 
-The Windows frontend currently uses a placeholder text box instead of a real terminal renderer. The next major POC step is embedding a real Windows Terminal control and adapting it to the hub protocol.
+The Windows frontend now attempts to host the Windows Terminal renderer through a WPF wrapper and adapts it to the hub protocol. The old textbox renderer remains as a fallback if the native control fails to load.
+
+---
+
+## POC vs product assumptions
+
+Some current choices are intentionally pragmatic proof-of-concept choices, not final product commitments.
+
+### Windows Terminal version/tooling
+
+For the POC, it is acceptable to use an older pinned Windows Terminal source tag if that makes the first embedding experiment easier with currently available tooling.
+
+Current investigation tag:
+
+```text
+microsoft/terminal v1.22.11141.0
+```
+
+Reason:
+
+- it targets VS 2022-era tooling;
+- it avoids spending the first POC cycle on the newest Windows Terminal build environment;
+- it lets the project validate whether `Microsoft.Terminal.Control.dll` / `HwndTerminal` is viable at all.
+
+For the product, this should be revisited. If the embedding approach checks out, the final tool should prefer:
+
+- the latest stable Windows Terminal source/release that can be pinned reproducibly;
+- current supported Visual Studio / Windows SDK tooling;
+- deliberate upgrade points instead of tracking upstream casually.
+
+The distinction is:
+
+```text
+POC:      prove terminal embedding with the lowest practical risk
+Product:  use a modern pinned dependency/toolchain once the approach is validated
+```
+
+### Frontend toolkit choice
+
+The current WPF frontend is also a POC choice. It was selected because WPF has mature HWND hosting and the Windows Terminal repository already contains WPF-oriented wrapper code.
+
+This does **not** permanently decide the final GUI stack.
+
+For the product, the frontend toolkit should be reassessed after the terminal/session POCs. Candidate directions include:
+
+- WPF / WinUI 3 native Windows frontend;
+- Qt/QML cross-platform native-ish frontend;
+- GTK/libadwaita Linux frontend plus separate Windows frontend;
+- Electron or another web-based desktop shell.
+
+Electron is worth reconsidering for the final product because it could provide:
+
+- faster modern UI development;
+- a large ecosystem of layout/tab/tree/docking components;
+- one UI codebase across Windows and Linux;
+- good-looking interfaces with less custom native UI work.
+
+However, Electron also has important risks for this specific app:
+
+- npm availability is problematic in the work environment;
+- true native terminal embedding may be harder than in WPF/Win32;
+- using `xterm.js` would move terminal rendering into the web stack instead of using Windows Terminal/Ghostty/VTE;
+- native focus/input/window integration may be weaker;
+- packaging and dependency policy may be less acceptable on locked-down machines.
+
+So the current position is:
+
+> Use WPF/native Windows for the terminal embedding POC. After terminal rendering, hub transport, SSH, and tmux persistence are validated, reassess the product GUI toolkit, including Electron, with real data.
 
 ---
 
@@ -140,19 +207,21 @@ A remote `tmux` session may still be used internally as a compatibility/persiste
 
 ---
 
-## 4. Native GUI strategy
+## 4. GUI strategy
 
-The preference is for **native GUI applications**, not Electron/Tauri-style web shells.
+The initial POC preference is for a **native Windows GUI**, not because the final product must be native forever, but because the first high-risk question is native terminal embedding.
 
-Reasons:
+Reasons native is attractive for the POC:
 
 - better access to native windows and input handling;
-- better terminal embedding options;
-- more freedom for desktop-specific UI;
-- no dependency on npm-heavy frontend tooling, which is problematic behind the work proxy;
-- better fit for custom terminal rendering backends.
+- better odds of hosting the Windows Terminal control directly;
+- fewer layers while debugging focus, DPI, keyboard, mouse, and resize behavior;
+- no dependency on npm-heavy frontend tooling during the first feasibility work;
+- better fit for testing platform terminal rendering backends.
 
-Two possible approaches:
+The product GUI strategy remains open. Electron, Qt/QML, WinUI 3, WPF, GTK/libadwaita, or separate native frontends should be compared after the terminal/session POCs have produced evidence.
+
+Possible approaches:
 
 ### Option A: shared core plus separate native frontends
 
@@ -180,9 +249,23 @@ This gives the best native integration but costs more work.
 
 Qt could provide a serious cross-platform native-ish desktop UI with one codebase. However, terminal embedding may still require platform-specific native widgets.
 
-Current leaning:
+### Option C: Electron frontend
 
-> Keep the architecture split so the terminal renderer is platform-specific. Do not assume one UI toolkit will solve terminal embedding everywhere.
+Electron could provide the fastest path to a polished, modern, cross-platform UI. It would make dashboard views, docking layouts, command palettes, settings pages, and visual polish easier to build and share between Windows and Linux.
+
+The key question is terminal rendering:
+
+- Electron plus `xterm.js` gives a proven web terminal renderer, but moves away from platform-native terminal controls.
+- Electron plus native terminal embedding may be possible but could reintroduce HWND/focus/input complexity through another layer.
+- The work environment's npm restrictions could make dependency management and builds painful unless dependencies are vendored or mirrored.
+
+Current leaning for the POC:
+
+> Keep the POC architecture split so the terminal renderer is platform-specific and directly testable. Do not assume one UI toolkit will solve terminal embedding everywhere.
+
+Product decision later:
+
+> Reassess Electron seriously after validating terminal rendering and session transport. If `xterm.js` is good enough for Neovim/tmux/agents and packaging can be solved, Electron may be a strong product candidate because of cross-platform UI reuse.
 
 ---
 

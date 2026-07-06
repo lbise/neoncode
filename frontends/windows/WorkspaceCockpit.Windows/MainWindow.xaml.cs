@@ -4,7 +4,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using WorkspaceCockpit.Windows.Terminal;
 
 namespace WorkspaceCockpit.Windows;
 
@@ -20,10 +22,53 @@ public partial class MainWindow : Window
 
     private ClientWebSocket? socket;
     private CancellationTokenSource? receiveCts;
+    private ITerminalView terminalView = null!;
+    private FrameworkElement terminalElement = null!;
+    private bool usingFallbackInput;
+    private bool sessionStarted;
 
     public MainWindow()
     {
         InitializeComponent();
+        InitializeTerminalView();
+        terminalView.Input += async bytes => await SendTerminalInputAsync(bytes);
+        terminalView.Resized += async (columns, rows) => await SendResizeAsync(columns, rows);
+    }
+
+    private void InitializeTerminalView()
+    {
+        try
+        {
+            var windowsTerminalView = new WindowsTerminalView();
+            terminalView = windowsTerminalView;
+            terminalElement = windowsTerminalView.Element;
+            TerminalHost.Content = terminalElement;
+            FallbackInputPanel.Visibility = Visibility.Collapsed;
+            usingFallbackInput = false;
+        }
+        catch (Exception ex)
+        {
+            var fallbackTextBox = new TextBox
+            {
+                Background = System.Windows.Media.Brushes.Black,
+                Foreground = System.Windows.Media.Brushes.LightGray,
+                FontFamily = new System.Windows.Media.FontFamily("Cascadia Mono, Consolas"),
+                FontSize = 14,
+                AcceptsReturn = true,
+                AcceptsTab = true,
+                IsReadOnly = true,
+                TextWrapping = TextWrapping.NoWrap,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            };
+
+            terminalView = new TextBoxTerminalView(fallbackTextBox);
+            terminalElement = fallbackTextBox;
+            TerminalHost.Content = fallbackTextBox;
+            FallbackInputPanel.Visibility = Visibility.Visible;
+            usingFallbackInput = true;
+            SetStatus($"Terminal fallback: {ex.Message}");
+        }
     }
 
     private async void ConnectButton_Click(object sender, RoutedEventArgs e)
@@ -56,6 +101,7 @@ public partial class MainWindow : Window
 
     private async void StartShellButton_Click(object sender, RoutedEventArgs e)
     {
+        sessionStarted = true;
         await SendAsync(new
         {
             type = "start",
@@ -66,9 +112,13 @@ public partial class MainWindow : Window
         });
 
         StartShellButton.IsEnabled = false;
-        SendButton.IsEnabled = true;
-        InputTextBox.IsEnabled = true;
-        InputTextBox.Focus();
+        SendButton.IsEnabled = usingFallbackInput;
+        InputTextBox.IsEnabled = usingFallbackInput;
+        terminalElement.Focus();
+        if (usingFallbackInput)
+        {
+            InputTextBox.Focus();
+        }
     }
 
     private async void SendButton_Click(object sender, RoutedEventArgs e)
@@ -87,7 +137,7 @@ public partial class MainWindow : Window
 
     private void ClearButton_Click(object sender, RoutedEventArgs e)
     {
-        TerminalOutputTextBox.Clear();
+        terminalView.Clear();
     }
 
     private async Task SendInputAsync()
@@ -100,11 +150,37 @@ public partial class MainWindow : Window
 
         InputTextBox.Clear();
         var bytes = Encoding.UTF8.GetBytes(text + "\n");
+        await SendTerminalInputAsync(bytes);
+    }
+
+    private async Task SendTerminalInputAsync(byte[] bytes)
+    {
+        if (!sessionStarted)
+        {
+            return;
+        }
+
         await SendAsync(new
         {
             type = "input",
             session_id = SessionId,
             data_b64 = Convert.ToBase64String(bytes)
+        });
+    }
+
+    private async Task SendResizeAsync(uint columns, uint rows)
+    {
+        if (!sessionStarted)
+        {
+            return;
+        }
+
+        await SendAsync(new
+        {
+            type = "resize",
+            session_id = SessionId,
+            rows,
+            cols = columns
         });
     }
 
@@ -176,12 +252,13 @@ public partial class MainWindow : Window
             case "output":
                 var dataB64 = root.GetProperty("data_b64").GetString() ?? string.Empty;
                 var bytes = Convert.FromBase64String(dataB64);
-                AppendOutput(Encoding.UTF8.GetString(bytes));
+                terminalView.Write(bytes);
                 break;
             case "exit":
                 AppendOutput("\r\n[session exited]\r\n");
                 Dispatcher.Invoke(() =>
                 {
+                    sessionStarted = false;
                     SendButton.IsEnabled = false;
                     InputTextBox.IsEnabled = false;
                     StartShellButton.IsEnabled = true;
@@ -201,11 +278,7 @@ public partial class MainWindow : Window
 
     private void AppendOutput(string text)
     {
-        Dispatcher.Invoke(() =>
-        {
-            TerminalOutputTextBox.AppendText(text.Replace("\n", "\r\n"));
-            TerminalOutputTextBox.ScrollToEnd();
-        });
+        terminalView.Write(Encoding.UTF8.GetBytes(text));
     }
 
     private void SetStatus(string status)
@@ -234,6 +307,7 @@ public partial class MainWindow : Window
             receiveCts?.Dispose();
             receiveCts = null;
 
+            sessionStarted = false;
             ConnectButton.Content = "Connect";
             StartShellButton.IsEnabled = false;
             SendButton.IsEnabled = false;

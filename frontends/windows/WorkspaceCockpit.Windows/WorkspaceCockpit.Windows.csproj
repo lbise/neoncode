@@ -6,4 +6,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Update="Vendor\WpfTerminalControl\**\*.cs">
+      <NoWarn>$(NoWarn);8603;8605;8618;8622</NoWarn>
+    </Compile>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="$(USERPROFILE)\gitrepo\microsoft-terminal\bin\x64\$(Configuration)\Microsoft.Terminal.Control\**\*.*"
+             Link="%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
