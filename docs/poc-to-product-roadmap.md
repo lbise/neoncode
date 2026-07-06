@@ -207,6 +207,8 @@ Current recommendation:
 
 ## Near-term next tasks
 
+The active checkbox tracker lives in [`docs/task-list.md`](task-list.md).
+
 Suggested immediate backlog:
 
 1. Add `scripts/publish-windows-frontend.ps1`.
