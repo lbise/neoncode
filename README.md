@@ -26,6 +26,35 @@ The Windows frontend now attempts to host the Windows Terminal renderer through 
 
 ---
 
+## Validated POC result
+
+The terminal-renderer POC is considered successful and is tagged in git as:
+
+```text
+poc/windows-terminal-embedded
+```
+
+What was proven:
+
+- a Rust WSL/Linux backend can serve PTY sessions over WebSocket;
+- a Windows WPF frontend can connect to the backend and drive a shell session;
+- the frontend can embed the real Windows Terminal renderer through `Microsoft.Terminal.Control.dll`;
+- real TUI programs render correctly, including Neovim;
+- the architecture can carry terminal input, terminal output, and resize events across the GUI/backend boundary;
+- publishing the frontend to a Windows-local folder can include the required native Windows Terminal files.
+
+Important observations:
+
+- Windows Terminal embedding is viable, but `Microsoft.Terminal.Control.dll` is only the renderer/control layer. Windows Terminal app features such as profile loading, command palette, tab management, and settings resolution live above it.
+- Reusing Windows Terminal settings is still possible by parsing `settings.json` ourselves and mapping relevant renderer fields such as font, font size, color scheme, cursor style, foreground, background, and selection colors.
+- Powerline/Nerd Font glyph issues are expected until font configuration is added.
+- WPF is validated as a pragmatic Windows host for this control. It should remain the near-term Windows prototype shell unless another GUI stack explicitly re-proves native HWND/control hosting.
+- The current Windows Terminal dependency process is good enough for a spike, but product work needs reproducible dependency checkout, patching, build, and publish scripts.
+
+This changes the project status from “can this work?” to “build the proper prototype/product foundation.” See `docs/poc-to-product-roadmap.md` for the next route.
+
+---
+
 ## POC vs product assumptions
 
 Some current choices are intentionally pragmatic proof-of-concept choices, not final product commitments.
