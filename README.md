@@ -136,7 +136,7 @@ On first run, the app creates a local config file at:
 %APPDATA%\WorkspaceCockpit\config.json
 ```
 
-Edit `terminal.fontFace` there to use a Powerline/Nerd Font, then restart the app.
+Edit `terminal.fontFace` there to use an installed Powerline/Nerd Font such as `FiraCode Nerd Font Mono`, then restart the app. If the configured font is not installed, the app reports a fallback in the status bar.
 
 Useful terminal validation commands:
 

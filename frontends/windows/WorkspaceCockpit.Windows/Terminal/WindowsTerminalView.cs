@@ -12,10 +12,12 @@ public sealed class WindowsTerminalView : ITerminalView
     private readonly WpfTerminalControl control;
     private readonly BridgeConnection connection;
     private readonly TerminalConfig config;
+    private readonly FontResolution fontResolution;
 
     public WindowsTerminalView(TerminalConfig config)
     {
         this.config = config;
+        fontResolution = ResolveFontFace(config.FontFace);
         connection = new BridgeConnection(this);
         control = new WpfTerminalControl
         {
@@ -31,6 +33,10 @@ public sealed class WindowsTerminalView : ITerminalView
     public event Action<uint, uint>? Resized;
 
     public FrameworkElement Element => control;
+
+    public string EffectiveFontFace => fontResolution.EffectiveFontFace;
+
+    public bool IsUsingFontFallback => fontResolution.IsFallback;
 
     public void Write(byte[] data)
     {
@@ -84,7 +90,7 @@ public sealed class WindowsTerminalView : ITerminalView
                 CursorStyle = ParseCursorStyle(config.CursorStyle),
                 ColorTable = colorTable,
             },
-            ResolveFontFace(config.FontFace),
+            fontResolution.EffectiveFontFace,
             ToNativeFontSize(config.FontSize),
             background);
     }
@@ -94,19 +100,20 @@ public sealed class WindowsTerminalView : ITerminalView
         return (short)Math.Clamp((int)Math.Round(configuredFontSize), 1, 200);
     }
 
-    private static string ResolveFontFace(string configuredFontFace)
+    private static FontResolution ResolveFontFace(string configuredFontFace)
     {
-        var fontFace = string.IsNullOrWhiteSpace(configuredFontFace)
+        var requestedFontFace = string.IsNullOrWhiteSpace(configuredFontFace)
             ? "Cascadia Mono"
             : configuredFontFace.Trim();
 
         var installedFontNames = Fonts.SystemFontFamilies.Select(font => font.Source).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (installedFontNames.Contains(fontFace))
+        if (installedFontNames.Contains(requestedFontFace))
         {
-            return fontFace;
+            return new FontResolution(requestedFontFace, IsFallback: false);
         }
 
-        return installedFontNames.Contains("Cascadia Mono") ? "Cascadia Mono" : "Consolas";
+        var fallback = installedFontNames.Contains("Cascadia Mono") ? "Cascadia Mono" : "Consolas";
+        return new FontResolution(fallback, IsFallback: true);
     }
 
     private static CursorStyle ParseCursorStyle(string value)
@@ -145,6 +152,8 @@ public sealed class WindowsTerminalView : ITerminalView
         // Win32 COLORREF is 0x00BBGGRR.
         return (uint)(color.R | (color.G << 8) | (color.B << 16));
     }
+
+    private sealed record FontResolution(string EffectiveFontFace, bool IsFallback);
 
     private sealed class BridgeConnection : Microsoft.Terminal.Wpf.ITerminalConnection
     {

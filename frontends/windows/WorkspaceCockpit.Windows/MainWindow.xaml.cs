@@ -49,6 +49,11 @@ public partial class MainWindow : Window
             TerminalHost.Content = terminalElement;
             FallbackInputPanel.Visibility = Visibility.Collapsed;
             usingFallbackInput = false;
+
+            if (windowsTerminalView.IsUsingFontFallback)
+            {
+                SetStatus($"Font fallback: '{appConfig.Terminal.FontFace}' not installed; using '{windowsTerminalView.EffectiveFontFace}'");
+            }
         }
         catch (Exception ex)
         {

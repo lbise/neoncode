@@ -70,12 +70,12 @@ On first run, the Windows app creates:
 %APPDATA%\WorkspaceCockpit\config.json
 ```
 
-Initial settings include terminal font, size, colors, cursor style, and the 16-color table. To use a Powerline/Nerd Font, edit for example:
+Initial settings include terminal font, size, colors, cursor style, and the 16-color table. To use a Powerline/Nerd Font, set `fontFace` to an installed Windows font family name. On this machine, for example:
 
 ```json
 {
   "terminal": {
-    "fontFace": "CaskaydiaCove Nerd Font",
+    "fontFace": "FiraCode Nerd Font Mono",
     "fontSize": 14,
     "background": "#0C0C0C",
     "foreground": "#CCCCCC",
@@ -85,7 +85,17 @@ Initial settings include terminal font, size, colors, cursor style, and the 16-c
 }
 ```
 
-Restart the app after editing the config. If the configured font is not installed, the native terminal view falls back to `Cascadia Mono` or `Consolas`.
+Restart the app after editing the config. If the configured font is not installed, the native terminal view falls back to `Cascadia Mono` or `Consolas` and reports that fallback in the status bar.
+
+To list installed matching font family names:
+
+```powershell
+Add-Type -AssemblyName PresentationCore
+[System.Windows.Media.Fonts]::SystemFontFamilies |
+  Where-Object { $_.Source -match 'Nerd|Casc|Fira|JetBrains|Hack|Meslo' } |
+  Sort-Object Source |
+  ForEach-Object Source
+```
 
 ## Validation commands
 
