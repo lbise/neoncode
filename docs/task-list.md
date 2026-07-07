@@ -12,7 +12,7 @@ poc/windows-terminal-embedded
 
 ```text
 Stage: Phase 1 — clean prototype foundation
-Next task: install Git for Windows, then rerun Windows Terminal bootstrap/build end-to-end
+Next task: decide UI foundation direction / document GUI toolkit decision record
 ```
 
 ## Phase 0 — preserve the spike
@@ -205,8 +205,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows
 - [x] Build script runs bootstrap by default.
 - [x] Build script can skip bootstrap with `-SkipBootstrap`.
 - [x] Documentation explains required dependencies and Defender considerations.
-- [ ] Bootstrap succeeds after Git for Windows is installed.
-- [ ] Native control build succeeds through the full new bootstrap/build flow.
+- [x] Bootstrap succeeds after Git for Windows is installed.
+- [x] Native control build succeeds through the full new bootstrap/build flow.
 - [x] Native control build succeeds with `scripts/build-windows-terminal-control.ps1 -SkipBootstrap` against the already-prepared checkout.
 - [x] Published frontend still includes native Windows Terminal files.
 - [x] `dotnet build` still passes.

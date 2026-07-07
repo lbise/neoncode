@@ -319,6 +319,32 @@ Install Git for Windows. The bootstrap script intentionally does not use WSL Git
 
 Install the UWP/Windows Store C++ Build Tools components listed above.
 
+### Stale Git lock after interrupted bootstrap
+
+If an earlier clone/checkout was interrupted, bootstrap may fail with:
+
+```text
+Unable to create ...\.git\index.lock: File exists
+```
+
+First verify no Git process is still running:
+
+```powershell
+Get-Process git -ErrorAction SilentlyContinue
+```
+
+If no Git process is running, remove the stale lock:
+
+```powershell
+Remove-Item "$env:USERPROFILE\gitrepo\microsoft-terminal\.git\index.lock" -Force
+```
+
+Then rerun:
+
+```bash
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\bootstrap-windows-terminal.ps1
+```
+
 ### Build output locked during publish
 
 Close running app windows or stop the process:

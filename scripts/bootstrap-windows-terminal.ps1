@@ -61,8 +61,14 @@ function Invoke-GitChecked {
 function Invoke-GitExitCode {
     param([Parameter(Mandatory=$true)][string[]]$Arguments)
 
-    Invoke-GitRaw -Arguments $Arguments *> $null
-    return $LASTEXITCODE
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $script:GitExe @Arguments *> $null
+        return $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
 }
 
 function Normalize-GitPath {
@@ -168,14 +174,15 @@ if ($PatchDirectory) {
         $patchPathForGit = Normalize-GitPath $patch.FullName
         Write-Host "Applying patch: $($patch.Name)"
 
-        $reverseCheck = Invoke-GitExitCode -Arguments @("-C", $terminalRepoForGit, "apply", "--reverse", "--check", $patchPathForGit)
+        $applyOptions = @("--ignore-space-change", "--whitespace=nowarn")
+        $reverseCheck = Invoke-GitExitCode -Arguments (@("-C", $terminalRepoForGit, "apply") + $applyOptions + @("--reverse", "--check", $patchPathForGit))
         if ($reverseCheck -eq 0) {
             Write-Host "  already applied"
             continue
         }
 
-        Invoke-GitChecked -Arguments @("-C", $terminalRepoForGit, "apply", "--check", $patchPathForGit)
-        Invoke-GitChecked -Arguments @("-C", $terminalRepoForGit, "apply", $patchPathForGit)
+        Invoke-GitChecked -Arguments (@("-C", $terminalRepoForGit, "apply") + $applyOptions + @("--check", $patchPathForGit))
+        Invoke-GitChecked -Arguments (@("-C", $terminalRepoForGit, "apply") + $applyOptions + @($patchPathForGit))
     }
 }
 
