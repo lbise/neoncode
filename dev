@@ -23,9 +23,10 @@ Windows Terminal dependency commands:
   ./dev full         Build Windows Terminal control, then publish Windows app
 
 Spike commands:
-  ./dev electron-spike-install Install Electron spike npm dependencies
+  ./dev electron-spike-publish Publish Electron spike to %USERPROFILE%\neoncode-electron-spike
+  ./dev electron-spike         Start the published Electron spike
+  ./dev electron-spike-install Install Electron spike npm dependencies in-place
   ./dev electron-spike-native  Build the Electron spike native WPF terminal host
-  ./dev electron-spike         Start the Electron spike via Windows npm.cmd
 
 Utility commands:
   ./dev run-app      Start the already-published Windows app
@@ -113,6 +114,10 @@ case "$command" in
   full)
     ps_file 'scripts\build-windows-terminal-control.ps1'
     publish_app
+    ;;
+
+  electron-spike-publish)
+    ps_file 'scripts\electron-spike.ps1' -Command publish "$@"
     ;;
 
   electron-spike-install)

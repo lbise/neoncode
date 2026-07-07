@@ -157,6 +157,7 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Document WPF vs WinUI 3 vs Electron decision criteria.
 - [x] Scaffold focused Electron native Windows Terminal embedding spike.
 - [x] Install/verify Windows Node/npm for the Electron spike.
+- [x] Add Windows-local publish flow for Electron spike.
 - [ ] Run focused Electron native Windows Terminal embedding spike.
 - [ ] Reassess WPF after Electron spike.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.

@@ -87,19 +87,28 @@ Or via the repo helper:
 ./dev electron-spike-native
 ```
 
-## Install Electron
+## Publish the spike to a Windows-local folder
 
-From WSL repo root, run:
+Running Electron directly from `\\wsl.localhost\...` is not representative of a final product and can trigger Chromium/GPU/process issues. Prefer publishing the spike to a Windows-local folder first.
+
+From WSL repo root:
 
 ```bash
-./dev electron-spike-install
+./dev electron-spike-publish
 ```
 
-Manual Windows PowerShell equivalent from `spikes\electron-native-terminal\electron`:
+Default output:
 
-```powershell
-npm.cmd install
+```text
+%USERPROFILE%\neoncode-electron-spike
 ```
+
+The publish step:
+
+- publishes the native WPF terminal host to `native-host`;
+- copies the Electron shell to `electron`;
+- runs `npm.cmd install` in the Windows-local Electron folder;
+- verifies Electron and the native host exist.
 
 ## Run
 
@@ -115,9 +124,10 @@ Terminal 2, from WSL repo root:
 ./dev electron-spike
 ```
 
-Manual Windows PowerShell equivalent from `spikes\electron-native-terminal\electron`:
+Manual Windows PowerShell equivalent:
 
 ```powershell
+cd $env:USERPROFILE\neoncode-electron-spike\electron
 npm.cmd start
 ```
 

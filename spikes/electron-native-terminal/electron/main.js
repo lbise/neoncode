@@ -30,6 +30,11 @@ function hwndFromNativeWindowHandle(buffer) {
 }
 
 function nativeHostExePath() {
+  const stagedHost = path.resolve(__dirname, '..', 'native-host', 'NeonCode.ElectronTerminalHost.exe');
+  if (fs.existsSync(stagedHost)) {
+    return stagedHost;
+  }
+
   return path.resolve(
     __dirname,
     '..',
