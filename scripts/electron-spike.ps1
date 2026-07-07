@@ -48,6 +48,13 @@ function Invoke-Npm {
     }
 }
 
+function Stop-SpikeProcesses {
+    Get-Process NeonCode.ElectronTerminalHost -ErrorAction SilentlyContinue | Stop-Process -Force
+    Get-Process electron -ErrorAction SilentlyContinue | Where-Object {
+        $_.Path -like "*neoncode-electron-spike*"
+    } | Stop-Process -Force
+}
+
 function Copy-SpikeElectronFiles {
     param(
         [Parameter(Mandatory=$true)][string]$SourceDirectory,
@@ -82,6 +89,8 @@ switch ($Command) {
     }
 
     "publish" {
+        Stop-SpikeProcesses
+
         if ($Clean -and (Test-Path -LiteralPath $OutputPath)) {
             Write-Host "Cleaning Electron spike output: $OutputPath"
             Remove-Item -LiteralPath $OutputPath -Recurse -Force
@@ -118,6 +127,8 @@ switch ($Command) {
     }
 
     "start" {
+        Stop-SpikeProcesses
+
         if (-not (Test-Path -LiteralPath (Join-Path $publishedElectronDir "package.json"))) {
             throw "Published Electron spike not found at $OutputPath. Run './dev electron-spike-publish' first."
         }

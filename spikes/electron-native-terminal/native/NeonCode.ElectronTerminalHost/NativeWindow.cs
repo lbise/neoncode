@@ -13,6 +13,8 @@ internal static partial class NativeWindow
     public const long WsSysMenu = 0x00080000L;
     public const long WsMinimizeBox = 0x00020000L;
     public const long WsMaximizeBox = 0x00010000L;
+    public const int SwShownormal = 1;
+    public const int SwShow = 5;
 
     [LibraryImport("user32.dll", SetLastError = true)]
     public static partial nint SetParent(nint childHwnd, nint parentHwnd);
@@ -24,6 +26,13 @@ internal static partial class NativeWindow
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool GetClientRect(nint hwnd, out Rect rect);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool ShowWindow(nint hwnd, int command);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint SetFocus(nint hwnd);
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
     public static extern nint GetWindowLongPtr(nint hwnd, int index);

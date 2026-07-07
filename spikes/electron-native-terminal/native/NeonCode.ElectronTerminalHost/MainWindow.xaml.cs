@@ -42,6 +42,15 @@ public partial class MainWindow : Window
 
         SourceInitialized += OnSourceInitialized;
         Loaded += async (_, _) => await ConnectAndStartAsync();
+        Activated += (_, _) => FocusTerminal();
+        StateChanged += (_, _) =>
+        {
+            if (WindowState != WindowState.Minimized)
+            {
+                FitIntoParent();
+                FocusTerminal();
+            }
+        };
         Closed += async (_, _) => await DisconnectAsync();
 
         embedTimer = new DispatcherTimer
@@ -71,6 +80,7 @@ public partial class MainWindow : Window
 
         NativeWindow.SetWindowLongPtr(ownHwnd, NativeWindow.GwlStyle, (nint)style);
         NativeWindow.SetParent(ownHwnd, options.ParentHwnd);
+        NativeWindow.ShowWindow(ownHwnd, NativeWindow.SwShow);
         FitIntoParent();
         embedTimer.Start();
     }
@@ -88,7 +98,18 @@ public partial class MainWindow : Window
         }
 
         var top = Math.Clamp(options.TopOffset, 0, Math.Max(0, rect.Height - 1));
+        NativeWindow.ShowWindow(ownHwnd, NativeWindow.SwShow);
         NativeWindow.MoveWindow(ownHwnd, 0, top, Math.Max(1, rect.Width), Math.Max(1, rect.Height - top), repaint: true);
+    }
+
+    private void FocusTerminal()
+    {
+        if (ownHwnd != 0)
+        {
+            NativeWindow.SetFocus(ownHwnd);
+        }
+
+        Dispatcher.BeginInvoke(() => terminalView.Element.Focus(), DispatcherPriority.ApplicationIdle);
     }
 
     private async Task ConnectAndStartAsync()
@@ -108,7 +129,7 @@ public partial class MainWindow : Window
             cols = 120,
         });
 
-        terminalView.Element.Focus();
+        FocusTerminal();
     }
 
     private async Task SendInputAsync(byte[] bytes)

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, Menu, dialog } = require('electron');
 
 // Corporate Windows environments can block Chromium's GPU helper process,
 // especially when Electron is launched from a WSL/UNC-backed path. This spike
@@ -77,6 +77,8 @@ function spawnTerminalHost() {
 }
 
 function createWindow() {
+  Menu.setApplicationMenu(null);
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -93,6 +95,15 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
     spawnTerminalHost();
+  });
+
+  mainWindow.on('restore', () => {
+    // The native child HWND can need a nudge after parent minimize/restore.
+    // The native host also polls the parent bounds, but this gives Windows a
+    // fresh child-window layout event from the Electron side.
+    if (terminalHostProcess && !terminalHostProcess.killed) {
+      mainWindow.setSize(...mainWindow.getSize());
+    }
   });
 
   mainWindow.on('closed', () => {
