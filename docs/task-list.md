@@ -156,7 +156,7 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Discard Qt/QML for now due to licensing/distribution concerns.
 - [x] Document WPF vs WinUI 3 vs Electron decision criteria.
 - [x] Scaffold focused Electron native Windows Terminal embedding spike.
-- [ ] Install/verify Windows Node/npm for the Electron spike.
+- [x] Install/verify Windows Node/npm for the Electron spike.
 - [ ] Run focused Electron native Windows Terminal embedding spike.
 - [ ] Reassess WPF after Electron spike.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.

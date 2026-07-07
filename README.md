@@ -35,8 +35,9 @@ Common commands:
 ./dev check        # dotnet build + cargo fmt/check/clippy
 ./dev wt-build              # bootstrap/build Microsoft.Terminal.Control.dll
 ./dev full                  # build Windows Terminal control, then publish app
-./dev electron-spike-native # build the Electron spike native WPF terminal host
-./dev electron-spike        # start the Electron spike via Windows npm
+./dev electron-spike-install # install Electron spike npm dependencies
+./dev electron-spike-native  # build the Electron spike native WPF terminal host
+./dev electron-spike         # start the Electron spike via Windows npm.cmd
 ./dev status                # show useful paths/status
 ```
 

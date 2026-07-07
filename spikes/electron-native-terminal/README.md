@@ -60,13 +60,18 @@ Required:
 - Node.js/npm for **Windows**, not only WSL;
 - Electron installed through npm in this spike folder.
 
-Check Windows Node/npm from WSL:
+Check Windows Node/npm from Windows PowerShell:
 
-```bash
-powershell.exe -NoProfile -Command "node --version; npm --version"
+```powershell
+node --version
+npm.cmd --version
 ```
 
-If that fails, install Node.js for Windows first.
+Use `npm.cmd`, not `npm`, because PowerShell execution policy may block the `npm.ps1` shim.
+
+If Windows Node was installed after the current WSL session started, `powershell.exe` launched from WSL may not see `node`/`npm.cmd` on PATH until WSL is restarted. The repo helper `scripts/electron-spike.ps1` handles this by falling back to `C:\Program Files\nodejs\npm.cmd`.
+
+Also note: `npm.cmd` is a batch file, and `cmd.exe` cannot use `\\wsl.localhost\...` as its current directory directly. The helper uses `cmd /c pushd` so npm can run from the WSL repo path.
 
 ## Build native host
 
@@ -76,24 +81,24 @@ From repo root in WSL:
 powershell.exe -NoProfile -Command "dotnet build spikes\\electron-native-terminal\\native\\NeonCode.ElectronTerminalHost\\NeonCode.ElectronTerminalHost.csproj -v:minimal"
 ```
 
-Or from the Electron spike directory with Windows npm:
+Or via the repo helper:
 
-```powershell
-npm run build-native
+```bash
+./dev electron-spike-native
 ```
 
 ## Install Electron
 
-From Windows PowerShell in:
+From WSL repo root, run:
 
-```text
-spikes\electron-native-terminal\electron
+```bash
+./dev electron-spike-install
 ```
 
-run:
+Manual Windows PowerShell equivalent from `spikes\electron-native-terminal\electron`:
 
 ```powershell
-npm install
+npm.cmd install
 ```
 
 ## Run
@@ -104,10 +109,16 @@ Terminal 1, from WSL repo root:
 ./dev hub
 ```
 
-Terminal 2, from Windows PowerShell in `spikes\electron-native-terminal\electron`:
+Terminal 2, from WSL repo root:
+
+```bash
+./dev electron-spike
+```
+
+Manual Windows PowerShell equivalent from `spikes\electron-native-terminal\electron`:
 
 ```powershell
-npm start
+npm.cmd start
 ```
 
 Expected result:
