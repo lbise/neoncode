@@ -211,7 +211,7 @@ Important observations:
 - WPF is validated as a pragmatic Windows host for this control. It should remain the near-term Windows prototype shell unless another GUI stack explicitly re-proves native HWND/control hosting.
 - The current Windows Terminal dependency process is good enough for a spike, but product work needs reproducible dependency checkout, patching, build, and publish scripts.
 
-This changes the project status from “can this work?” to “build the proper prototype/product foundation.” See `docs/poc-to-product-roadmap.md` for the next route and `docs/task-list.md` for the active checkbox task tracker.
+This changes the project status from “can this work?” to “build the proper prototype/product foundation.” See `docs/poc-to-product-roadmap.md` for the next route, `docs/ui-toolkit-decision.md` for the WPF/WinUI/Electron decision, and `docs/task-list.md` for the active checkbox task tracker.
 
 ---
 

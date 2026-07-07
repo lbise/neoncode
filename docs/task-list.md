@@ -12,7 +12,7 @@ poc/windows-terminal-embedded
 
 ```text
 Stage: Phase 1 — clean prototype foundation
-Next task: decide UI foundation direction / document GUI toolkit decision record
+Next task: run focused Electron native Windows Terminal embedding spike
 ```
 
 ## Phase 0 — preserve the spike
@@ -48,6 +48,7 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Move Windows Terminal compatibility edits into explicit patch files or deterministic script steps.
 - [x] Add script validation for required Visual Studio/UWP Build Tools components.
 - [x] Add a first app config file for local frontend settings.
+- [x] Document UI toolkit decision and Electron spike criteria.
 - [ ] Add app-level error reporting for native terminal load failure.
 - [ ] Add app-level error reporting for backend disconnect.
 - [ ] Add app-level error reporting for session exit and protocol errors.
@@ -150,15 +151,17 @@ Goal: make the Windows Terminal dependency sustainable.
 
 Goal: make a product GUI decision using real data, not speculation.
 
-- [ ] Reassess WPF after multi-session prototype exists.
-- [ ] Evaluate WinUI 3 native Windows shell.
-- [ ] Evaluate Qt/QML.
-- [ ] Evaluate Avalonia.
-- [ ] Evaluate Electron/web UI feasibility in locked-down environment.
-- [ ] For each candidate, verify native terminal hosting feasibility.
-- [ ] For each candidate, verify keyboard/input fidelity.
-- [ ] For each candidate, verify docking/tabs/layout support.
-- [ ] For each candidate, verify dependency and packaging risk.
+- [x] Discard Tauri for now.
+- [x] Discard Avalonia for now.
+- [x] Discard Qt/QML for now due to licensing/distribution concerns.
+- [x] Document WPF vs WinUI 3 vs Electron decision criteria.
+- [ ] Run focused Electron native Windows Terminal embedding spike.
+- [ ] Reassess WPF after Electron spike.
+- [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.
+- [ ] Verify native terminal hosting feasibility for the chosen product shell.
+- [ ] Verify keyboard/input fidelity for the chosen product shell.
+- [ ] Verify docking/tabs/layout support for the chosen product shell.
+- [ ] Verify dependency and packaging risk for the chosen product shell.
 - [ ] Decide final near-product GUI direction.
 
 ## Next task detail — Windows Terminal dependency bootstrap/build
