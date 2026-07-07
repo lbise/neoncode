@@ -30,7 +30,7 @@ Common commands:
 
 ```bash
 ./dev app          # stop running Windows app, publish frontend, start published app
-./dev publish      # publish frontend only
+./dev publish      # stop running Windows app, then publish frontend
 ./dev hub          # run Rust workspace hub
 ./dev check        # dotnet build + cargo fmt/check/clippy
 ./dev wt-build     # bootstrap/build Microsoft.Terminal.Control.dll

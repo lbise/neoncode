@@ -13,7 +13,7 @@ Usage:
 
 Daily commands:
   ./dev app          Stop running Windows app, publish frontend, start published app
-  ./dev publish      Publish Windows frontend to %USERPROFILE%\workspace-cockpit-publish
+  ./dev publish      Stop running Windows app, then publish frontend
   ./dev hub          Run the Rust workspace hub
   ./dev check        Run frontend build + Rust fmt/check/clippy
 
@@ -46,7 +46,7 @@ ps_command() {
 }
 
 stop_app() {
-  ps_command 'Get-Process WorkspaceCockpit.Windows -ErrorAction SilentlyContinue | Stop-Process -Force'
+  ps_command '$p = Get-Process WorkspaceCockpit.Windows -ErrorAction SilentlyContinue; if ($p) { $p | Stop-Process -Force }; exit 0'
 }
 
 publish_app() {
@@ -74,6 +74,7 @@ case "$command" in
     ;;
 
   publish)
+    stop_app
     publish_app "$@"
     ;;
 

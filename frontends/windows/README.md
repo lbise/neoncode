@@ -40,7 +40,7 @@ Then publish and start the Windows app from another WSL terminal:
 ./dev app
 ```
 
-`./dev app` stops any running `WorkspaceCockpit.Windows` process, publishes to a Windows-local folder, verifies the native Windows Terminal files, and starts the EXE.
+`./dev app` stops any running `WorkspaceCockpit.Windows` process, publishes to a Windows-local folder, verifies the native Windows Terminal files, and starts the EXE. `./dev publish` does the same stop-and-publish step without launching the app.
 
 Manual publish equivalent:
 
