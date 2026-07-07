@@ -12,7 +12,7 @@ poc/windows-terminal-embedded
 
 ```text
 Stage: Phase 1 — clean prototype foundation
-Next task: run focused Electron native Windows Terminal embedding spike
+Next task: install Windows Node/npm, run Electron native Windows Terminal embedding spike, record findings
 ```
 
 ## Phase 0 — preserve the spike
@@ -155,6 +155,8 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Discard Avalonia for now.
 - [x] Discard Qt/QML for now due to licensing/distribution concerns.
 - [x] Document WPF vs WinUI 3 vs Electron decision criteria.
+- [x] Scaffold focused Electron native Windows Terminal embedding spike.
+- [ ] Install/verify Windows Node/npm for the Electron spike.
 - [ ] Run focused Electron native Windows Terminal embedding spike.
 - [ ] Reassess WPF after Electron spike.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.

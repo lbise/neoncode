@@ -15,6 +15,9 @@ Thumbs.db
 .idea/
 .vscode/
 
+# Node/Electron
+node_modules/
+
 # Local agent/session artifacts
 session.jsonl
 pi-session-*.html

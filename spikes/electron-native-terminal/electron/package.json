@@ -1,0 +1,14 @@
+{
+  "name": "neoncode-electron-native-terminal-spike",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Spike: Electron shell hosting the native Windows Terminal renderer through a WPF child host.",
+  "main": "main.js",
+  "scripts": {
+    "build-native": "powershell.exe -NoProfile -Command \"dotnet build ..\\native\\NeonCode.ElectronTerminalHost\\NeonCode.ElectronTerminalHost.csproj -v:minimal\"",
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

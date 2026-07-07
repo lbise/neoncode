@@ -22,6 +22,10 @@ Windows Terminal dependency commands:
   ./dev wt-build     Bootstrap/build Microsoft.Terminal.Control.dll
   ./dev full         Build Windows Terminal control, then publish Windows app
 
+Spike commands:
+  ./dev electron-spike-native  Build the Electron spike native WPF terminal host
+  ./dev electron-spike         Start the Electron spike via Windows npm
+
 Utility commands:
   ./dev run-app      Start the already-published Windows app
   ./dev stop-app     Stop running NeonCode.Windows processes
@@ -108,6 +112,14 @@ case "$command" in
   full)
     ps_file 'scripts\build-windows-terminal-control.ps1'
     publish_app
+    ;;
+
+  electron-spike-native)
+    ps_command 'dotnet build spikes\electron-native-terminal\native\NeonCode.ElectronTerminalHost\NeonCode.ElectronTerminalHost.csproj -v:minimal'
+    ;;
+
+  electron-spike)
+    ps_command 'Set-Location spikes\electron-native-terminal\electron; npm start'
     ;;
 
   status)

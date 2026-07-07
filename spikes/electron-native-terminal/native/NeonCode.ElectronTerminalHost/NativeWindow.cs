@@ -1,0 +1,45 @@
+using System.Runtime.InteropServices;
+
+namespace NeonCode.ElectronTerminalHost;
+
+internal static partial class NativeWindow
+{
+    public const int GwlStyle = -16;
+    public const long WsChild = 0x40000000L;
+    public const long WsVisible = 0x10000000L;
+    public const long WsPopup = 0x80000000L;
+    public const long WsCaption = 0x00C00000L;
+    public const long WsThickFrame = 0x00040000L;
+    public const long WsSysMenu = 0x00080000L;
+    public const long WsMinimizeBox = 0x00020000L;
+    public const long WsMaximizeBox = 0x00010000L;
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint SetParent(nint childHwnd, nint parentHwnd);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool MoveWindow(nint hwnd, int x, int y, int width, int height, [MarshalAs(UnmanagedType.Bool)] bool repaint);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool GetClientRect(nint hwnd, out Rect rect);
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    public static extern nint GetWindowLongPtr(nint hwnd, int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    public static extern nint SetWindowLongPtr(nint hwnd, int index, nint value);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+
+        public int Width => Right - Left;
+        public int Height => Bottom - Top;
+    }
+}
