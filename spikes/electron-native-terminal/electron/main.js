@@ -1,4 +1,12 @@
 const { app, BrowserWindow, dialog } = require('electron');
+
+// Corporate Windows environments can block Chromium's GPU helper process,
+// especially when Electron is launched from a WSL/UNC-backed path. This spike
+// does not need GPU acceleration, so disable it before app readiness.
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('disable-gpu');
+app.commandLine.appendSwitch('disable-gpu-compositing');
+app.commandLine.appendSwitch('disable-gpu-sandbox');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
