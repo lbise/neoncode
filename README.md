@@ -12,9 +12,37 @@ docs/protocol.md             temporary WebSocket PTY protocol
 
 The Windows frontend now attempts to host the Windows Terminal renderer through a WPF wrapper and adapts it to the hub protocol. The old textbox renderer remains as a fallback if the native control fails to load.
 
-## Build and publish the Windows app
+## Daily development commands
 
-The recommended test workflow is:
+Use the repo-root `./dev` wrapper for normal development so you do not need to remember the PowerShell command lines.
+
+Typical loop from WSL:
+
+```bash
+# terminal 1
+./dev hub
+
+# terminal 2, after frontend changes
+./dev app
+```
+
+Common commands:
+
+```bash
+./dev app          # stop running Windows app, publish frontend, start published app
+./dev publish      # publish frontend only
+./dev hub          # run Rust workspace hub
+./dev check        # dotnet build + cargo fmt/check/clippy
+./dev wt-build     # bootstrap/build Microsoft.Terminal.Control.dll
+./dev full         # build Windows Terminal control, then publish app
+./dev status       # show useful paths/status
+```
+
+The detailed manual workflow is below for troubleshooting and fresh-machine setup.
+
+## Build and publish the Windows app manually
+
+The full manual workflow is:
 
 1. check the Rust hub from WSL/Linux;
 2. bootstrap the pinned Windows Terminal dependency with Windows tooling;

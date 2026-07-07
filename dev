@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+usage() {
+  cat <<'EOF'
+Workspace Cockpit developer commands
+
+Usage:
+  ./dev <command>
+
+Daily commands:
+  ./dev app          Stop running Windows app, publish frontend, start published app
+  ./dev publish      Publish Windows frontend to %USERPROFILE%\workspace-cockpit-publish
+  ./dev hub          Run the Rust workspace hub
+  ./dev check        Run frontend build + Rust fmt/check/clippy
+
+Windows Terminal dependency commands:
+  ./dev wt-bootstrap Bootstrap pinned Windows Terminal dependency
+  ./dev wt-build     Bootstrap/build Microsoft.Terminal.Control.dll
+  ./dev full         Build Windows Terminal control, then publish Windows app
+
+Utility commands:
+  ./dev run-app      Start the already-published Windows app
+  ./dev stop-app     Stop running WorkspaceCockpit.Windows processes
+  ./dev status       Show git status and important output paths
+  ./dev help         Show this help
+
+Typical loop:
+  Terminal 1: ./dev hub
+  Terminal 2: ./dev app
+
+EOF
+}
+
+ps_file() {
+  local script="$1"
+  shift
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$script" "$@"
+}
+
+ps_command() {
+  powershell.exe -NoProfile -Command "$1"
+}
+
+stop_app() {
+  ps_command 'Get-Process WorkspaceCockpit.Windows -ErrorAction SilentlyContinue | Stop-Process -Force'
+}
+
+publish_app() {
+  ps_file 'scripts\publish-windows-frontend.ps1' "$@"
+}
+
+run_app() {
+  ps_command 'Start-Process "$env:USERPROFILE\workspace-cockpit-publish\WorkspaceCockpit.Windows.exe"'
+}
+
+command="${1:-help}"
+if [[ $# -gt 0 ]]; then
+  shift
+fi
+
+case "$command" in
+  help|-h|--help)
+    usage
+    ;;
+
+  app)
+    stop_app
+    publish_app "$@"
+    run_app
+    ;;
+
+  publish)
+    publish_app "$@"
+    ;;
+
+  run-app)
+    run_app
+    ;;
+
+  stop-app)
+    stop_app
+    ;;
+
+  hub)
+    cargo run -p workspace-hub
+    ;;
+
+  check)
+    ps_command 'dotnet build frontends\windows\WorkspaceCockpit.Windows\WorkspaceCockpit.Windows.csproj -v:minimal'
+    cargo fmt --check
+    cargo check
+    cargo clippy --all-targets -- -D warnings
+    ;;
+
+  wt-bootstrap)
+    ps_file 'scripts\bootstrap-windows-terminal.ps1' "$@"
+    ;;
+
+  wt-build)
+    ps_file 'scripts\build-windows-terminal-control.ps1' "$@"
+    ;;
+
+  full)
+    ps_file 'scripts\build-windows-terminal-control.ps1'
+    publish_app
+    ;;
+
+  status)
+    git status --short --branch
+    cat <<'EOF'
+
+Important paths:
+  Windows publish: %USERPROFILE%\workspace-cockpit-publish
+  App config:      %APPDATA%\WorkspaceCockpit\config.json
+  WT checkout:     %USERPROFILE%\gitrepo\microsoft-terminal
+  vcpkg:           %USERPROFILE%\gitrepo\vcpkg
+
+Useful commands:
+  ./dev hub
+  ./dev app
+  ./dev check
+EOF
+    ;;
+
+  *)
+    echo "Unknown command: $command" >&2
+    echo >&2
+    usage >&2
+    exit 2
+    ;;
+esac

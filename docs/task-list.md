@@ -43,6 +43,7 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Add `scripts/publish-windows-frontend.ps1`.
 - [x] Publish script verifies the native Windows Terminal files are present.
 - [x] Publish script emits a clear run command/path after success.
+- [x] Add repo-root `./dev` command wrapper for common build/run flows.
 - [x] Add Windows Terminal dependency bootstrap script or documented reproducible bootstrap flow.
 - [x] Move Windows Terminal compatibility edits into explicit patch files or deterministic script steps.
 - [x] Add script validation for required Visual Studio/UWP Build Tools components.

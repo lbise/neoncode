@@ -9,6 +9,12 @@ The app now tries to host the Windows Terminal renderer through a vendored WPF w
 Build the native Windows Terminal control first:
 
 ```bash
+./dev wt-build
+```
+
+Equivalent manual command:
+
+```bash
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\build-windows-terminal-control.ps1
 ```
 
@@ -25,22 +31,24 @@ The frontend project copies the native files into its own output directory durin
 Start the hub from WSL/Linux:
 
 ```bash
-cargo run -p workspace-hub
+./dev hub
 ```
 
-Then either run from the project path:
+Then publish and start the Windows app from another WSL terminal:
 
-```powershell
-dotnet run --project frontends\windows\WorkspaceCockpit.Windows\WorkspaceCockpit.Windows.csproj
+```bash
+./dev app
 ```
 
-or publish to a Windows-local folder and run the EXE from there:
+`./dev app` stops any running `WorkspaceCockpit.Windows` process, publishes to a Windows-local folder, verifies the native Windows Terminal files, and starts the EXE.
+
+Manual publish equivalent:
 
 ```bash
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows-frontend.ps1
 ```
 
-The script verifies that the published app includes the required Windows Terminal native files, then prints the exact run command. By default, the app is published to:
+By default, the app is published to:
 
 ```text
 %USERPROFILE%\workspace-cockpit-publish
