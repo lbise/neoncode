@@ -2,10 +2,23 @@ param(
     [string]$TerminalRepo = "$env:USERPROFILE\gitrepo\microsoft-terminal",
     [string]$VcpkgRoot = "$env:USERPROFILE\gitrepo\vcpkg",
     [string]$Configuration = "Debug",
-    [string]$Platform = "x64"
+    [string]$Platform = "x64",
+    [switch]$SkipBootstrap
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $SkipBootstrap) {
+    $bootstrap = Join-Path $PSScriptRoot "bootstrap-windows-terminal.ps1"
+    if (-not (Test-Path -LiteralPath $bootstrap)) {
+        throw "Bootstrap script not found at $bootstrap"
+    }
+
+    & $bootstrap -TerminalRepo $TerminalRepo -VcpkgRoot $VcpkgRoot
+    if ($LASTEXITCODE -ne 0) {
+        exit $LASTEXITCODE
+    }
+}
 
 $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
 if (-not (Test-Path $vswhere)) {
@@ -24,17 +37,17 @@ if (-not (Test-Path $msbuild)) {
 
 $proxyProject = Join-Path $TerminalRepo "src\host\proxy\Host.Proxy.vcxproj"
 if (-not (Test-Path $proxyProject)) {
-    throw "Host.Proxy.vcxproj not found at $proxyProject"
+    throw "Host.Proxy.vcxproj not found at $proxyProject. Run scripts\bootstrap-windows-terminal.ps1 first."
 }
 
 $project = Join-Path $TerminalRepo "src\cascadia\TerminalControl\dll\TerminalControl.vcxproj"
 if (-not (Test-Path $project)) {
-    throw "TerminalControl.vcxproj not found at $project"
+    throw "TerminalControl.vcxproj not found at $project. Run scripts\bootstrap-windows-terminal.ps1 first."
 }
 
 $vcpkgExe = Join-Path $VcpkgRoot "vcpkg.exe"
 if (-not (Test-Path $vcpkgExe)) {
-    throw "vcpkg.exe not found at $vcpkgExe. Clone microsoft/vcpkg and run bootstrap-vcpkg.bat."
+    throw "vcpkg.exe not found at $vcpkgExe. Run scripts\bootstrap-windows-terminal.ps1 first."
 }
 
 # Build from a normal Windows path, not \\wsl.localhost\... UNC paths. Some Windows
@@ -44,42 +57,6 @@ if (-not (Test-Path $vcpkgExe)) {
 # default SolutionDir points at the project directory. Windows Terminal's props expect
 # SolutionDir/OpenConsoleDir to be the repository root.
 $solutionDir = $TerminalRepo.TrimEnd('\') + '\'
-
-function Update-RegexIfNeeded {
-    param(
-        [Parameter(Mandatory=$true)][string]$Path,
-        [Parameter(Mandatory=$true)][string]$AlreadyPatchedPattern,
-        [Parameter(Mandatory=$true)][string]$FindPattern,
-        [Parameter(Mandatory=$true)][string]$Replacement
-    )
-
-    $content = Get-Content $Path -Raw
-    if ($content -match $AlreadyPatchedPattern) {
-        return
-    }
-
-    if (-not ($content -match $FindPattern)) {
-        throw "Could not patch $Path; expected source pattern was not found."
-    }
-
-    Set-Content -Path $Path -Value ([regex]::Replace($content, $FindPattern, $Replacement, 1)) -NoNewline
-    Write-Host "Patched $Path"
-}
-
-# v1.22.11141.0 trips newer MSVC warning-as-error checks for two unused parameters.
-# Keep these tiny local POC patches reproducible instead of relying on manual edits in
-# the external microsoft-terminal checkout.
-Update-RegexIfNeeded `
-    -Path (Join-Path $TerminalRepo "src\cascadia\TerminalControl\InteractivityAutomationPeer.cpp") `
-    -AlreadyPatchedPattern '\(void\)childElement;' `
-    -FindPattern '(?s)(RangeFromChild\(XamlAutomation::IRawElementProviderSimple childElement\)\s*\{\s*)(UIA::ITextRangeProvider\* returnVal;)' `
-    -Replacement '${1}        (void)childElement;`r`n        ${2}'
-
-Update-RegexIfNeeded `
-    -Path (Join-Path $TerminalRepo "src\cascadia\TerminalControl\TermControl.cpp") `
-    -AlreadyPatchedPattern '\(void\)args;' `
-    -FindPattern '(?s)(_contextMenuHandler\(IInspectable /\*sender\*/,\s*Control::ContextMenuRequestedEventArgs args\)\s*\{\s*)(// Position the menu where the pointer is\.)' `
-    -Replacement '${1}        (void)args;`r`n        ${2}'
 
 Write-Host "SolutionDir: $solutionDir"
 Write-Host "VcpkgRoot:   $VcpkgRoot"
@@ -115,4 +92,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $output = Join-Path $TerminalRepo "bin\$Platform\$Configuration\Microsoft.Terminal.Control\Microsoft.Terminal.Control.dll"
+if (-not (Test-Path -LiteralPath $output)) {
+    throw "Expected native output was not created: $output"
+}
+
+Write-Host "Build succeeded."
 Write-Host "Expected output: $output"

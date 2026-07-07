@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/microsoft/terminal.git",
+  "tag": "v1.22.11141.0",
+  "commit": "6ffde34897e99a57a56ec52c12e1bf2730ceed71",
+  "patchDirectory": "patches/windows-terminal/v1.22.11141.0",
+  "notes": "Pinned to the latest version currently proven to build with this project's VS 2022 Build Tools setup. Upgrade deliberately via the Windows Terminal dependency hardening process."
+}

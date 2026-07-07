@@ -12,7 +12,7 @@ poc/windows-terminal-embedded
 
 ```text
 Stage: Phase 1 — clean prototype foundation
-Next task: Add app-level error reporting for native terminal/backend/session failures
+Next task: install Git for Windows, then rerun Windows Terminal bootstrap/build end-to-end
 ```
 
 ## Phase 0 — preserve the spike
@@ -43,9 +43,9 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Add `scripts/publish-windows-frontend.ps1`.
 - [x] Publish script verifies the native Windows Terminal files are present.
 - [x] Publish script emits a clear run command/path after success.
-- [ ] Add Windows Terminal dependency bootstrap script or documented reproducible bootstrap flow.
-- [ ] Move Windows Terminal compatibility edits into explicit patch files or deterministic script steps.
-- [ ] Add script validation for required Visual Studio/UWP Build Tools components.
+- [x] Add Windows Terminal dependency bootstrap script or documented reproducible bootstrap flow.
+- [x] Move Windows Terminal compatibility edits into explicit patch files or deterministic script steps.
+- [x] Add script validation for required Visual Studio/UWP Build Tools components.
 - [x] Add a first app config file for local frontend settings.
 - [ ] Add app-level error reporting for native terminal load failure.
 - [ ] Add app-level error reporting for backend disconnect.
@@ -138,10 +138,10 @@ Goal: make the Windows Terminal dependency sustainable.
 
 - [ ] Re-evaluate Windows Terminal version after scripts are reproducible.
 - [ ] Try a newer stable Windows Terminal tag.
-- [ ] Keep Windows Terminal dependency pinned.
-- [ ] Store local patches in this repo.
-- [ ] Validate Visual Studio component requirements in scripts.
-- [ ] Avoid UNC paths for Windows-native builds.
+- [x] Keep Windows Terminal dependency pinned.
+- [x] Store local patches in this repo.
+- [x] Validate Visual Studio component requirements in scripts.
+- [x] Avoid UNC paths for Windows-native builds.
 - [ ] Decide whether vendoring the upstream WPF wrapper remains acceptable.
 - [ ] Evaluate maintaining a smaller first-party `HwndTerminal` wrapper.
 
@@ -160,57 +160,55 @@ Goal: make a product GUI decision using real data, not speculation.
 - [ ] For each candidate, verify dependency and packaging risk.
 - [ ] Decide final near-product GUI direction.
 
-## Next task detail — `scripts/publish-windows-frontend.ps1`
+## Next task detail — Windows Terminal dependency bootstrap/build
 
-This should be the first implementation task because it locks in the validated workflow and gives every future test a reliable launch path.
+This is the current foundation task because Windows Terminal is a core dependency of the project. The bootstrap/build flow should be reproducible before more frontend/session features are added.
 
-### Why this first
+### Why this now
 
-- The POC is already proven; now we need repeatability.
-- Manual publish commands are easy to mistype from WSL/PowerShell quoting.
-- Native Windows Terminal files must be present beside the app or the real renderer will not load.
-- Future tests should start from a known Windows-local publish directory, not from build artifacts under WSL/UNC paths.
+- The POC proved the renderer works; now the dependency must be repeatable.
+- Windows Terminal is large and sensitive to toolchain/path differences.
+- WSL Git over `/mnt/c` plus Windows Defender can stall or lock the dependency checkout.
+- The pinned version, patches, bootstrap, build, and publish flow must be explicit before adding more app features.
 
 ### Proposed behavior
 
-The script should:
+The dependency flow should:
 
-- accept `Configuration`, `ProjectPath`, and `OutputPath` parameters;
-- default to `Debug` configuration;
-- default output to `%USERPROFILE%\workspace-cockpit-publish`;
-- run `dotnet publish` for the Windows frontend;
-- verify `WorkspaceCockpit.Windows.exe` exists;
+- keep the Windows Terminal version pinned in `deps/windows-terminal.json`;
+- require Git for Windows for the Windows checkout;
+- verify required Visual Studio/UWP Build Tools components;
+- clone/check out the pinned Windows Terminal tag/commit;
+- apply repository-owned patch files;
+- clone/bootstrap vcpkg if needed;
+- build `Host.Proxy.vcxproj` before `TerminalControl.vcxproj`;
 - verify `Microsoft.Terminal.Control.dll` exists;
-- verify `Microsoft.Terminal.Control.pri` exists;
-- verify the `Microsoft.Terminal.Control` resource directory exists;
-- print a clear success summary;
-- print the exact command/path to run the published app;
-- fail loudly with actionable errors if prerequisites are missing.
+- document Defender/path/toolchain troubleshooting.
 
-### Suggested command
+### Suggested commands
 
 From WSL repo root:
 
 ```bash
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\bootstrap-windows-terminal.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\build-windows-terminal-control.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows-frontend.ps1
-```
-
-Optional custom output:
-
-```bash
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows-frontend.ps1 \
-  -OutputPath 'C:\Users\13lbise\workspace-cockpit-publish'
 ```
 
 ### Acceptance criteria
 
-- [x] Script works when launched from WSL using `powershell.exe`.
-- [x] Script works when launched from Windows PowerShell.
-- [x] Script publishes to a Windows-local path by default.
-- [x] Script verifies managed app executable exists.
-- [x] Script verifies native Windows Terminal runtime files exist.
-- [x] Script exits non-zero on failure.
+- [x] Bootstrap script exists.
+- [x] Windows Terminal version is pinned in `deps/windows-terminal.json`.
+- [x] Compatibility patch is stored in `patches/windows-terminal/...`.
+- [x] Bootstrap fails fast when Git for Windows is missing.
+- [x] Bootstrap validates Visual Studio/UWP Build Tools requirements.
+- [x] Build script runs bootstrap by default.
+- [x] Build script can skip bootstrap with `-SkipBootstrap`.
+- [x] Documentation explains required dependencies and Defender considerations.
+- [ ] Bootstrap succeeds after Git for Windows is installed.
+- [ ] Native control build succeeds through the full new bootstrap/build flow.
+- [x] Native control build succeeds with `scripts/build-windows-terminal-control.ps1 -SkipBootstrap` against the already-prepared checkout.
+- [x] Published frontend still includes native Windows Terminal files.
 - [x] `dotnet build` still passes.
 - [x] `cargo check` still passes.
 - [x] `cargo clippy --all-targets -- -D warnings` still passes.
-- [x] README or `frontends/windows/README.md` documents the script.
