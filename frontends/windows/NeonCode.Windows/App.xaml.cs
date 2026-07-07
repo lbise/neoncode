@@ -1,6 +1,6 @@
 using System.Windows;
 
-namespace WorkspaceCockpit.Windows;
+namespace NeonCode.Windows;
 
 public partial class App : Application
 {

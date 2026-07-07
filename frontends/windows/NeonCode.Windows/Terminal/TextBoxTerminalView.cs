@@ -2,7 +2,7 @@ using System.Text;
 using System.Windows.Controls;
 using System.Windows.Threading;
 
-namespace WorkspaceCockpit.Windows.Terminal;
+namespace NeonCode.Windows.Terminal;
 
 public sealed class TextBoxTerminalView : ITerminalView
 {

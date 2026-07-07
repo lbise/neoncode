@@ -1,4 +1,4 @@
-# Workspace Cockpit task list
+# NeonCode task list
 
 This is the working checklist for moving from the validated Windows Terminal embedding POC to a usable prototype and eventually a product.
 

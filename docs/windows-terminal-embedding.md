@@ -8,7 +8,7 @@ The validated architecture is:
 WPF frontend
   ⇄ TerminalView adapter
       ⇄ Microsoft.Terminal.Control.dll / HwndTerminal
-          ⇄ workspace-hub WebSocket
+          ⇄ neoncode-hub WebSocket
               ⇄ WSL/Linux PTY
 ```
 
@@ -129,14 +129,14 @@ Symptoms:
 - Defender popups while cloning/building;
 - long stalls while touching the Windows Terminal checkout;
 - publish/build failures due to locked files;
-- `WorkspaceCockpit.Windows.exe` locking publish output while running.
+- `NeonCode.Windows.exe` locking publish output while running.
 
 Do **not** disable Defender globally. If your machine policy allows it, consider project-specific exclusions for the dependency/output folders:
 
 ```powershell
 Add-MpPreference -ExclusionPath "$env:USERPROFILE\gitrepo\microsoft-terminal"
 Add-MpPreference -ExclusionPath "$env:USERPROFILE\gitrepo\vcpkg"
-Add-MpPreference -ExclusionPath "$env:USERPROFILE\workspace-cockpit-publish"
+Add-MpPreference -ExclusionPath "$env:USERPROFILE\neoncode-publish"
 ```
 
 On locked-down work machines, this may require administrator rights or IT approval. If exclusions are not allowed, prefer Git for Windows and normal Windows paths; avoid WSL Git over `/mnt/c`.
@@ -205,22 +205,22 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows
 Default publish output:
 
 ```text
-C:\Users\13lbise\workspace-cockpit-publish
+C:\Users\13lbise\neoncode-publish
 ```
 
 The publish script verifies that the app output contains:
 
 ```text
-WorkspaceCockpit.Windows.exe
+NeonCode.Windows.exe
 Microsoft.Terminal.Control.dll
 Microsoft.Terminal.Control.pri
 Microsoft.Terminal.Control\
 ```
 
-If the publish output is locked, close running `WorkspaceCockpit.Windows.exe` instances or stop them:
+If the publish output is locked, close running `NeonCode.Windows.exe` instances or stop them:
 
 ```powershell
-Get-Process WorkspaceCockpit.Windows -ErrorAction SilentlyContinue | Stop-Process
+Get-Process NeonCode.Windows -ErrorAction SilentlyContinue | Stop-Process
 ```
 
 ## Run the app
@@ -228,13 +228,13 @@ Get-Process WorkspaceCockpit.Windows -ErrorAction SilentlyContinue | Stop-Proces
 Start the Rust hub from WSL:
 
 ```bash
-cargo run -p workspace-hub
+cargo run -p neoncode-hub
 ```
 
 Run the published Windows app:
 
 ```powershell
-& "$env:USERPROFILE\workspace-cockpit-publish\WorkspaceCockpit.Windows.exe"
+& "$env:USERPROFILE\neoncode-publish\NeonCode.Windows.exe"
 ```
 
 Use endpoint:
@@ -260,7 +260,7 @@ C:\Users\13lbise\gitrepo\microsoft-terminal\src\cascadia\WpfTerminalControl
 into:
 
 ```text
-frontends/windows/WorkspaceCockpit.Windows/Vendor/WpfTerminalControl
+frontends/windows/NeonCode.Windows/Vendor/WpfTerminalControl
 ```
 
 Vendoring avoids restoring/building the upstream WPF wrapper project, which can be pulled into Windows Terminal's custom NuGet feed and fail in locked-down environments.
@@ -350,7 +350,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\bootstrap-windo
 Close running app windows or stop the process:
 
 ```powershell
-Get-Process WorkspaceCockpit.Windows -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process NeonCode.Windows -ErrorAction SilentlyContinue | Stop-Process -Force
 ```
 
 ### Native terminal fails to load
@@ -374,7 +374,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows
 Edit:
 
 ```text
-%APPDATA%\WorkspaceCockpit\config.json
+%APPDATA%\NeonCode\config.json
 ```
 
 Set `terminal.fontFace` to an installed font family such as:

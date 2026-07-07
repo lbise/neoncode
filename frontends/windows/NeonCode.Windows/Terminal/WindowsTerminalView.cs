@@ -2,10 +2,10 @@ using System.Text;
 using System.Windows;
 using System.Windows.Media;
 using Microsoft.Terminal.Wpf;
-using WorkspaceCockpit.Windows.Configuration;
+using NeonCode.Windows.Configuration;
 using WpfTerminalControl = Microsoft.Terminal.Wpf.TerminalControl;
 
-namespace WorkspaceCockpit.Windows.Terminal;
+namespace NeonCode.Windows.Terminal;
 
 public sealed class WindowsTerminalView : ITerminalView
 {

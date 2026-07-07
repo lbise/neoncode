@@ -1,7 +1,7 @@
 param(
     [string]$Configuration = "Debug",
     [string]$ProjectPath,
-    [string]$OutputPath = "$env:USERPROFILE\workspace-cockpit-publish",
+    [string]$OutputPath = "$env:USERPROFILE\neoncode-publish",
     [switch]$Clean
 )
 
@@ -45,7 +45,7 @@ function Assert-DirectoryExists {
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $ProjectPath) {
-    $ProjectPath = Join-Path $repoRoot "frontends\windows\WorkspaceCockpit.Windows\WorkspaceCockpit.Windows.csproj"
+    $ProjectPath = Join-Path $repoRoot "frontends\windows\NeonCode.Windows\NeonCode.Windows.csproj"
 }
 
 $project = Resolve-RequiredPath -Path $ProjectPath -Description "Windows frontend project"
@@ -61,7 +61,7 @@ if ($Clean -and (Test-Path -LiteralPath $OutputPath)) {
 
 New-Item -ItemType Directory -Force -Path $OutputPath | Out-Null
 
-Write-Host "Publishing Workspace Cockpit Windows frontend"
+Write-Host "Publishing NeonCode Windows frontend"
 Write-Host "Project:       $project"
 Write-Host "Configuration: $Configuration"
 Write-Host "Output:        $OutputPath"
@@ -79,7 +79,7 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-$appExe = Join-Path $OutputPath "WorkspaceCockpit.Windows.exe"
+$appExe = Join-Path $OutputPath "NeonCode.Windows.exe"
 $terminalDll = Join-Path $OutputPath "Microsoft.Terminal.Control.dll"
 $terminalPri = Join-Path $OutputPath "Microsoft.Terminal.Control.pri"
 $terminalResources = Join-Path $OutputPath "Microsoft.Terminal.Control"

@@ -14,3 +14,7 @@
 Thumbs.db
 .idea/
 .vscode/
+
+# Local agent/session artifacts
+session.jsonl
+pi-session-*.html

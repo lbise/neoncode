@@ -1,4 +1,4 @@
-namespace WorkspaceCockpit.Windows.Terminal;
+namespace NeonCode.Windows.Terminal;
 
 public interface ITerminalView
 {

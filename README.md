@@ -1,11 +1,11 @@
-# Workspace Cockpit Architecture Notes
+# NeonCode Architecture Notes
 
 ## Current prototype status
 
 The repository now contains the first proof-of-concept skeleton:
 
 ```text
-hub/                         Rust WSL/Linux workspace-hub POC
+hub/                         Rust WSL/Linux neoncode-hub POC
 frontends/windows/           WPF/.NET 8 Windows frontend POC shell
 docs/protocol.md             temporary WebSocket PTY protocol
 ```
@@ -31,7 +31,7 @@ Common commands:
 ```bash
 ./dev app          # stop running Windows app, publish frontend, start published app
 ./dev publish      # stop running Windows app, then publish frontend
-./dev hub          # run Rust workspace hub
+./dev hub          # run the Rust NeonCode hub
 ./dev check        # dotnet build + cargo fmt/check/clippy
 ./dev wt-build     # bootstrap/build Microsoft.Terminal.Control.dll
 ./dev full         # build Windows Terminal control, then publish app
@@ -119,13 +119,13 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows
 Default publish output:
 
 ```text
-C:\Users\13lbise\workspace-cockpit-publish
+C:\Users\13lbise\neoncode-publish
 ```
 
 The publish script verifies that the output contains:
 
 ```text
-WorkspaceCockpit.Windows.exe
+NeonCode.Windows.exe
 Microsoft.Terminal.Control.dll
 Microsoft.Terminal.Control.pri
 Microsoft.Terminal.Control\
@@ -142,7 +142,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows
 From the repo root in WSL:
 
 ```bash
-cargo run -p workspace-hub
+cargo run -p neoncode-hub
 ```
 
 The frontend expects the hub WebSocket endpoint:
@@ -156,7 +156,7 @@ ws://127.0.0.1:44777/ws
 From Windows PowerShell:
 
 ```powershell
-& "$env:USERPROFILE\workspace-cockpit-publish\WorkspaceCockpit.Windows.exe"
+& "$env:USERPROFILE\neoncode-publish\NeonCode.Windows.exe"
 ```
 
 In the app:
@@ -169,7 +169,7 @@ In the app:
 On first run, the app creates a local config file at:
 
 ```text
-%APPDATA%\WorkspaceCockpit\config.json
+%APPDATA%\NeonCode\config.json
 ```
 
 Edit `terminal.fontFace` there to use an installed Powerline/Nerd Font such as `FiraCode Nerd Font Mono`, then restart the app. If the configured font is not installed, the app reports a fallback in the status bar.
@@ -476,7 +476,7 @@ Rationale:
 The Windows GUI would start/connect to the WSL backend, for example:
 
 ```powershell
-wsl.exe -- workspace-hub serve
+wsl.exe -- neoncode-hub serve
 ```
 
 The GUI then communicates with it over localhost TCP/WebSocket/named pipe/stdio.
@@ -486,9 +486,9 @@ The GUI then communicates with it over localhost TCP/WebSocket/named pipe/stdio.
 On Linux and macOS, the same backend can run locally as a normal daemon/process.
 
 ```text
-Windows GUI ── localhost ── WSL workspace-hub
-Linux GUI   ── localhost ── local workspace-hub
-macOS GUI   ── localhost ── local workspace-hub
+Windows GUI ── localhost ── WSL neoncode-hub
+Linux GUI   ── localhost ── local neoncode-hub
+macOS GUI   ── localhost ── local neoncode-hub
 ```
 
 ---
@@ -512,15 +512,15 @@ The WSL backend helps with the **PTY/session side**, but the native GUI still ne
 ```text
 Windows:
   renderer: Windows Terminal control / HwndTerminal / Microsoft.Terminal.Control.dll
-  session backend: WSL workspace-hub
+  session backend: WSL neoncode-hub
 
 Linux:
   renderer: libghostty if viable, or VTE/fallback
-  session backend: local workspace-hub
+  session backend: local neoncode-hub
 
 macOS:
   renderer: libghostty if viable, or native/fallback
-  session backend: local workspace-hub
+  session backend: local neoncode-hub
 ```
 
 Terminal renderer should be treated as a pluggable adapter:
@@ -601,7 +601,7 @@ This maps very naturally to the desired architecture:
 WPF/Windows terminal control
   ⇄ ITerminalConnection implementation
       ⇄ localhost transport
-          ⇄ WSL workspace-hub
+          ⇄ WSL neoncode-hub
               ⇄ Linux PTY / ssh / tmux / command
 ```
 
@@ -668,7 +668,7 @@ Cons:
 Tmux should be made visually minimal, possibly using a dedicated config:
 
 ```bash
-tmux -f ~/.config/workspace-cockpit/tmux.conf attach -t session-name
+tmux -f ~/.config/neoncode/tmux.conf attach -t session-name
 ```
 
 With settings such as:
@@ -683,7 +683,7 @@ Long-term clean model:
 
 ```text
 GUI terminal tab
-  ⇄ local workspace-hub
+  ⇄ local neoncode-hub
       ⇄ SSH tunnel / transport
           ⇄ remote workspace daemon
               ⇄ persistent PTY session
@@ -809,7 +809,7 @@ Example:
 
 ```bash
 chromium \
-  --user-data-dir ~/.workspace-cockpit/browser-profiles/audio-fw \
+  --user-data-dir ~/.neoncode/browser-profiles/audio-fw \
   --new-window http://localhost:3000
 ```
 
@@ -884,9 +884,9 @@ Native GUI frontend
   ├── tabs/panes/layout/keybindings
   ├── terminal widgets
   ├── browser/X2Go launch controls
-  └── communicates with local workspace-hub
+  └── communicates with local neoncode-hub
 
-Local workspace-hub
+Local neoncode-hub
   ├── runs in WSL on Windows
   ├── runs locally on Linux/macOS
   ├── reads workspace config
@@ -970,7 +970,7 @@ Architecture:
 WPF/native app
   ⇄ terminal control
   ⇄ localhost transport
-  ⇄ WSL workspace-hub
+  ⇄ WSL neoncode-hub
   ⇄ forkpty bash
 ```
 
@@ -1032,7 +1032,7 @@ Questions:
 
 Fallback to investigate: VTE.
 
-### P1: workspace-hub minimal protocol
+### P1: neoncode-hub minimal protocol
 
 Goal: build a tiny backend that can create a PTY, stream output, accept input, and resize.
 
@@ -1119,7 +1119,7 @@ No advanced layout yet.
 
 - Native Linux GUI.
 - libghostty or VTE terminal backend.
-- Reuse same workspace-hub/session model.
+- Reuse same neoncode-hub/session model.
 
 ### Phase 6: deeper integrations
 
@@ -1145,7 +1145,7 @@ Terminal renderer:
   vendored Microsoft Terminal WpfTerminalControl or HwndTerminal
 
 Backend:
-  tiny WSL workspace-hub
+  tiny WSL neoncode-hub
 
 Transport:
   localhost TCP or WebSocket

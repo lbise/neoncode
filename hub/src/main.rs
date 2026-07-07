@@ -32,10 +32,12 @@ const DEFAULT_COLS: u16 = 80;
 async fn main() -> Result<()> {
     init_logging();
 
-    let bind = env::var("WORKSPACE_HUB_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_string());
+    let bind = env::var("NEONCODE_HUB_BIND")
+        .or_else(|_| env::var("WORKSPACE_HUB_BIND"))
+        .unwrap_or_else(|_| DEFAULT_BIND.to_string());
     let addr: SocketAddr = bind
         .parse()
-        .with_context(|| format!("invalid WORKSPACE_HUB_BIND address: {bind}"))?;
+        .with_context(|| format!("invalid NEONCODE_HUB_BIND address: {bind}"))?;
 
     let app = Router::new()
         .route("/health", get(health))
@@ -44,7 +46,7 @@ async fn main() -> Result<()> {
         .layer(TraceLayer::new_for_http());
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    info!(%addr, "workspace-hub listening");
+    info!(%addr, "neoncode-hub listening");
 
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())

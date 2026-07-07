@@ -7,10 +7,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using WorkspaceCockpit.Windows.Configuration;
-using WorkspaceCockpit.Windows.Terminal;
+using NeonCode.Windows.Configuration;
+using NeonCode.Windows.Terminal;
 
-namespace WorkspaceCockpit.Windows;
+namespace NeonCode.Windows;
 
 public partial class MainWindow : Window
 {

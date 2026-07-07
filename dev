@@ -6,7 +6,7 @@ cd "$ROOT_DIR"
 
 usage() {
   cat <<'EOF'
-Workspace Cockpit developer commands
+NeonCode developer commands
 
 Usage:
   ./dev <command>
@@ -14,7 +14,7 @@ Usage:
 Daily commands:
   ./dev app          Stop running Windows app, publish frontend, start published app
   ./dev publish      Stop running Windows app, then publish frontend
-  ./dev hub          Run the Rust workspace hub
+  ./dev hub          Run the Rust NeonCode hub
   ./dev check        Run frontend build + Rust fmt/check/clippy
 
 Windows Terminal dependency commands:
@@ -24,7 +24,7 @@ Windows Terminal dependency commands:
 
 Utility commands:
   ./dev run-app      Start the already-published Windows app
-  ./dev stop-app     Stop running WorkspaceCockpit.Windows processes
+  ./dev stop-app     Stop running NeonCode.Windows processes
   ./dev status       Show git status and important output paths
   ./dev help         Show this help
 
@@ -46,7 +46,7 @@ ps_command() {
 }
 
 stop_app() {
-  ps_command '$p = Get-Process WorkspaceCockpit.Windows -ErrorAction SilentlyContinue; if ($p) { $p | Stop-Process -Force }; exit 0'
+  ps_command '$p = Get-Process NeonCode.Windows -ErrorAction SilentlyContinue; if ($p) { $p | Stop-Process -Force }; exit 0'
 }
 
 publish_app() {
@@ -54,7 +54,7 @@ publish_app() {
 }
 
 run_app() {
-  ps_command 'Start-Process "$env:USERPROFILE\workspace-cockpit-publish\WorkspaceCockpit.Windows.exe"'
+  ps_command 'Start-Process "$env:USERPROFILE\neoncode-publish\NeonCode.Windows.exe"'
 }
 
 command="${1:-help}"
@@ -87,11 +87,11 @@ case "$command" in
     ;;
 
   hub)
-    cargo run -p workspace-hub
+    cargo run -p neoncode-hub
     ;;
 
   check)
-    ps_command 'dotnet build frontends\windows\WorkspaceCockpit.Windows\WorkspaceCockpit.Windows.csproj -v:minimal'
+    ps_command 'dotnet build frontends\windows\NeonCode.Windows\NeonCode.Windows.csproj -v:minimal'
     cargo fmt --check
     cargo check
     cargo clippy --all-targets -- -D warnings
@@ -115,8 +115,8 @@ case "$command" in
     cat <<'EOF'
 
 Important paths:
-  Windows publish: %USERPROFILE%\workspace-cockpit-publish
-  App config:      %APPDATA%\WorkspaceCockpit\config.json
+  Windows publish: %USERPROFILE%\neoncode-publish
+  App config:      %APPDATA%\NeonCode\config.json
   WT checkout:     %USERPROFILE%\gitrepo\microsoft-terminal
   vcpkg:           %USERPROFILE%\gitrepo\vcpkg
 

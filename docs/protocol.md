@@ -1,4 +1,4 @@
-# Workspace Hub POC Protocol
+# NeonCode Hub POC Protocol
 
 This is the temporary protocol for the first terminal/session proof of concept.
 It is intentionally simple and optimized for getting a native frontend talking to a WSL/Linux PTY quickly.
@@ -19,7 +19,7 @@ Default bind address:
 Override with:
 
 ```bash
-WORKSPACE_HUB_BIND=127.0.0.1:44777 cargo run -p workspace-hub
+NEONCODE_HUB_BIND=127.0.0.1:44777 cargo run -p neoncode-hub
 ```
 
 ## Framing
@@ -142,7 +142,7 @@ Fields:
 Start the hub:
 
 ```bash
-cargo run -p workspace-hub
+cargo run -p neoncode-hub
 ```
 
 In another shell, if `websocat` is available:

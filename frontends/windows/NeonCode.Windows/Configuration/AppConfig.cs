@@ -2,7 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace WorkspaceCockpit.Windows.Configuration;
+namespace NeonCode.Windows.Configuration;
 
 public sealed class AppConfig
 {
@@ -19,9 +19,15 @@ public sealed class AppConfig
 
     public static string ConfigDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "WorkspaceCockpit");
+        "NeonCode");
 
     public static string ConfigPath => Path.Combine(ConfigDirectory, "config.json");
+
+    private static string LegacyConfigDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "WorkspaceCockpit");
+
+    private static string LegacyConfigPath => Path.Combine(LegacyConfigDirectory, "config.json");
 
     public static AppConfig LoadOrCreateDefault()
     {
@@ -29,9 +35,16 @@ public sealed class AppConfig
 
         if (!File.Exists(ConfigPath))
         {
-            var defaultConfig = new AppConfig();
-            defaultConfig.Save();
-            return defaultConfig;
+            if (File.Exists(LegacyConfigPath))
+            {
+                File.Copy(LegacyConfigPath, ConfigPath, overwrite: false);
+            }
+            else
+            {
+                var defaultConfig = new AppConfig();
+                defaultConfig.Save();
+                return defaultConfig;
+            }
         }
 
         try

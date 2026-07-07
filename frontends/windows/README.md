@@ -1,6 +1,6 @@
 # Windows frontend POC
 
-This is a temporary WPF/.NET 8 shell for proving the Windows GUI to `workspace-hub` protocol.
+This is a temporary WPF/.NET 8 shell for proving the Windows GUI to `neoncode-hub` protocol.
 
 The app now tries to host the Windows Terminal renderer through a vendored WPF wrapper around `Microsoft.Terminal.Control.dll`. If the native control cannot load, it falls back to the original textbox terminal shim.
 
@@ -40,7 +40,7 @@ Then publish and start the Windows app from another WSL terminal:
 ./dev app
 ```
 
-`./dev app` stops any running `WorkspaceCockpit.Windows` process, publishes to a Windows-local folder, verifies the native Windows Terminal files, and starts the EXE. `./dev publish` does the same stop-and-publish step without launching the app.
+`./dev app` stops any running `NeonCode.Windows` process, publishes to a Windows-local folder, verifies the native Windows Terminal files, and starts the EXE. `./dev publish` does the same stop-and-publish step without launching the app.
 
 Manual publish equivalent:
 
@@ -51,7 +51,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows
 By default, the app is published to:
 
 ```text
-%USERPROFILE%\workspace-cockpit-publish
+%USERPROFILE%\neoncode-publish
 ```
 
 Publishing is preferred for testing the native Windows Terminal control because all managed and native runtime files are placed together on the Windows filesystem.
@@ -75,7 +75,7 @@ If the app falls back to the textbox renderer, use the bottom input box and pres
 On first run, the Windows app creates:
 
 ```text
-%APPDATA%\WorkspaceCockpit\config.json
+%APPDATA%\NeonCode\config.json
 ```
 
 Initial settings include terminal font, size, colors, cursor style, and the 16-color table. To use a Powerline/Nerd Font, set `fontFace` to an installed Windows font family name. On this machine, for example:

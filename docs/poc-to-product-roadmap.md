@@ -14,7 +14,7 @@ The POC proved the core path:
 Windows WPF app
   ⇄ embedded Windows Terminal renderer
   ⇄ WebSocket protocol
-  ⇄ Rust workspace-hub
+  ⇄ Rust neoncode-hub
   ⇄ Linux/WSL PTY
   ⇄ bash / tmux / Neovim / agents
 ```
