@@ -157,33 +157,42 @@ public partial class MainWindow : Window
             NativeWindow.SetParent(ownHwnd, options.ParentHwnd);
             NativeWindow.ShowWindow(ownHwnd, NativeWindow.SwRestore);
             FitIntoParent();
-            FocusTerminal();
         }
 
         terminalView.Element.InvalidateVisual();
         terminalView.Element.UpdateLayout();
-        ScheduleFocusNudges();
+        FocusTerminal();
     }
 
-    private void ScheduleFocusNudges()
+    private bool IsParentForeground()
     {
-        _ = Dispatcher.InvokeAsync(async () =>
+        if (options.ParentHwnd == 0)
         {
-            foreach (var delay in new[] { 0, 50, 150, 300 })
-            {
-                if (delay > 0)
-                {
-                    await Task.Delay(delay);
-                }
+            return true;
+        }
 
-                FocusTerminal();
-            }
-        }, DispatcherPriority.ApplicationIdle);
+        var foreground = NativeWindow.GetForegroundWindow();
+        if (foreground == 0)
+        {
+            return false;
+        }
+
+        if (foreground == options.ParentHwnd || foreground == ownHwnd)
+        {
+            return true;
+        }
+
+        return NativeWindow.GetAncestor(foreground, NativeWindow.GaRoot) == options.ParentHwnd;
     }
 
     private void ForceActivationFocus()
     {
         FitIntoParent();
+
+        if (!IsParentForeground())
+        {
+            return;
+        }
 
         if (ownHwnd != 0)
         {

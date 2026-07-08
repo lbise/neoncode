@@ -22,6 +22,7 @@ internal static partial class NativeWindow
     public const int RdwInvalidate = 0x0001;
     public const int RdwAllChildren = 0x0080;
     public const int RdwUpdateNow = 0x0100;
+    public const uint GaRoot = 2;
     public static readonly nint HwndTop = 0;
 
     [LibraryImport("user32.dll", SetLastError = true)]
@@ -63,6 +64,9 @@ internal static partial class NativeWindow
 
     [LibraryImport("user32.dll", SetLastError = true)]
     public static partial nint GetForegroundWindow();
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint GetAncestor(nint hwnd, uint flags);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     public static partial uint GetWindowThreadProcessId(nint hwnd, out uint processId);
