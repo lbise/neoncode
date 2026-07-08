@@ -51,7 +51,7 @@ function Invoke-Npm {
 function Stop-SpikeProcesses {
     Get-Process NeonCode.ElectronTerminalHost -ErrorAction SilentlyContinue | Stop-Process -Force
     Get-Process electron -ErrorAction SilentlyContinue | Where-Object {
-        $_.Path -like "*neoncode-electron-spike*"
+        -not $_.Path -or $_.Path -like "*neoncode-electron-spike*"
     } | Stop-Process -Force
 }
 

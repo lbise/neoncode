@@ -78,6 +78,16 @@ public sealed class WindowsTerminalView : ITerminalView
         {
             PasteClipboardText();
             e.Handled = true;
+            return;
+        }
+
+        if ((Keyboard.Modifiers & ModifierKeys.Alt) == ModifierKeys.Alt && e.Key == Key.Back)
+        {
+            // Alt+Backspace conventionally sends Meta+Backspace. Most terminals
+            // encode Meta as ESC prefix; readline/tmux interpret ESC DEL as
+            // backward-kill-word.
+            Input?.Invoke([0x1B, 0x7F]);
+            e.Handled = true;
         }
     }
 
