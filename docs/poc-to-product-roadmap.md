@@ -41,10 +41,10 @@ This means the project should move from spike mode to a deliberate prototype/pro
 
 ### GUI toolkit lessons
 
-- WPF works for the Windows-native terminal host.
-- Changing GUI stacks now would require revalidating native terminal hosting.
-- WPF should remain the near-term Windows prototype shell until there is a concrete reason to move.
-- Electron, Qt, WinUI 3, Avalonia, or other options can be reassessed later with the terminal/session model already proven.
+- WPF works for the Windows-native terminal host and remains the proven reference/fallback path.
+- The Electron native-terminal spike validated enough of the Windows Terminal hosting path to continue treating Electron as the likely polished product shell.
+- Electron successfully hosted two native terminal regions, with independent input, resize/snap behavior, Neovim/tmux, and clean native-host shutdown.
+- Remaining Electron/native-host risks are focused polish/hardening items: occasional focus flicker, rare taskbar-return focus race, long-session soak testing, multi-monitor/DPI, and a proper bounds/focus IPC or native window coordinator.
 
 ## Product direction
 
@@ -180,7 +180,7 @@ Work items:
 
 ### Phase 6: GUI toolkit reassessment
 
-Only reassess the GUI stack after the terminal/session model is real.
+The initial Electron reassessment is positive. Continue with Electron as the likely shell direction, but avoid heavy UI polish until the terminal/session model is real.
 
 Evaluation questions:
 
@@ -202,8 +202,9 @@ Candidate stacks:
 
 Current recommendation:
 
-- Continue with WPF for the Windows prototype because it is already proven.
-- Do not switch stacks until there is a working session/workspace model to compare against.
+- Treat Electron as the likely product shell direction after the successful native terminal embedding spike.
+- Keep WPF as the proven native Windows Terminal reference/fallback implementation.
+- Do not over-invest in polished shell UI until the shared session/workspace model is stronger.
 
 ## Near-term next tasks
 
@@ -211,13 +212,13 @@ The active checkbox tracker lives in [`docs/task-list.md`](task-list.md).
 
 Suggested immediate backlog:
 
-1. Add `scripts/publish-windows-frontend.ps1`.
-2. Add config loading for font/theme, starting with a simple app config file.
-3. Optionally import font/color settings from Windows Terminal `settings.json`.
-4. Replace the hardcoded single session with a small session list model.
-5. Add a second terminal tab to prove multiple renderer instances.
-6. Harden resize/input/copy/paste.
-7. Add attach/detach/reconnect protocol shape.
+1. Reorganize `neoncode-hub` around explicit session/protocol modules.
+2. Define protocol message structs/enums cleanly and keep `docs/protocol.md` synchronized.
+3. Replace hardcoded session assumptions with a small session model.
+4. Add attach/detach/reconnect protocol shape.
+5. Add session exit/error reporting.
+6. Add launch profile shape for local WSL shell, project shell, SSH, tmux attach/create, and custom commands.
+7. Continue deferred Electron validation: long-session soak, multi-monitor/DPI, and focus/flicker hardening.
 
 ## Definition of the next milestone
 

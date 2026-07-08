@@ -42,8 +42,10 @@ Observed so far:
 - Native Windows Terminal renderer appears inside the Electron window.
 - The spike now defaults to two side-by-side native terminal hosts to validate multi-region HWND layout. Set `NEONCODE_TERMINAL_COUNT=1` to return to the original single-terminal mode.
 - Two terminal hosts work independently in current testing, including separate shell input and clean native-host shutdown when Electron exits.
+- Resize and Windows snap/unsnap keep both terminal regions aligned in current testing.
 - Basic shell rendering works.
 - Neovim renders correctly.
+- Neovim in one pane while tmux runs in the other works in current testing.
 - tmux resize works.
 - Removing the default Electron menu fixed the initial header/gap issue enough for the spike.
 - Ctrl+Space did not reach tmux in either Electron or the WPF app; this is not Electron-specific. The shared terminal adapter now maps Ctrl+Space to NUL (`0x00`) explicitly.
@@ -53,6 +55,18 @@ Observed so far:
 - There may still be a rare taskbar-return refocus race where the Electron window returns but terminal input focus is not immediately restored. This is recorded as a deferred focus polish item rather than a current viability blocker unless it becomes frequent.
 - A slight terminal/focus flicker can still be visible during activation/restore/focus changes because the Electron shell and native child HWNDs repaint/focus on different timelines. The spike minimizes this with a solid terminal-colored placeholder and Win32 child clipping styles; further polish can use a deliberate loading/ready overlay or a native window coordinator.
 - Alt+Backspace still appears to be intercepted before it reaches the embedded terminal path and triggers a Windows chime. Windows Terminal itself uses this chord for window fullscreen behavior, so this is not currently a blocker.
+
+## Current conclusion
+
+The Electron spike is successful enough to continue treating Electron as the likely polished product shell, with a native Windows Terminal host/coordinator subsystem on Windows.
+
+The remaining known issues are deferred validation or polish items rather than current blockers:
+
+- occasional terminal/focus flicker during activation/focus changes;
+- rare taskbar-return refocus race if it becomes reproducible/frequent;
+- longer 30–60 minute session stability test;
+- multi-monitor/mixed-DPI test when hardware is available;
+- replacing split-column command-line geometry with explicit Electron-to-native-host bounds/focus IPC.
 
 ## Current important limitation
 
@@ -227,6 +241,8 @@ Focus/windowing improvements:
 - Replace timer polling with explicit bounds/focus messages from Electron to the native host.
 - Investigate whether a native Node addon or small Win32 coordinator process should own HWND parenting, positioning, activation, and DPI handling.
 - Test multi-monitor and mixed-DPI behavior.
+- Run a longer 30–60 minute two-terminal session with nvim/tmux when convenient.
+- Test multi-monitor and mixed-DPI behavior when hardware is available.
 - Continue testing the two-terminal mode for less-common z-order, focus, resize, DPI, and visual polish issues.
 - Extend the native host protocol so Electron owns explicit bounds/focus/close messages instead of split-column command-line options.
 - Investigate terminal/focus flicker with a proper native window coordinator if it remains visually distracting.

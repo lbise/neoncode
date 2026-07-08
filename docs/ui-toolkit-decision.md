@@ -5,11 +5,11 @@
 Current decision:
 
 ```text
-Use WPF for the Windows prototype shell for now.
-Before building substantial UI/layout features, run a focused Electron spike to test whether Electron can host the real Windows Terminal renderer cleanly.
+Electron is viable enough to continue as the likely polished product shell.
+Keep WPF as the proven Windows Terminal host/reference implementation while building UI-independent session/protocol foundations.
 ```
 
-This is not a final product GUI commitment. It is a staged decision based on what has already been proven.
+This is not a final product GUI commitment, but the focused Electron spike has answered the biggest native-terminal embedding risk positively enough to continue.
 
 ## Context
 
@@ -104,7 +104,15 @@ WinUI 3 is not the next step. It is only worth reconsidering if NeonCode deliber
 
 ### Current role
 
-Electron is the leading candidate for a polished cross-platform product shell, pending a focused native terminal embedding spike.
+Electron is now the leading candidate for a polished cross-platform product shell. The focused native-terminal spike validated real Windows Terminal rendering, Neovim/tmux, resize/snap, two side-by-side native terminal regions, and clean native-host shutdown.
+
+Known remaining Electron/native-host work is polish and hardening:
+
+- occasional terminal/focus flicker;
+- rare taskbar-return refocus race if it becomes reproducible/frequent;
+- longer session soak testing;
+- multi-monitor/mixed-DPI testing;
+- replacing split-column command-line geometry with explicit Electron-to-native-host bounds/focus IPC or a native window coordinator.
 
 ## Duplicate work concern
 
@@ -137,17 +145,31 @@ Therefore, the project should avoid major WPF UI investment until the Electron e
 
 ## Decision
 
-Use WPF for the immediate Windows prototype because it is proven, but do not build a large WPF-specific product UI yet.
+Use Electron as the likely product shell direction, but do not immediately build a large polished UI. First build the UI-independent foundations that either Electron or WPF would need: session model, protocol cleanup, launch profiles, attach/detach/reconnect, and terminal lifecycle semantics.
 
-Before implementing substantial layout/workspace UI, run an Electron spike that answers one narrow question:
+Keep WPF as the proven Windows-native reference host and fallback path.
 
-```text
-Can Electron host the real Windows Terminal renderer well enough for NeonCode?
-```
+## Electron spike result
 
-## Electron spike scope
+The spike succeeded enough to proceed with Electron as the likely shell direction.
 
-The spike should be intentionally small.
+Validated:
+
+- Electron app starts from a Windows-local staged folder.
+- Real Windows Terminal renderer is hosted under the Electron shell.
+- Bash, Neovim, tmux, paste, Ctrl+Space, resize, snap/unsnap, and two native terminal regions work in current testing.
+- Closing Electron cleans up native host processes.
+
+Deferred:
+
+- long-session stability testing;
+- multi-monitor/mixed-DPI testing;
+- rare focus race/flicker polish;
+- proper native host bounds/focus IPC/coordinator.
+
+## Original Electron spike scope
+
+The spike was intentionally small.
 
 Required behavior:
 

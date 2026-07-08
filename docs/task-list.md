@@ -11,8 +11,8 @@ poc/windows-terminal-embedded
 ## Current stage
 
 ```text
-Stage: Phase 6 — Electron native terminal embedding spike evaluation
-Next task: continue Electron spike with longer lifecycle/stability, DPI/multi-monitor, and pass/fail conclusion
+Stage: Phase 1/3 — shared session/protocol foundation
+Next task: reorganize the Rust hub around explicit protocol and session modules
 ```
 
 ## Phase 0 — preserve the spike
@@ -159,7 +159,7 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Install/verify Windows Node/npm for the Electron spike.
 - [x] Add Windows-local publish flow for Electron spike.
 - [x] Run focused Electron native Windows Terminal embedding spike.
-- [ ] Document Electron spike pass/fail conclusion.
+- [x] Document Electron spike pass/fail conclusion.
 - [x] Fix/investigate Alt+Tab native terminal refocus in Electron spike.
 - [ ] Track intermittent taskbar-return refocus race in Electron spike; defer unless it becomes frequent/product-blocking.
 - [x] Record startup polish plan for Electron/native host attach.
@@ -170,11 +170,12 @@ Goal: make a product GUI decision using real data, not speculation.
 - [ ] Verify keyboard/input fidelity for the chosen product shell.
 - [ ] Verify copy/paste and keybinding behavior against Windows Terminal expectations.
 - [x] Validate Electron two-terminal split spike for independent input and process cleanup.
-- [ ] Continue Electron two-terminal split validation for resize, z-order, DPI, and visual polish.
+- [x] Validate Electron two-terminal split resize/snap and Neovim+tmux behavior.
+- [ ] Continue Electron two-terminal split validation for less-common z-order, DPI, long-session stability, and visual polish.
 - [ ] Track Electron/native terminal focus flicker as a deferred polish/coordinator issue.
 - [ ] Verify docking/tabs/layout support for the chosen product shell.
 - [ ] Verify dependency and packaging risk for the chosen product shell.
-- [ ] Decide final near-product GUI direction.
+- [x] Decide current near-product GUI direction: Electron is viable enough to continue as likely shell; WPF remains reference/fallback.
 
 ## Next task detail — Windows Terminal dependency bootstrap/build
 
