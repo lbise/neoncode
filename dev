@@ -24,9 +24,11 @@ Windows Terminal dependency commands:
 
 Spike commands:
   ./dev electron-spike-publish Publish Electron spike to %USERPROFILE%\neoncode-electron-spike
-  ./dev electron-spike         Start the published Electron spike
+  ./dev electron-spike         Start the published Electron spike with the WPF terminal host
+  ./dev electron-spike-direct  Start the published Electron spike with direct HwndTerminal coordinator
   ./dev electron-spike-install Install Electron spike npm dependencies in-place
-  ./dev electron-spike-native  Build the Electron spike native WPF terminal host
+  ./dev electron-spike-native  Build the Electron spike native WPF host and direct native coordinator
+  ./dev electron-spike-coordinator Build only the direct native HwndTerminal coordinator
 
 Utility commands:
   ./dev run-app      Start the already-published Windows app
@@ -128,8 +130,16 @@ case "$command" in
     ps_file 'scripts\electron-spike.ps1' -Command build-native
     ;;
 
+  electron-spike-coordinator)
+    ps_file 'scripts\electron-spike.ps1' -Command build-coordinator
+    ;;
+
   electron-spike)
     ps_file 'scripts\electron-spike.ps1' -Command start
+    ;;
+
+  electron-spike-direct)
+    ps_command '$env:NEONCODE_TERMINAL_HOST_KIND="coordinator"; & "scripts\electron-spike.ps1" -Command start'
     ;;
 
   status)

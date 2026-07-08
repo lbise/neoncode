@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("install", "start", "build-native", "publish")]
+    [ValidateSet("install", "start", "build-native", "build-coordinator", "publish")]
     [string]$Command = "start",
     [string]$OutputPath = "$env:USERPROFILE\neoncode-electron-spike",
     [switch]$Clean
@@ -48,8 +48,29 @@ function Invoke-Npm {
     }
 }
 
+function Resolve-MSBuild {
+    $msbuild = (Get-Command msbuild.exe -ErrorAction SilentlyContinue).Source
+    if ($msbuild) {
+        return $msbuild
+    }
+
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+    if (Test-Path -LiteralPath $vswhere -PathType Leaf) {
+        $installPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+        if ($installPath) {
+            $candidate = Join-Path $installPath "MSBuild\Current\Bin\MSBuild.exe"
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                return $candidate
+            }
+        }
+    }
+
+    throw "MSBuild.exe not found. Install Visual Studio Build Tools with MSBuild and C++ workload."
+}
+
 function Stop-SpikeProcesses {
     Get-Process NeonCode.ElectronTerminalHost -ErrorAction SilentlyContinue | Stop-Process -Force
+    Get-Process NeonCode.NativeTerminalCoordinator -ErrorAction SilentlyContinue | Stop-Process -Force
     # Spike-only helper: stop Electron aggressively so publish can replace
     # electron.exe/node_modules even when process metadata is restricted by IT
     # policy and Path is unavailable.
@@ -76,13 +97,30 @@ function Copy-SpikeElectronFiles {
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $sourceElectronDir = (Resolve-Path -LiteralPath (Join-Path $repoRoot "spikes\electron-native-terminal\electron")).ProviderPath
 $nativeProject = (Resolve-Path -LiteralPath (Join-Path $repoRoot "spikes\electron-native-terminal\native\NeonCode.ElectronTerminalHost\NeonCode.ElectronTerminalHost.csproj")).ProviderPath
+$nativeCoordinatorProject = (Resolve-Path -LiteralPath (Join-Path $repoRoot "spikes\electron-native-terminal\native\NeonCode.NativeTerminalCoordinator\NeonCode.NativeTerminalCoordinator.vcxproj")).ProviderPath
+$nativeCoordinatorDir = Split-Path -Parent $nativeCoordinatorProject
+$nativeCoordinatorExe = Join-Path $nativeCoordinatorDir "bin\x64\Debug\NeonCode.NativeTerminalCoordinator.exe"
 $publishedElectronDir = Join-Path $OutputPath "electron"
 $publishedNativeHostDir = Join-Path $OutputPath "native-host"
 
 switch ($Command) {
     "build-native" {
-        Write-Host "Building Electron spike native host"
+        Write-Host "Building Electron spike WPF native host"
         & dotnet build $nativeProject -v:minimal
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+
+        Write-Host "Building Electron spike direct native coordinator"
+        $msbuild = Resolve-MSBuild
+        & $msbuild $nativeCoordinatorProject /p:Configuration=Debug /p:Platform=x64 /m /v:minimal
+        exit $LASTEXITCODE
+    }
+
+    "build-coordinator" {
+        Write-Host "Building Electron spike direct native coordinator"
+        $msbuild = Resolve-MSBuild
+        & $msbuild $nativeCoordinatorProject /p:Configuration=Debug /p:Platform=x64 /m /v:minimal
         exit $LASTEXITCODE
     }
 
@@ -100,11 +138,20 @@ switch ($Command) {
 
         New-Item -ItemType Directory -Force -Path $OutputPath | Out-Null
 
-        Write-Host "Publishing native terminal host to: $publishedNativeHostDir"
+        Write-Host "Publishing WPF native terminal host to: $publishedNativeHostDir"
         & dotnet publish $nativeProject -c Debug -o $publishedNativeHostDir -v:minimal
         if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
         }
+
+        Write-Host "Building direct native terminal coordinator"
+        $msbuild = Resolve-MSBuild
+        & $msbuild $nativeCoordinatorProject /p:Configuration=Debug /p:Platform=x64 /m /v:minimal
+        if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+        }
+
+        Copy-Item -LiteralPath $nativeCoordinatorExe -Destination (Join-Path $publishedNativeHostDir "NeonCode.NativeTerminalCoordinator.exe") -Force
 
         Write-Host "Copying Electron shell to: $publishedElectronDir"
         Copy-SpikeElectronFiles -SourceDirectory $sourceElectronDir -DestinationDirectory $publishedElectronDir
@@ -112,10 +159,11 @@ switch ($Command) {
         Invoke-Npm -WorkingDirectory $publishedElectronDir -Arguments "install"
 
         $hostExe = Join-Path $publishedNativeHostDir "NeonCode.ElectronTerminalHost.exe"
+        $coordinatorExe = Join-Path $publishedNativeHostDir "NeonCode.NativeTerminalCoordinator.exe"
         $packageJson = Join-Path $publishedElectronDir "package.json"
         $electronBin = Join-Path $publishedElectronDir "node_modules\electron\dist\electron.exe"
 
-        foreach ($required in @($hostExe, $packageJson, $electronBin)) {
+        foreach ($required in @($hostExe, $coordinatorExe, $packageJson, $electronBin)) {
             if (-not (Test-Path -LiteralPath $required)) {
                 throw "Published Electron spike file missing: $required"
             }

@@ -32,10 +32,31 @@ function hwndFromNativeWindowHandle(buffer) {
   return BigInt(buffer.readUInt32LE(0)).toString();
 }
 
+function terminalHostKind() {
+  return (process.env.NEONCODE_TERMINAL_HOST_KIND || 'wpf').toLowerCase();
+}
+
 function nativeHostExePath() {
-  const stagedHost = path.resolve(__dirname, '..', 'native-host', 'NeonCode.ElectronTerminalHost.exe');
+  const kind = terminalHostKind();
+  const executableName = kind === 'coordinator'
+    ? 'NeonCode.NativeTerminalCoordinator.exe'
+    : 'NeonCode.ElectronTerminalHost.exe';
+  const stagedHost = path.resolve(__dirname, '..', 'native-host', executableName);
   if (fs.existsSync(stagedHost)) {
     return stagedHost;
+  }
+
+  if (kind === 'coordinator') {
+    return path.resolve(
+      __dirname,
+      '..',
+      'native',
+      'NeonCode.NativeTerminalCoordinator',
+      'bin',
+      'x64',
+      'Debug',
+      'NeonCode.NativeTerminalCoordinator.exe',
+    );
   }
 
   return path.resolve(

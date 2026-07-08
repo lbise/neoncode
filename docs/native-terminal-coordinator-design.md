@@ -604,15 +604,31 @@ Current recommendation: **Option A for Windows native coordinator**, with the Ru
 
 ### Stage 2 — Minimal C++ coordinator POC
 
-Build a small Windows native process that:
+Status: scaffolded/built.
 
-- accepts `--parent-hwnd` and stdio JSON commands;
-- creates one `HwndTerminal` child via `CreateTerminal`;
-- accepts `set_bounds`;
-- accepts `focus_terminal`;
-- registers write callback and logs input text;
-- accepts `terminal_output` test text and calls `TerminalSendOutput`;
-- destroys terminal cleanly.
+Implemented in:
+
+```text
+spikes/electron-native-terminal/native/NeonCode.NativeTerminalCoordinator
+```
+
+Current behavior:
+
+- accepts `--parent-hwnd` and split-column geometry arguments;
+- loads `Microsoft.Terminal.Control.dll` dynamically;
+- creates an `HwndTerminal` child via `CreateTerminal`;
+- subclasses the terminal HWND to route key/char messages to `TerminalSendKeyEvent` / `TerminalSendCharEvent`;
+- registers the write callback and locally echoes input through `TerminalSendOutput`;
+- polls parent bounds and calls `TerminalTriggerResize`;
+- supports stdin `focus`/`blur` commands;
+- destroys terminal cleanly on process exit.
+
+Not implemented yet:
+
+- JSON IPC envelope;
+- hub/WebSocket/PTTY integration;
+- real session start/input/output/resize;
+- production focus/layout protocol.
 
 No hub connection yet.
 

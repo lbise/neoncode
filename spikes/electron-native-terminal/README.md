@@ -20,13 +20,21 @@ Electron BrowserWindow
                      ⇄ WSL/Linux PTY
 ```
 
-The native terminal host is a tiny WPF executable:
+The default native terminal host is a tiny WPF executable:
 
 ```text
 spikes/electron-native-terminal/native/NeonCode.ElectronTerminalHost
 ```
 
 It reuses the existing NeonCode terminal/config code and vendors the same Windows Terminal runtime files as the main WPF prototype.
+
+There is also a direct-native coordinator POC:
+
+```text
+spikes/electron-native-terminal/native/NeonCode.NativeTerminalCoordinator
+```
+
+It bypasses WPF and calls the `HwndTerminal` exports from `Microsoft.Terminal.Control.dll` directly. This mode currently proves direct child-HWND creation/rendering/input plumbing only; it intentionally echoes keyboard input locally and does not yet connect to `neoncode-hub`/PTY.
 
 The Electron shell lives in:
 
@@ -41,7 +49,8 @@ Observed so far:
 - Electron shell launches from a Windows-local staged folder.
 - Native Windows Terminal renderer appears inside the Electron window.
 - The spike now defaults to two side-by-side native terminal hosts to validate multi-region HWND layout. Set `NEONCODE_TERMINAL_COUNT=1` to return to the original single-terminal mode.
-- Two terminal hosts work independently in current testing, including separate shell input and clean native-host shutdown when Electron exits.
+- Two WPF terminal hosts work independently in current testing, including separate shell input and clean native-host shutdown when Electron exits.
+- A minimal direct-native `HwndTerminal` coordinator POC now builds/publishes and can be launched under Electron with `NEONCODE_TERMINAL_HOST_KIND=coordinator`. It renders through `Microsoft.Terminal.Control.dll` without WPF; hub/PTY integration is not wired yet.
 - Resize and Windows snap/unsnap keep both terminal regions aligned in current testing.
 - Basic shell rendering works.
 - Neovim renders correctly.
@@ -140,6 +149,7 @@ Default output:
 The publish step:
 
 - publishes the native WPF terminal host to `native-host`;
+- builds and copies the direct-native `HwndTerminal` coordinator to `native-host`;
 - copies the Electron shell to `electron`;
 - runs `npm.cmd install` in the Windows-local Electron folder;
 - verifies Electron and the native host exist.
@@ -157,6 +167,14 @@ Terminal 2, from WSL repo root:
 ```bash
 ./dev electron-spike
 ```
+
+Direct-native coordinator mode, from WSL repo root:
+
+```bash
+./dev electron-spike-direct
+```
+
+The direct-native mode should show the `HwndTerminal` renderer and locally echo typed input. It is not expected to start bash yet.
 
 Manual Windows PowerShell equivalent:
 

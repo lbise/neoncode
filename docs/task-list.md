@@ -166,7 +166,9 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Record Electron/native terminal host architecture options.
 - [x] Explore Windows Terminal app-layer source for paste/copy/keybindings/focus behavior to adapt.
 - [x] Sketch native Windows terminal coordinator API for Electron integration.
-- [ ] Build minimal direct-native `HwndTerminal` coordinator POC under Electron.
+- [x] Build minimal direct-native `HwndTerminal` coordinator POC under Electron.
+- [ ] Validate direct-native `HwndTerminal` coordinator visually under Electron.
+- [ ] Add hub/WebSocket/PTTY bridge to direct-native coordinator if visual POC passes.
 - [ ] Reassess WPF after Electron spike.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.
 - [ ] Verify native terminal hosting feasibility for the chosen product shell.
