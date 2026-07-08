@@ -52,6 +52,7 @@ Observed so far:
 - Two WPF terminal hosts work independently in current testing, including separate shell input and clean native-host shutdown when Electron exits.
 - A minimal direct-native `HwndTerminal` coordinator POC now builds/publishes and can be launched under Electron with `NEONCODE_TERMINAL_HOST_KIND=coordinator`. It renders through `Microsoft.Terminal.Control.dll` without WPF; hub/PTY integration is not wired yet.
 - Direct-native coordinator visual validation succeeded: terminal regions appear under Electron. However, focus flicker and taskbar minimize/restore stress can still lose terminal focus, which suggests the remaining issue is a general Electron + child HWND activation/focus coordination problem rather than a WPF-specific problem.
+- Electron now sends explicit native-host line commands for `bounds`, `focus`, and `blur`; the direct coordinator applies those instead of relying solely on parent polling/split startup geometry. This needs stress validation.
 - Resize and Windows snap/unsnap keep both terminal regions aligned in current testing.
 - Basic shell rendering works.
 - Neovim renders correctly.
@@ -176,6 +177,16 @@ Direct-native coordinator mode, from WSL repo root:
 ```
 
 The direct-native mode should show the `HwndTerminal` renderer and locally echo typed input. It is not expected to start bash yet.
+
+The direct-native coordinator currently accepts these simple line commands from Electron:
+
+```text
+bounds <x> <y> <width> <height> <dpi>
+focus <reason>
+blur <reason>
+```
+
+These are a spike precursor to the planned JSON coordinator IPC.
 
 Manual Windows PowerShell equivalent:
 

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog } = require('electron');
+const { app, BrowserWindow, Menu, dialog, screen } = require('electron');
 
 // Corporate Windows environments can block Chromium's GPU helper process,
 // especially when Electron is launched from a WSL/UNC-backed path. This spike
@@ -118,6 +118,8 @@ function spawnTerminalHosts() {
       windowsHide: false,
     });
 
+    hostProcess.neoncodeIndex = index;
+    hostProcess.neoncodeCount = count;
     hostProcess.stdin.setDefaultEncoding('utf8');
     hostProcess.on('exit', (code, signal) => {
       terminalHostProcesses = terminalHostProcesses.filter((process) => process !== hostProcess);
@@ -127,7 +129,58 @@ function spawnTerminalHosts() {
     terminalHostProcesses.push(hostProcess);
   }
 
-  setTimeout(() => focusTerminalHost('spawn'), 250);
+  setTimeout(() => {
+    sendTerminalBoundsCommand();
+    focusTerminalHost('spawn');
+  }, 250);
+}
+
+function currentDpi() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return 96;
+  }
+
+  const display = screen.getDisplayMatching(mainWindow.getBounds());
+  return Math.max(1, Math.round((display.scaleFactor || 1) * 96));
+}
+
+function terminalBounds(index, count) {
+  const [contentWidth, contentHeight] = mainWindow.getContentSize();
+  const top = Math.max(0, Math.min(HEADER_HEIGHT, contentHeight - 1));
+  const height = Math.max(1, contentHeight - top);
+  const gapTotal = TERMINAL_GAP * Math.max(0, count - 1);
+  const availableWidth = Math.max(1, contentWidth - gapTotal);
+  const baseWidth = Math.max(1, Math.floor(availableWidth / count));
+  const left = index * (baseWidth + TERMINAL_GAP);
+  const width = index === count - 1 ? Math.max(1, contentWidth - left) : baseWidth;
+
+  return { x: left, y: top, width, height, dpi: currentDpi() };
+}
+
+function sendTerminalBoundsCommand() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  for (const process of liveTerminalHosts()) {
+    if (!process.stdin?.writable) {
+      continue;
+    }
+
+    const count = process.neoncodeCount || terminalHostProcesses.length || 1;
+    const index = process.neoncodeIndex || 0;
+    const bounds = terminalBounds(index, count);
+    process.stdin.write(`bounds ${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height} ${bounds.dpi}\n`);
+  }
+}
+
+function sendTerminalBlurCommand(reason) {
+  clearPendingFocusTimers();
+  for (const process of liveTerminalHosts()) {
+    if (process.stdin?.writable) {
+      process.stdin.write(`blur ${reason}\n`);
+    }
+  }
 }
 
 function sendTerminalFocusCommand(reason) {
@@ -161,6 +214,7 @@ function focusTerminalHost(reason, options = {}) {
         return;
       }
 
+      sendTerminalBoundsCommand();
       sendTerminalFocusCommand(`${reason}+${delay}`);
     }, delay);
     pendingFocusTimers.push(timer);
@@ -189,9 +243,14 @@ function createWindow() {
   });
 
   mainWindow.on('focus', () => focusTerminalHost('electron-focus'));
-  mainWindow.on('show', () => focusTerminalHost('electron-show'));
-  mainWindow.on('blur', clearPendingFocusTimers);
-  mainWindow.on('minimize', clearPendingFocusTimers);
+  mainWindow.on('show', () => {
+    sendTerminalBoundsCommand();
+    focusTerminalHost('electron-show');
+  });
+  mainWindow.on('resize', sendTerminalBoundsCommand);
+  mainWindow.on('move', sendTerminalBoundsCommand);
+  mainWindow.on('blur', () => sendTerminalBlurCommand('electron-blur'));
+  mainWindow.on('minimize', () => sendTerminalBlurCommand('electron-minimize'));
 
   mainWindow.on('restore', () => {
     // The native child HWND can need a nudge after parent minimize/restore.
@@ -199,6 +258,7 @@ function createWindow() {
     // fresh child-window layout event from the Electron side.
     if (liveTerminalHosts().length > 0) {
       mainWindow.setSize(...mainWindow.getSize());
+      sendTerminalBoundsCommand();
       focusTerminalHost('electron-restore', {
         delays: [50, 150, 300, 600],
         requireFocusedWindow: false,

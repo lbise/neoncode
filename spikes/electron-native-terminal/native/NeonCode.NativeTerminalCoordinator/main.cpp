@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cwchar>
+#include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -77,9 +78,21 @@ static WNDPROC g_originalTerminalProc{};
 static bool g_focused{};
 static wt::Size g_lastCellSize{};
 static int g_lastDpi{};
+static bool g_hasExplicitBounds{};
+static bool g_hasAppliedBounds{};
+static RECT g_explicitBounds{};
+static RECT g_appliedBounds{};
+static int g_explicitDpi{};
+
+struct BoundsCommand
+{
+    RECT bounds{};
+    int dpi{};
+};
 
 static constexpr UINT WM_NEONCODE_FOCUS_TERMINAL = WM_APP + 1;
 static constexpr UINT WM_NEONCODE_BLUR_TERMINAL = WM_APP + 2;
+static constexpr UINT WM_NEONCODE_SET_BOUNDS = WM_APP + 3;
 
 static std::wstring GetArgValue(std::wstring_view arg, std::wstring_view name)
 {
@@ -276,6 +289,49 @@ static RECT CalculateBounds(const RECT& parentClient)
     return RECT{ left, top, left + width, top + height };
 }
 
+static bool SameRect(const RECT& left, const RECT& right)
+{
+    return left.left == right.left &&
+           left.top == right.top &&
+           left.right == right.right &&
+           left.bottom == right.bottom;
+}
+
+static void ApplyBounds(const RECT& bounds, int dpi)
+{
+    if (!g_terminalHwnd || !g_terminal)
+    {
+        return;
+    }
+
+    const auto width = std::max(1L, bounds.right - bounds.left);
+    const auto height = std::max(1L, bounds.bottom - bounds.top);
+    const auto sizeChanged = !g_hasAppliedBounds || !SameRect(bounds, g_appliedBounds);
+
+    ShowWindow(g_terminalHwnd, SW_SHOW);
+    if (sizeChanged)
+    {
+        SetWindowPos(g_terminalHwnd, HWND_TOP, bounds.left, bounds.top, width, height, SWP_SHOWWINDOW);
+        g_appliedBounds = bounds;
+        g_hasAppliedBounds = true;
+    }
+
+    if (dpi > 0 && dpi != g_lastDpi)
+    {
+        g_lastDpi = dpi;
+        g_exports.TerminalDpiChanged(g_terminal, dpi);
+    }
+
+    if (sizeChanged)
+    {
+        wt::Size cellSize{};
+        if (SUCCEEDED(g_exports.TerminalTriggerResize(g_terminal, static_cast<wt::CoordType>(width), static_cast<wt::CoordType>(height), &cellSize)))
+        {
+            g_lastCellSize = cellSize;
+        }
+    }
+}
+
 static void RefreshBounds()
 {
     if (!g_options.parentHwnd || !g_terminalHwnd || !g_terminal)
@@ -295,6 +351,12 @@ static void RefreshBounds()
         return;
     }
 
+    if (g_hasExplicitBounds)
+    {
+        ApplyBounds(g_explicitBounds, g_explicitDpi > 0 ? g_explicitDpi : g_lastDpi);
+        return;
+    }
+
     RECT parentClient{};
     if (!GetClientRect(g_options.parentHwnd, &parentClient))
     {
@@ -302,24 +364,8 @@ static void RefreshBounds()
     }
 
     const auto bounds = CalculateBounds(parentClient);
-    const auto width = std::max(1L, bounds.right - bounds.left);
-    const auto height = std::max(1L, bounds.bottom - bounds.top);
-
-    ShowWindow(g_terminalHwnd, SW_SHOW);
-    SetWindowPos(g_terminalHwnd, HWND_TOP, bounds.left, bounds.top, width, height, SWP_SHOWWINDOW);
-
     const auto dpi = static_cast<int>(GetDpiForWindow(g_options.parentHwnd));
-    if (dpi != g_lastDpi)
-    {
-        g_lastDpi = dpi;
-        g_exports.TerminalDpiChanged(g_terminal, dpi);
-    }
-
-    wt::Size cellSize{};
-    if (SUCCEEDED(g_exports.TerminalTriggerResize(g_terminal, static_cast<wt::CoordType>(width), static_cast<wt::CoordType>(height), &cellSize)))
-    {
-        g_lastCellSize = cellSize;
-    }
+    ApplyBounds(bounds, dpi);
 }
 
 static bool IsParentForeground()
@@ -390,7 +436,25 @@ static DWORD WINAPI ControlPipeThread(void*)
                 line.pop_back();
             }
 
-            if (line.rfind("focus", 0) == 0 && g_terminalHwnd)
+            if (line.rfind("bounds", 0) == 0 && g_terminalHwnd)
+            {
+                std::istringstream stream{ line };
+                std::string command;
+                long x = 0;
+                long y = 0;
+                long width = 0;
+                long height = 0;
+                int dpi = 96;
+                if (stream >> command >> x >> y >> width >> height >> dpi)
+                {
+                    const auto bounds = new BoundsCommand{
+                        RECT{ x, y, x + std::max(1L, width), y + std::max(1L, height) },
+                        dpi,
+                    };
+                    PostMessageW(g_terminalHwnd, WM_NEONCODE_SET_BOUNDS, 0, reinterpret_cast<LPARAM>(bounds));
+                }
+            }
+            else if (line.rfind("focus", 0) == 0 && g_terminalHwnd)
             {
                 PostMessageW(g_terminalHwnd, WM_NEONCODE_FOCUS_TERMINAL, 0, 0);
             }
@@ -439,6 +503,17 @@ static LRESULT CALLBACK TerminalSubclassProc(HWND hwnd, UINT message, WPARAM wPa
 
     case WM_NEONCODE_BLUR_TERMINAL:
         BlurTerminal();
+        return 0;
+
+    case WM_NEONCODE_SET_BOUNDS:
+        if (lParam)
+        {
+            const std::unique_ptr<BoundsCommand> command{ reinterpret_cast<BoundsCommand*>(lParam) };
+            g_explicitBounds = command->bounds;
+            g_explicitDpi = command->dpi;
+            g_hasExplicitBounds = true;
+            ApplyBounds(g_explicitBounds, g_explicitDpi);
+        }
         return 0;
 
     case WM_TIMER:
