@@ -1,5 +1,6 @@
 using System.Text;
 using System.Windows;
+using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Terminal.Wpf;
 using NeonCode.Windows.Configuration;
@@ -26,6 +27,7 @@ public sealed class WindowsTerminalView : ITerminalView
             Focusable = true,
         };
 
+        control.PreviewKeyDown += Control_PreviewKeyDown;
         control.Loaded += (_, _) => ApplyTheme();
     }
 
@@ -57,6 +59,18 @@ public sealed class WindowsTerminalView : ITerminalView
     private void OnInput(string data)
     {
         Input?.Invoke(Encoding.UTF8.GetBytes(data));
+    }
+
+    private void Control_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && e.Key == Key.Space)
+        {
+            // Ctrl+Space conventionally sends NUL (0x00). The embedded Windows
+            // Terminal control does not currently emit this chord for us, which
+            // breaks tmux users who use Ctrl+Space as prefix.
+            Input?.Invoke([0]);
+            e.Handled = true;
+        }
     }
 
     private void OnResize(uint rows, uint columns)

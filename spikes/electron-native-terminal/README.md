@@ -34,6 +34,19 @@ The Electron shell lives in:
 spikes/electron-native-terminal/electron
 ```
 
+## Current findings
+
+Observed so far:
+
+- Electron shell launches from a Windows-local staged folder.
+- Native Windows Terminal renderer appears inside the Electron window.
+- Basic shell rendering works.
+- Neovim renders correctly.
+- tmux resize works.
+- Removing the default Electron menu fixed the initial header/gap issue enough for the spike.
+- Ctrl+Space did not reach tmux in either Electron or the WPF app; this is not Electron-specific. The shared terminal adapter now maps Ctrl+Space to NUL (`0x00`) explicitly for retesting.
+- Minimize/restore can freeze the native terminal region. The spike now tries stronger restore/redraw/focus nudges, but this remains a key risk to validate.
+
 ## Current important limitation
 
 Electron gives us a native HWND for the whole `BrowserWindow`, not for an arbitrary DOM element.

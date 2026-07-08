@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     private ClientWebSocket? socket;
     private CancellationTokenSource? receiveCts;
     private nint ownHwnd;
+    private bool parentWasMinimized;
     private bool started;
 
     public MainWindow(HostOptions options)
@@ -57,7 +58,7 @@ public partial class MainWindow : Window
         {
             Interval = TimeSpan.FromMilliseconds(100),
         };
-        embedTimer.Tick += (_, _) => FitIntoParent();
+        embedTimer.Tick += (_, _) => PollParentWindow();
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
@@ -85,6 +86,27 @@ public partial class MainWindow : Window
         embedTimer.Start();
     }
 
+    private void PollParentWindow()
+    {
+        if (options.ParentHwnd == 0 || ownHwnd == 0)
+        {
+            return;
+        }
+
+        var parentIsMinimized = NativeWindow.IsIconic(options.ParentHwnd);
+        if (parentWasMinimized && !parentIsMinimized)
+        {
+            ForceRestoreRefresh();
+        }
+
+        parentWasMinimized = parentIsMinimized;
+
+        if (!parentIsMinimized)
+        {
+            FitIntoParent();
+        }
+    }
+
     private void FitIntoParent()
     {
         if (options.ParentHwnd == 0 || ownHwnd == 0)
@@ -99,7 +121,22 @@ public partial class MainWindow : Window
 
         var top = Math.Clamp(options.TopOffset, 0, Math.Max(0, rect.Height - 1));
         NativeWindow.ShowWindow(ownHwnd, NativeWindow.SwShow);
-        NativeWindow.MoveWindow(ownHwnd, 0, top, Math.Max(1, rect.Width), Math.Max(1, rect.Height - top), repaint: true);
+        NativeWindow.SetWindowPos(ownHwnd, NativeWindow.HwndTop, 0, top, Math.Max(1, rect.Width), Math.Max(1, rect.Height - top), NativeWindow.SwpShowWindow);
+        NativeWindow.RedrawWindow(ownHwnd, 0, 0, NativeWindow.RdwInvalidate | NativeWindow.RdwAllChildren | NativeWindow.RdwUpdateNow);
+    }
+
+    private void ForceRestoreRefresh()
+    {
+        if (options.ParentHwnd != 0 && ownHwnd != 0)
+        {
+            NativeWindow.SetParent(ownHwnd, options.ParentHwnd);
+            NativeWindow.ShowWindow(ownHwnd, NativeWindow.SwShownormal);
+            FitIntoParent();
+            FocusTerminal();
+        }
+
+        terminalView.Element.InvalidateVisual();
+        terminalView.Element.UpdateLayout();
     }
 
     private void FocusTerminal()

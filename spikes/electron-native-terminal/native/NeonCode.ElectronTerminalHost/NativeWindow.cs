@@ -15,6 +15,13 @@ internal static partial class NativeWindow
     public const long WsMaximizeBox = 0x00010000L;
     public const int SwShownormal = 1;
     public const int SwShow = 5;
+    public const int SwpNoSize = 0x0001;
+    public const int SwpNoMove = 0x0002;
+    public const int SwpShowWindow = 0x0040;
+    public const int RdwInvalidate = 0x0001;
+    public const int RdwAllChildren = 0x0080;
+    public const int RdwUpdateNow = 0x0100;
+    public static readonly nint HwndTop = 0;
 
     [LibraryImport("user32.dll", SetLastError = true)]
     public static partial nint SetParent(nint childHwnd, nint parentHwnd);
@@ -33,6 +40,18 @@ internal static partial class NativeWindow
 
     [LibraryImport("user32.dll", SetLastError = true)]
     public static partial nint SetFocus(nint hwnd);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsIconic(nint hwnd);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool SetWindowPos(nint hwnd, nint hwndInsertAfter, int x, int y, int width, int height, int flags);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool RedrawWindow(nint hwnd, nint updateRect, nint updateRegion, int flags);
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
     public static extern nint GetWindowLongPtr(nint hwnd, int index);
