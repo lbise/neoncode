@@ -51,6 +51,7 @@ Observed so far:
 - The spike now defaults to two side-by-side native terminal hosts to validate multi-region HWND layout. Set `NEONCODE_TERMINAL_COUNT=1` to return to the original single-terminal mode.
 - Two WPF terminal hosts work independently in current testing, including separate shell input and clean native-host shutdown when Electron exits.
 - A minimal direct-native `HwndTerminal` coordinator POC now builds/publishes and can be launched under Electron with `NEONCODE_TERMINAL_HOST_KIND=coordinator`. It renders through `Microsoft.Terminal.Control.dll` without WPF; hub/PTY integration is not wired yet.
+- Direct-native coordinator visual validation succeeded: terminal regions appear under Electron. However, focus flicker and taskbar minimize/restore stress can still lose terminal focus, which suggests the remaining issue is a general Electron + child HWND activation/focus coordination problem rather than a WPF-specific problem.
 - Resize and Windows snap/unsnap keep both terminal regions aligned in current testing.
 - Basic shell rendering works.
 - Neovim renders correctly.
@@ -72,10 +73,10 @@ The Electron spike is successful enough to continue treating Electron as the lik
 The remaining known issues are deferred validation or polish items rather than current blockers:
 
 - occasional terminal/focus flicker during activation/focus changes;
-- rare taskbar-return refocus race if it becomes reproducible/frequent;
+- rare/stress-induced taskbar-return refocus race; direct-native testing suggests this is not WPF-specific;
 - longer 30–60 minute session stability test;
 - multi-monitor/mixed-DPI test when hardware is available;
-- replacing split-column command-line geometry with explicit Electron-to-native-host bounds/focus IPC.
+- replacing split-column command-line geometry and ad hoc focus nudges with explicit Electron-to-native-host bounds/focus IPC.
 
 ## Current important limitation
 

@@ -161,14 +161,15 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Run focused Electron native Windows Terminal embedding spike.
 - [x] Document Electron spike pass/fail conclusion.
 - [x] Fix/investigate Alt+Tab native terminal refocus in Electron spike.
-- [ ] Track intermittent taskbar-return refocus race in Electron spike; defer unless it becomes frequent/product-blocking.
+- [ ] Track intermittent taskbar-return refocus race in Electron spike; direct-native testing suggests this is a general child-HWND activation issue, not WPF-specific.
 - [x] Record startup polish plan for Electron/native host attach.
 - [x] Record Electron/native terminal host architecture options.
 - [x] Explore Windows Terminal app-layer source for paste/copy/keybindings/focus behavior to adapt.
 - [x] Sketch native Windows terminal coordinator API for Electron integration.
 - [x] Build minimal direct-native `HwndTerminal` coordinator POC under Electron.
-- [ ] Validate direct-native `HwndTerminal` coordinator visually under Electron.
-- [ ] Add hub/WebSocket/PTTY bridge to direct-native coordinator if visual POC passes.
+- [x] Validate direct-native `HwndTerminal` coordinator visually under Electron.
+- [ ] Add explicit bounds/focus IPC to direct-native coordinator before deeper hub integration.
+- [ ] Add hub/WebSocket/PTTY bridge to direct-native coordinator if direct-native focus/layout remains acceptable.
 - [ ] Reassess WPF after Electron spike.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.
 - [ ] Verify native terminal hosting feasibility for the chosen product shell.

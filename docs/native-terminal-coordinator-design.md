@@ -604,7 +604,7 @@ Current recommendation: **Option A for Windows native coordinator**, with the Ru
 
 ### Stage 2 — Minimal C++ coordinator POC
 
-Status: scaffolded/built.
+Status: scaffolded, built, and visually validated under Electron.
 
 Implemented in:
 
@@ -617,6 +617,7 @@ Current behavior:
 - accepts `--parent-hwnd` and split-column geometry arguments;
 - loads `Microsoft.Terminal.Control.dll` dynamically;
 - creates an `HwndTerminal` child via `CreateTerminal`;
+- terminal regions appear under Electron without WPF;
 - subclasses the terminal HWND to route key/char messages to `TerminalSendKeyEvent` / `TerminalSendCharEvent`;
 - registers the write callback and locally echoes input through `TerminalSendOutput`;
 - polls parent bounds and calls `TerminalTriggerResize`;
@@ -629,6 +630,8 @@ Not implemented yet:
 - hub/WebSocket/PTTY integration;
 - real session start/input/output/resize;
 - production focus/layout protocol.
+
+Direct-native validation also showed that focus flicker and taskbar minimize/restore stress focus loss can still happen without WPF. This means the next coordinator work should be explicit Electron-to-native focus/bounds/blur state coordination, not simply replacing WPF.
 
 No hub connection yet.
 
