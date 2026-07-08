@@ -50,7 +50,7 @@ ps_file() {
 }
 
 ps_command() {
-  powershell.exe -NoProfile -Command "$1"
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$1"
 }
 
 stop_app() {
@@ -139,7 +139,7 @@ case "$command" in
     ;;
 
   electron-spike-direct)
-    ps_command '$env:NEONCODE_TERMINAL_HOST_KIND="coordinator"; & "scripts\electron-spike.ps1" -Command start'
+    NEONCODE_TERMINAL_HOST_KIND=coordinator ps_file 'scripts\electron-spike.ps1' -Command start
     ;;
 
   status)
