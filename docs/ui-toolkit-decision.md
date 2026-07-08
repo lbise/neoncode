@@ -114,6 +114,8 @@ Known remaining Electron/native-host work is polish and hardening:
 - multi-monitor/mixed-DPI testing;
 - replacing split-column command-line geometry with explicit Electron-to-native-host bounds/focus IPC or a native window coordinator.
 
+See [`electron-native-terminal-architecture.md`](electron-native-terminal-architecture.md) for the native terminal host options. The preferred long-term Windows direction is a native coordinator that stays as close as practical to Windows Terminal's own app/control layering.
+
 ## Duplicate work concern
 
 There is a real risk of duplicate work if we build too much WPF-specific UI before deciding whether Electron can host the terminal.
