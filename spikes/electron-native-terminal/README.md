@@ -13,7 +13,7 @@ This spike intentionally does **not** test polished UI, tabs, settings, packagin
 ```text
 Electron BrowserWindow
   ├─ web header / shell UI
-  └─ child native WPF window, reparented with SetParent
+  └─ one or more child native WPF windows, reparented with SetParent
        └─ Windows Terminal WPF wrapper
             └─ Microsoft.Terminal.Control.dll
                  ⇄ neoncode-hub WebSocket
@@ -40,6 +40,7 @@ Observed so far:
 
 - Electron shell launches from a Windows-local staged folder.
 - Native Windows Terminal renderer appears inside the Electron window.
+- The spike now defaults to two side-by-side native terminal hosts to validate multi-region HWND layout. Set `NEONCODE_TERMINAL_COUNT=1` to return to the original single-terminal mode.
 - Basic shell rendering works.
 - Neovim renders correctly.
 - tmux resize works.
@@ -153,9 +154,16 @@ Expected result:
 
 - Electron window opens;
 - a web header remains visible at the top;
-- the native Windows Terminal renderer appears below it;
-- bash starts through `neoncode-hub`;
-- typing in the terminal works.
+- two native Windows Terminal renderer regions appear below it by default;
+- each region starts its own bash session through `neoncode-hub`;
+- typing in each terminal works after clicking/focusing it.
+
+Optional single-terminal mode:
+
+```powershell
+$env:NEONCODE_TERMINAL_COUNT = '1'
+npm.cmd start
+```
 
 ## Validation commands
 
@@ -171,12 +179,14 @@ stty size
 
 Also test:
 
-- focus after clicking the header and then the terminal;
-- resizing the Electron window;
+- focus after clicking the header and then each terminal;
+- typing independently in both terminals;
+- resizing the Electron window and confirming both terminals resize;
+- tmux/nvim in one or both terminals;
 - copy/paste;
 - Ctrl+C / Ctrl+D;
 - Alt keys if possible;
-- closing the Electron window.
+- closing the Electron window and confirming both native host processes exit.
 
 ## Success criteria
 
@@ -216,7 +226,8 @@ Focus/windowing improvements:
 - Replace timer polling with explicit bounds/focus messages from Electron to the native host.
 - Investigate whether a native Node addon or small Win32 coordinator process should own HWND parenting, positioning, activation, and DPI handling.
 - Test multi-monitor and mixed-DPI behavior.
-- Test multiple native terminal regions in one Electron window.
+- Validate the new default two-terminal mode for z-order, focus, resize, cleanup, and visual polish.
+- Extend the native host protocol so Electron owns explicit bounds/focus/close messages instead of split-column command-line options.
 
 Terminal behavior improvements:
 

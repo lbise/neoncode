@@ -37,14 +37,17 @@ main {
   box-sizing: border-box;
   height: calc(100vh - 52px);
   display: grid;
-  place-items: center;
-  padding: 24px;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
   color: #3f3f46;
-  background: #0c0c0c;
+  background: #111827;
 }
 
 .terminal-placeholder {
-  max-width: 560px;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  background: #0c0c0c;
   text-align: center;
   line-height: 1.5;
 }

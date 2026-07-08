@@ -13,8 +13,6 @@ namespace NeonCode.ElectronTerminalHost;
 
 public partial class MainWindow : Window
 {
-    private const string SessionId = "electron-spike-shell";
-
     private readonly HostOptions options;
     private readonly JsonSerializerOptions jsonOptions = new()
     {
@@ -152,8 +150,17 @@ public partial class MainWindow : Window
         }
 
         var top = Math.Clamp(options.TopOffset, 0, Math.Max(0, rect.Height - 1));
+        var height = Math.Max(1, rect.Height - top);
+        var gapTotal = options.ColumnGap * Math.Max(0, options.ColumnCount - 1);
+        var availableWidth = Math.Max(1, rect.Width - gapTotal);
+        var baseWidth = Math.Max(1, availableWidth / options.ColumnCount);
+        var left = options.ColumnIndex * (baseWidth + options.ColumnGap);
+        var width = options.ColumnIndex == options.ColumnCount - 1
+            ? Math.Max(1, rect.Width - left)
+            : baseWidth;
+
         NativeWindow.ShowWindow(ownHwnd, NativeWindow.SwShow);
-        NativeWindow.SetWindowPos(ownHwnd, NativeWindow.HwndTop, 0, top, Math.Max(1, rect.Width), Math.Max(1, rect.Height - top), NativeWindow.SwpShowWindow);
+        NativeWindow.SetWindowPos(ownHwnd, NativeWindow.HwndTop, left, top, width, height, NativeWindow.SwpShowWindow);
         NativeWindow.RedrawWindow(ownHwnd, 0, 0, NativeWindow.RdwInvalidate | NativeWindow.RdwAllChildren | NativeWindow.RdwUpdateNow);
     }
 
@@ -261,7 +268,7 @@ public partial class MainWindow : Window
         await SendAsync(new
         {
             type = "start",
-            session_id = SessionId,
+            session_id = options.SessionId,
             command = options.Command,
             rows = 30,
             cols = 120,
@@ -280,7 +287,7 @@ public partial class MainWindow : Window
         await SendAsync(new
         {
             type = "input",
-            session_id = SessionId,
+            session_id = options.SessionId,
             data_b64 = Convert.ToBase64String(bytes),
         });
     }
@@ -295,7 +302,7 @@ public partial class MainWindow : Window
         await SendAsync(new
         {
             type = "resize",
-            session_id = SessionId,
+            session_id = options.SessionId,
             rows,
             cols = columns,
         });

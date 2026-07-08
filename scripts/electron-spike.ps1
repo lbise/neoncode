@@ -54,6 +54,7 @@ function Stop-SpikeProcesses {
     # electron.exe/node_modules even when process metadata is restricted by IT
     # policy and Path is unavailable.
     Get-Process electron -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Milliseconds 500
 }
 
 function Copy-SpikeElectronFiles {

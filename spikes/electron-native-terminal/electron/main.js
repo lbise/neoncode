@@ -13,9 +13,11 @@ const fs = require('node:fs');
 
 const HEADER_HEIGHT = 52;
 const DEFAULT_ENDPOINT = 'ws://127.0.0.1:44777/ws';
+const DEFAULT_TERMINAL_COUNT = 2;
+const TERMINAL_GAP = 8;
 
 let mainWindow;
-let terminalHostProcess;
+let terminalHostProcesses = [];
 let pendingFocusTimers = [];
 
 function hwndFromNativeWindowHandle(buffer) {
@@ -48,7 +50,23 @@ function nativeHostExePath() {
   );
 }
 
-function spawnTerminalHost() {
+function terminalCount() {
+  const parsed = Number.parseInt(process.env.NEONCODE_TERMINAL_COUNT || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_TERMINAL_COUNT;
+}
+
+function liveTerminalHosts() {
+  return terminalHostProcesses.filter((process) => process && !process.killed);
+}
+
+function killTerminalHosts() {
+  for (const process of liveTerminalHosts()) {
+    process.kill();
+  }
+  terminalHostProcesses = [];
+}
+
+function spawnTerminalHosts() {
   const hostExe = process.env.NEONCODE_TERMINAL_HOST_EXE || nativeHostExePath();
   if (!fs.existsSync(hostExe)) {
     dialog.showErrorBox(
@@ -58,34 +76,45 @@ function spawnTerminalHost() {
     return;
   }
 
+  const count = terminalCount();
   const hwnd = hwndFromNativeWindowHandle(mainWindow.getNativeWindowHandle());
-  const args = [
-    `--parent-hwnd=${hwnd}`,
-    `--top-offset=${HEADER_HEIGHT}`,
-    `--endpoint=${process.env.NEONCODE_HUB_ENDPOINT || DEFAULT_ENDPOINT}`,
-    '--command=bash',
-  ];
+  terminalHostProcesses = [];
 
-  terminalHostProcess = spawn(hostExe, args, {
-    stdio: ['pipe', 'inherit', 'inherit'],
-    windowsHide: false,
-  });
+  for (let index = 0; index < count; index += 1) {
+    const args = [
+      `--parent-hwnd=${hwnd}`,
+      `--top-offset=${HEADER_HEIGHT}`,
+      `--column-index=${index}`,
+      `--column-count=${count}`,
+      `--column-gap=${TERMINAL_GAP}`,
+      `--session-id=electron-spike-shell-${index + 1}`,
+      `--endpoint=${process.env.NEONCODE_HUB_ENDPOINT || DEFAULT_ENDPOINT}`,
+      '--command=bash',
+    ];
 
-  terminalHostProcess.stdin.setDefaultEncoding('utf8');
+    const hostProcess = spawn(hostExe, args, {
+      stdio: ['pipe', 'inherit', 'inherit'],
+      windowsHide: false,
+    });
+
+    hostProcess.stdin.setDefaultEncoding('utf8');
+    hostProcess.on('exit', (code, signal) => {
+      terminalHostProcesses = terminalHostProcesses.filter((process) => process !== hostProcess);
+      console.log(`Native terminal host ${index + 1} exited: code=${code} signal=${signal}`);
+    });
+
+    terminalHostProcesses.push(hostProcess);
+  }
+
   setTimeout(() => focusTerminalHost('spawn'), 250);
-
-  terminalHostProcess.on('exit', (code, signal) => {
-    terminalHostProcess = undefined;
-    console.log(`Native terminal host exited: code=${code} signal=${signal}`);
-  });
 }
 
 function sendTerminalFocusCommand(reason) {
-  if (!terminalHostProcess || terminalHostProcess.killed || !terminalHostProcess.stdin?.writable) {
-    return;
+  for (const process of liveTerminalHosts()) {
+    if (process.stdin?.writable) {
+      process.stdin.write(`focus ${reason}\n`);
+    }
   }
-
-  terminalHostProcess.stdin.write(`focus ${reason}\n`);
 }
 
 function clearPendingFocusTimers() {
@@ -135,7 +164,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
-    spawnTerminalHost();
+    spawnTerminalHosts();
   });
 
   mainWindow.on('focus', () => focusTerminalHost('electron-focus'));
@@ -147,7 +176,7 @@ function createWindow() {
     // The native child HWND can need a nudge after parent minimize/restore.
     // The native host also polls the parent bounds, but this gives Windows a
     // fresh child-window layout event from the Electron side.
-    if (terminalHostProcess && !terminalHostProcess.killed) {
+    if (liveTerminalHosts().length > 0) {
       mainWindow.setSize(...mainWindow.getSize());
       focusTerminalHost('electron-restore', {
         delays: [50, 150, 300, 600],
@@ -158,10 +187,7 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     clearPendingFocusTimers();
-    if (terminalHostProcess && !terminalHostProcess.killed) {
-      terminalHostProcess.kill();
-    }
-    terminalHostProcess = undefined;
+    killTerminalHosts();
     mainWindow = undefined;
   });
 }
@@ -177,8 +203,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  if (terminalHostProcess && !terminalHostProcess.killed) {
-    terminalHostProcess.kill();
-  }
+  killTerminalHosts();
   app.quit();
 });
