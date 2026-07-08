@@ -13,6 +13,8 @@ internal static partial class NativeWindow
     public const long WsSysMenu = 0x00080000L;
     public const long WsMinimizeBox = 0x00020000L;
     public const long WsMaximizeBox = 0x00010000L;
+    public const long WsClipChildren = 0x02000000L;
+    public const long WsClipSiblings = 0x04000000L;
     public const int SwShownormal = 1;
     public const int SwShow = 5;
     public const int SwRestore = 9;

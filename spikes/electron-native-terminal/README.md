@@ -46,8 +46,9 @@ Observed so far:
 - Removing the default Electron menu fixed the initial header/gap issue enough for the spike.
 - Ctrl+Space did not reach tmux in either Electron or the WPF app; this is not Electron-specific. The shared terminal adapter now maps Ctrl+Space to NUL (`0x00`) explicitly.
 - Ctrl+Shift+V / Shift+Insert paste also did not work through the embedded control by default. The shared terminal adapter now reads Windows clipboard text, normalizes CRLF to LF, and sends it to the PTY.
-- Minimize/restore initially froze the native terminal region. The spike now uses stronger restore/redraw/focus nudges and faster parent polling. This fixed the first restore freeze report, but restore/focus smoothness remains an area to watch.
-- Alt+Tab back to the Electron window and click-away/return via taskbar were fixed by adding event-driven Electron-to-native-host focus commands. Repeated minimize/restore can still race focus after several cycles, so focus commands are now sent as short delayed bursts and handled as full restore-refresh requests by the native host.
+- Minimize/restore initially froze the native terminal region. The spike now restores/repositions/redraws the child HWND and gates native focus on the Electron parent actually being foreground.
+- Alt+Tab back to the Electron window, click-away/return via taskbar, repeated taskbar minimize/restore, and snap/unsnap now work in current testing.
+- A slight terminal-region flicker can still be visible during activation/restore because the Electron shell and native child HWND repaint on different timelines. The spike minimizes this with a solid terminal-colored placeholder and Win32 child clipping styles; further polish can use a deliberate loading/ready overlay or a native window coordinator.
 - Alt+Backspace still appears to be intercepted before it reaches the embedded terminal path and triggers a Windows chime. Windows Terminal itself uses this chord for window fullscreen behavior, so this is not currently a blocker.
 
 ## Current important limitation
@@ -184,7 +185,7 @@ The spike is promising if:
 - keyboard/focus work well enough for shell and Neovim;
 - resize follows Electron window resize;
 - shutdown is clean;
-- there are no obvious z-order or flicker problems;
+- there are no obvious z-order problems, and any activation flicker is minor/polishable;
 - the approach looks productizable without excessive Win32 hacks.
 
 ## Failure criteria

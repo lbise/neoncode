@@ -39,17 +39,11 @@ main {
   display: grid;
   place-items: center;
   padding: 24px;
-  color: #6b7280;
-  background: repeating-linear-gradient(
-    45deg,
-    #0c0c0c,
-    #0c0c0c 12px,
-    #101010 12px,
-    #101010 24px
-  );
+  color: #3f3f46;
+  background: #0c0c0c;
 }
 
-main p {
+.terminal-placeholder {
   max-width: 560px;
   text-align: center;
   line-height: 1.5;

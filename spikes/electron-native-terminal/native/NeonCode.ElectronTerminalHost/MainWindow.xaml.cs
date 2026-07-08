@@ -102,9 +102,16 @@ public partial class MainWindow : Window
         style &= ~NativeWindow.WsSysMenu;
         style &= ~NativeWindow.WsMinimizeBox;
         style &= ~NativeWindow.WsMaximizeBox;
-        style |= NativeWindow.WsChild | NativeWindow.WsVisible;
+        style |= NativeWindow.WsChild | NativeWindow.WsVisible | NativeWindow.WsClipSiblings;
 
         NativeWindow.SetWindowLongPtr(ownHwnd, NativeWindow.GwlStyle, (nint)style);
+
+        // Reduce cross-process child-HWND flicker by preventing the Electron
+        // parent from repainting the terminal child area underneath us.
+        var parentStyle = NativeWindow.GetWindowLongPtr(options.ParentHwnd, NativeWindow.GwlStyle).ToInt64();
+        parentStyle |= NativeWindow.WsClipChildren;
+        NativeWindow.SetWindowLongPtr(options.ParentHwnd, NativeWindow.GwlStyle, (nint)parentStyle);
+
         NativeWindow.SetParent(ownHwnd, options.ParentHwnd);
         NativeWindow.ShowWindow(ownHwnd, NativeWindow.SwShow);
         FitIntoParent();
