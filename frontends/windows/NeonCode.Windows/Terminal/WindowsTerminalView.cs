@@ -40,6 +40,16 @@ public sealed class WindowsTerminalView : ITerminalView
 
     public bool IsUsingFontFallback => fontResolution.IsFallback;
 
+    public void Focus()
+    {
+        control.Dispatcher.Invoke(() =>
+        {
+            control.Focus();
+            Keyboard.Focus(control);
+            FocusManager.SetFocusedElement(FocusManager.GetFocusScope(control), control);
+        });
+    }
+
     public void Write(byte[] data)
     {
         var text = Encoding.UTF8.GetString(data);

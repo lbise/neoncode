@@ -53,6 +53,26 @@ internal static partial class NativeWindow
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool RedrawWindow(nint hwnd, nint updateRect, nint updateRegion, int flags);
 
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool BringWindowToTop(nint hwnd);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint SetActiveWindow(nint hwnd);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint GetForegroundWindow();
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial uint GetWindowThreadProcessId(nint hwnd, out uint processId);
+
+    [LibraryImport("kernel32.dll")]
+    public static partial uint GetCurrentThreadId();
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AttachThreadInput(uint idAttach, uint idAttachTo, [MarshalAs(UnmanagedType.Bool)] bool attach);
+
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
     public static extern nint GetWindowLongPtr(nint hwnd, int index);
 

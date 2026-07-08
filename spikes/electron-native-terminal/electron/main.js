@@ -66,14 +66,25 @@ function spawnTerminalHost() {
   ];
 
   terminalHostProcess = spawn(hostExe, args, {
-    stdio: 'inherit',
+    stdio: ['pipe', 'inherit', 'inherit'],
     windowsHide: false,
   });
+
+  terminalHostProcess.stdin.setDefaultEncoding('utf8');
+  setTimeout(() => focusTerminalHost('spawn'), 250);
 
   terminalHostProcess.on('exit', (code, signal) => {
     terminalHostProcess = undefined;
     console.log(`Native terminal host exited: code=${code} signal=${signal}`);
   });
+}
+
+function focusTerminalHost(reason) {
+  if (!terminalHostProcess || terminalHostProcess.killed || !terminalHostProcess.stdin?.writable) {
+    return;
+  }
+
+  terminalHostProcess.stdin.write(`focus ${reason}\n`);
 }
 
 function createWindow() {
@@ -97,12 +108,16 @@ function createWindow() {
     spawnTerminalHost();
   });
 
+  mainWindow.on('focus', () => focusTerminalHost('electron-focus'));
+  mainWindow.on('show', () => focusTerminalHost('electron-show'));
+
   mainWindow.on('restore', () => {
     // The native child HWND can need a nudge after parent minimize/restore.
     // The native host also polls the parent bounds, but this gives Windows a
     // fresh child-window layout event from the Electron side.
     if (terminalHostProcess && !terminalHostProcess.killed) {
       mainWindow.setSize(...mainWindow.getSize());
+      focusTerminalHost('electron-restore');
     }
   });
 

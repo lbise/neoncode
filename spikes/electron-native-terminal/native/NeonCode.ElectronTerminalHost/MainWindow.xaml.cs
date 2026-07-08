@@ -59,6 +59,31 @@ public partial class MainWindow : Window
             Interval = TimeSpan.FromMilliseconds(33),
         };
         embedTimer.Tick += (_, _) => PollParentWindow();
+        StartControlCommandLoop();
+    }
+
+    private void StartControlCommandLoop()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var input = Console.OpenStandardInput();
+                using var reader = new StreamReader(input, Encoding.UTF8);
+
+                while (await reader.ReadLineAsync() is { } line)
+                {
+                    if (line.StartsWith("focus", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await Dispatcher.InvokeAsync(ForceActivationFocus, DispatcherPriority.Send);
+                    }
+                }
+            }
+            catch
+            {
+                // Control pipe is best-effort for the spike.
+            }
+        });
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
@@ -156,14 +181,57 @@ public partial class MainWindow : Window
         }, DispatcherPriority.ApplicationIdle);
     }
 
-    private void FocusTerminal()
+    private void ForceActivationFocus()
     {
+        FitIntoParent();
+
         if (ownHwnd != 0)
         {
-            NativeWindow.SetFocus(ownHwnd);
+            var currentThread = NativeWindow.GetCurrentThreadId();
+            var parentThread = options.ParentHwnd != 0
+                ? NativeWindow.GetWindowThreadProcessId(options.ParentHwnd, out _)
+                : 0;
+            var foreground = NativeWindow.GetForegroundWindow();
+            var foregroundThread = foreground != 0
+                ? NativeWindow.GetWindowThreadProcessId(foreground, out _)
+                : 0;
+
+            if (parentThread != 0 && parentThread != currentThread)
+            {
+                NativeWindow.AttachThreadInput(currentThread, parentThread, attach: true);
+            }
+
+            if (foregroundThread != 0 && foregroundThread != currentThread && foregroundThread != parentThread)
+            {
+                NativeWindow.AttachThreadInput(currentThread, foregroundThread, attach: true);
+            }
+
+            try
+            {
+                NativeWindow.BringWindowToTop(ownHwnd);
+                NativeWindow.SetActiveWindow(ownHwnd);
+                NativeWindow.SetFocus(ownHwnd);
+            }
+            finally
+            {
+                if (foregroundThread != 0 && foregroundThread != currentThread && foregroundThread != parentThread)
+                {
+                    NativeWindow.AttachThreadInput(currentThread, foregroundThread, attach: false);
+                }
+
+                if (parentThread != 0 && parentThread != currentThread)
+                {
+                    NativeWindow.AttachThreadInput(currentThread, parentThread, attach: false);
+                }
+            }
         }
 
-        Dispatcher.BeginInvoke(() => terminalView.Element.Focus(), DispatcherPriority.ApplicationIdle);
+        terminalView.Focus();
+    }
+
+    private void FocusTerminal()
+    {
+        ForceActivationFocus();
     }
 
     private async Task ConnectAndStartAsync()

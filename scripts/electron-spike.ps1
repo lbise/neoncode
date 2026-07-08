@@ -50,9 +50,10 @@ function Invoke-Npm {
 
 function Stop-SpikeProcesses {
     Get-Process NeonCode.ElectronTerminalHost -ErrorAction SilentlyContinue | Stop-Process -Force
-    Get-Process electron -ErrorAction SilentlyContinue | Where-Object {
-        -not $_.Path -or $_.Path -like "*neoncode-electron-spike*"
-    } | Stop-Process -Force
+    # Spike-only helper: stop Electron aggressively so publish can replace
+    # electron.exe/node_modules even when process metadata is restricted by IT
+    # policy and Path is unavailable.
+    Get-Process electron -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 
 function Copy-SpikeElectronFiles {
