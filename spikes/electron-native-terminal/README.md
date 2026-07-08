@@ -47,6 +47,8 @@ Observed so far:
 - Ctrl+Space did not reach tmux in either Electron or the WPF app; this is not Electron-specific. The shared terminal adapter now maps Ctrl+Space to NUL (`0x00`) explicitly.
 - Ctrl+Shift+V / Shift+Insert paste also did not work through the embedded control by default. The shared terminal adapter now reads Windows clipboard text, normalizes CRLF to LF, and sends it to the PTY.
 - Minimize/restore initially froze the native terminal region. The spike now uses stronger restore/redraw/focus nudges and faster parent polling. This fixed the first restore freeze report, but restore/focus smoothness remains an area to watch.
+- Alt+Tab back to the Electron window does not reliably refocus the native terminal. Clicking the window/terminal restores focus. This is currently the most important remaining focus/lifecycle issue.
+- Alt+Backspace still appears to be intercepted before it reaches the embedded terminal path and triggers a Windows chime. Windows Terminal itself uses this chord for window fullscreen behavior, so this is not currently a blocker.
 
 ## Current important limitation
 
@@ -194,6 +196,41 @@ The spike is not promising if:
 - resize/z-order/DPI are visibly broken;
 - native hosting would dominate product development;
 - the web UI cannot coexist cleanly with native terminal regions.
+
+## Future improvements to investigate
+
+Startup/polish improvements:
+
+- Start the native terminal host before showing the Electron window.
+- Add a ready/attached signal from native host to Electron.
+- Show a deliberate loading/skeleton state instead of exposing startup flicker.
+- Publish the native host in Release/ReadyToRun mode.
+- Investigate keeping one native host process warm and creating terminal regions on demand.
+- Package/run Electron as a real app instead of through `npm start`.
+
+Focus/windowing improvements:
+
+- Fix Alt+Tab return focus so the terminal is ready for input without an extra click.
+- Replace timer polling with explicit bounds/focus messages from Electron to the native host.
+- Investigate whether a native Node addon or small Win32 coordinator process should own HWND parenting, positioning, activation, and DPI handling.
+- Test multi-monitor and mixed-DPI behavior.
+- Test multiple native terminal regions in one Electron window.
+
+Terminal behavior improvements:
+
+- Study Windows Terminal's app-layer code and mirror relevant behavior instead of inventing ad hoc fixes.
+- Import/adapt handling patterns for paste, copy, key bindings, command routing, focus, context menus, and warnings for large/multiline paste.
+- Decide whether keybinding handling belongs in Electron, the native host, or a shared config/protocol layer.
+
+Relevant Windows Terminal source areas already identified:
+
+```text
+src/cascadia/TerminalApp/TerminalPage.cpp
+src/cascadia/TerminalApp/AppKeyBindings.cpp
+src/cascadia/TerminalApp/AppActionHandlers.cpp
+src/cascadia/TerminalControl/ControlInteractivity.cpp
+src/cascadia/TerminalControl/TermControl.cpp
+```
 
 ## If this succeeds
 

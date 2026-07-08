@@ -159,10 +159,15 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Install/verify Windows Node/npm for the Electron spike.
 - [x] Add Windows-local publish flow for Electron spike.
 - [ ] Run focused Electron native Windows Terminal embedding spike.
+- [ ] Document Electron spike pass/fail conclusion.
+- [ ] Fix/investigate Alt+Tab native terminal refocus in Electron spike.
+- [ ] Record startup polish plan for Electron/native host attach.
+- [ ] Explore Windows Terminal app-layer source for paste/copy/keybindings/focus behavior to adapt.
 - [ ] Reassess WPF after Electron spike.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.
 - [ ] Verify native terminal hosting feasibility for the chosen product shell.
 - [ ] Verify keyboard/input fidelity for the chosen product shell.
+- [ ] Verify copy/paste and keybinding behavior against Windows Terminal expectations.
 - [ ] Verify docking/tabs/layout support for the chosen product shell.
 - [ ] Verify dependency and packaging risk for the chosen product shell.
 - [ ] Decide final near-product GUI direction.

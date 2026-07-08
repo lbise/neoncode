@@ -237,11 +237,13 @@ Next tasks should be:
 1. keep WPF prototype working;
 2. avoid large WPF-specific UI features;
 3. perform the Electron native Windows Terminal embedding spike;
-4. then decide product shell direction;
-5. continue UI-independent work in the Rust hub/session/protocol layers.
+4. investigate remaining Electron/native host issues, especially Alt+Tab refocus and startup polish;
+5. study Windows Terminal's app-layer source for paste/copy/keybinding/focus behavior before adding more ad hoc terminal fixes;
+6. then decide product shell direction;
+7. continue UI-independent work in the Rust hub/session/protocol layers.
 
 ## Current practical stance
 
 WPF is not the final product bet. WPF is the proven control-hosting baseline.
 
-Electron is the strongest product UI candidate, but only if it can host or integrate the native terminal renderer without unacceptable fragility.
+Electron is the strongest product UI candidate, but only if it can host or integrate the native terminal renderer without unacceptable fragility. Current spike results are promising, but Alt+Tab refocus and future multi-terminal/native-child lifecycle behavior still need validation.
