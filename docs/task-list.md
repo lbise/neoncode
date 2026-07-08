@@ -12,7 +12,7 @@ poc/windows-terminal-embedded
 
 ```text
 Stage: Phase 6 — Electron native terminal embedding spike evaluation
-Next task: validate Electron two-terminal mode for focus, resize, z-order, and process cleanup
+Next task: continue Electron spike with longer lifecycle/stability, DPI/multi-monitor, and pass/fail conclusion
 ```
 
 ## Phase 0 — preserve the spike
@@ -169,7 +169,9 @@ Goal: make a product GUI decision using real data, not speculation.
 - [ ] Verify native terminal hosting feasibility for the chosen product shell.
 - [ ] Verify keyboard/input fidelity for the chosen product shell.
 - [ ] Verify copy/paste and keybinding behavior against Windows Terminal expectations.
-- [ ] Validate Electron two-terminal split spike for focus, resize, z-order, and cleanup.
+- [x] Validate Electron two-terminal split spike for independent input and process cleanup.
+- [ ] Continue Electron two-terminal split validation for resize, z-order, DPI, and visual polish.
+- [ ] Track Electron/native terminal focus flicker as a deferred polish/coordinator issue.
 - [ ] Verify docking/tabs/layout support for the chosen product shell.
 - [ ] Verify dependency and packaging risk for the chosen product shell.
 - [ ] Decide final near-product GUI direction.
