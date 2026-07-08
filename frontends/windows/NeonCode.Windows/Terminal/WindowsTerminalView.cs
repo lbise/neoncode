@@ -70,7 +70,33 @@ public sealed class WindowsTerminalView : ITerminalView
             // breaks tmux users who use Ctrl+Space as prefix.
             Input?.Invoke([0]);
             e.Handled = true;
+            return;
         }
+
+        if (((Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Shift)) == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.V)
+            || ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift && e.Key == Key.Insert))
+        {
+            PasteClipboardText();
+            e.Handled = true;
+        }
+    }
+
+    private void PasteClipboardText()
+    {
+        if (!Clipboard.ContainsText())
+        {
+            return;
+        }
+
+        var text = Clipboard.GetText();
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        // The PTY expects LF line endings. Windows clipboard text is often CRLF.
+        text = text.Replace("\r\n", "\n").Replace('\r', '\n');
+        Input?.Invoke(Encoding.UTF8.GetBytes(text));
     }
 
     private void OnResize(uint rows, uint columns)

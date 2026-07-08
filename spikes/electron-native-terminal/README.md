@@ -44,8 +44,9 @@ Observed so far:
 - Neovim renders correctly.
 - tmux resize works.
 - Removing the default Electron menu fixed the initial header/gap issue enough for the spike.
-- Ctrl+Space did not reach tmux in either Electron or the WPF app; this is not Electron-specific. The shared terminal adapter now maps Ctrl+Space to NUL (`0x00`) explicitly for retesting.
-- Minimize/restore can freeze the native terminal region. The spike now tries stronger restore/redraw/focus nudges, but this remains a key risk to validate.
+- Ctrl+Space did not reach tmux in either Electron or the WPF app; this is not Electron-specific. The shared terminal adapter now maps Ctrl+Space to NUL (`0x00`) explicitly.
+- Ctrl+Shift+V / Shift+Insert paste also did not work through the embedded control by default. The shared terminal adapter now reads Windows clipboard text, normalizes CRLF to LF, and sends it to the PTY.
+- Minimize/restore initially froze the native terminal region. The spike now uses stronger restore/redraw/focus nudges and faster parent polling. This fixed the first restore freeze report, but restore/focus smoothness remains an area to watch.
 
 ## Current important limitation
 

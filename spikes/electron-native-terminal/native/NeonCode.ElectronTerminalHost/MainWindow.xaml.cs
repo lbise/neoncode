@@ -56,7 +56,7 @@ public partial class MainWindow : Window
 
         embedTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(100),
+            Interval = TimeSpan.FromMilliseconds(33),
         };
         embedTimer.Tick += (_, _) => PollParentWindow();
     }
@@ -137,6 +137,23 @@ public partial class MainWindow : Window
 
         terminalView.Element.InvalidateVisual();
         terminalView.Element.UpdateLayout();
+        ScheduleFocusNudges();
+    }
+
+    private void ScheduleFocusNudges()
+    {
+        _ = Dispatcher.InvokeAsync(async () =>
+        {
+            foreach (var delay in new[] { 0, 50, 150, 300 })
+            {
+                if (delay > 0)
+                {
+                    await Task.Delay(delay);
+                }
+
+                FocusTerminal();
+            }
+        }, DispatcherPriority.ApplicationIdle);
     }
 
     private void FocusTerminal()
