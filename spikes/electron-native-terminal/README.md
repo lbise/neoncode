@@ -47,7 +47,8 @@ Observed so far:
 - Ctrl+Space did not reach tmux in either Electron or the WPF app; this is not Electron-specific. The shared terminal adapter now maps Ctrl+Space to NUL (`0x00`) explicitly.
 - Ctrl+Shift+V / Shift+Insert paste also did not work through the embedded control by default. The shared terminal adapter now reads Windows clipboard text, normalizes CRLF to LF, and sends it to the PTY.
 - Minimize/restore initially froze the native terminal region. The spike now restores/repositions/redraws the child HWND and gates native focus on the Electron parent actually being foreground.
-- Alt+Tab back to the Electron window, click-away/return via taskbar, repeated taskbar minimize/restore, and snap/unsnap now work in current testing.
+- Alt+Tab back to the Electron window, click-away/return via taskbar, repeated taskbar minimize/restore, and snap/unsnap now generally work in current testing.
+- There may still be a rare taskbar-return refocus race where the Electron window returns but terminal input focus is not immediately restored. This is recorded as a deferred focus polish item rather than a current viability blocker unless it becomes frequent.
 - A slight terminal-region flicker can still be visible during activation/restore because the Electron shell and native child HWND repaint on different timelines. The spike minimizes this with a solid terminal-colored placeholder and Win32 child clipping styles; further polish can use a deliberate loading/ready overlay or a native window coordinator.
 - Alt+Backspace still appears to be intercepted before it reaches the embedded terminal path and triggers a Windows chime. Windows Terminal itself uses this chord for window fullscreen behavior, so this is not currently a blocker.
 
@@ -211,7 +212,7 @@ Startup/polish improvements:
 
 Focus/windowing improvements:
 
-- Fix Alt+Tab return focus so the terminal is ready for input without an extra click.
+- Investigate the rare taskbar-return refocus race if it becomes reproducible or frequent.
 - Replace timer polling with explicit bounds/focus messages from Electron to the native host.
 - Investigate whether a native Node addon or small Win32 coordinator process should own HWND parenting, positioning, activation, and DPI handling.
 - Test multi-monitor and mixed-DPI behavior.

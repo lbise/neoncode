@@ -11,8 +11,8 @@ poc/windows-terminal-embedded
 ## Current stage
 
 ```text
-Stage: Phase 1 — clean prototype foundation
-Next task: install Windows Node/npm, run Electron native Windows Terminal embedding spike, record findings
+Stage: Phase 6 — Electron native terminal embedding spike evaluation
+Next task: continue Electron spike validation with lifecycle, multiple terminal regions, and shutdown/process cleanup tests
 ```
 
 ## Phase 0 — preserve the spike
@@ -158,10 +158,11 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Scaffold focused Electron native Windows Terminal embedding spike.
 - [x] Install/verify Windows Node/npm for the Electron spike.
 - [x] Add Windows-local publish flow for Electron spike.
-- [ ] Run focused Electron native Windows Terminal embedding spike.
+- [x] Run focused Electron native Windows Terminal embedding spike.
 - [ ] Document Electron spike pass/fail conclusion.
-- [ ] Fix/investigate Alt+Tab native terminal refocus in Electron spike.
-- [ ] Record startup polish plan for Electron/native host attach.
+- [x] Fix/investigate Alt+Tab native terminal refocus in Electron spike.
+- [ ] Track intermittent taskbar-return refocus race in Electron spike; defer unless it becomes frequent/product-blocking.
+- [x] Record startup polish plan for Electron/native host attach.
 - [ ] Explore Windows Terminal app-layer source for paste/copy/keybindings/focus behavior to adapt.
 - [ ] Reassess WPF after Electron spike.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.
