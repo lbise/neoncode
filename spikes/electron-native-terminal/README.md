@@ -47,7 +47,7 @@ Observed so far:
 - Ctrl+Space did not reach tmux in either Electron or the WPF app; this is not Electron-specific. The shared terminal adapter now maps Ctrl+Space to NUL (`0x00`) explicitly.
 - Ctrl+Shift+V / Shift+Insert paste also did not work through the embedded control by default. The shared terminal adapter now reads Windows clipboard text, normalizes CRLF to LF, and sends it to the PTY.
 - Minimize/restore initially froze the native terminal region. The spike now uses stronger restore/redraw/focus nudges and faster parent polling. This fixed the first restore freeze report, but restore/focus smoothness remains an area to watch.
-- Alt+Tab back to the Electron window does not reliably refocus the native terminal. Clicking the window/terminal restores focus. This is currently the most important remaining focus/lifecycle issue.
+- Alt+Tab back to the Electron window and click-away/return via taskbar were fixed by adding event-driven Electron-to-native-host focus commands. Repeated minimize/restore can still race focus after several cycles, so focus commands are now sent as short delayed bursts and handled as full restore-refresh requests by the native host.
 - Alt+Backspace still appears to be intercepted before it reaches the embedded terminal path and triggers a Windows chime. Windows Terminal itself uses this chord for window fullscreen behavior, so this is not currently a blocker.
 
 ## Current important limitation

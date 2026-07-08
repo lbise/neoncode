@@ -75,7 +75,7 @@ public partial class MainWindow : Window
                 {
                     if (line.StartsWith("focus", StringComparison.OrdinalIgnoreCase))
                     {
-                        await Dispatcher.InvokeAsync(ForceActivationFocus, DispatcherPriority.Send);
+                        await Dispatcher.InvokeAsync(ForceRestoreRefresh, DispatcherPriority.Send);
                     }
                 }
             }

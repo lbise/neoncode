@@ -79,12 +79,21 @@ function spawnTerminalHost() {
   });
 }
 
-function focusTerminalHost(reason) {
+function sendTerminalFocusCommand(reason) {
   if (!terminalHostProcess || terminalHostProcess.killed || !terminalHostProcess.stdin?.writable) {
     return;
   }
 
   terminalHostProcess.stdin.write(`focus ${reason}\n`);
+}
+
+function focusTerminalHost(reason) {
+  // Native child HWND focus after activation/restore is timing-sensitive.
+  // Send a short burst so one command lands after Windows has completed the
+  // foreground/minimize/restore transition.
+  for (const delay of [0, 50, 150, 300, 600]) {
+    setTimeout(() => sendTerminalFocusCommand(`${reason}+${delay}`), delay);
+  }
 }
 
 function createWindow() {
