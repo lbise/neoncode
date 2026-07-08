@@ -12,7 +12,7 @@ poc/windows-terminal-embedded
 
 ```text
 Stage: Phase 1/3 — shared session/protocol foundation
-Next task: study Windows Terminal app-layer/control architecture and sketch the native coordinator API, then continue Rust protocol/session refactor
+Next task: choose between starting the direct native coordinator POC or continuing Rust protocol/session refactor
 ```
 
 ## Phase 0 — preserve the spike
@@ -164,8 +164,9 @@ Goal: make a product GUI decision using real data, not speculation.
 - [ ] Track intermittent taskbar-return refocus race in Electron spike; defer unless it becomes frequent/product-blocking.
 - [x] Record startup polish plan for Electron/native host attach.
 - [x] Record Electron/native terminal host architecture options.
-- [ ] Explore Windows Terminal app-layer source for paste/copy/keybindings/focus behavior to adapt.
-- [ ] Sketch native Windows terminal coordinator API for Electron integration.
+- [x] Explore Windows Terminal app-layer source for paste/copy/keybindings/focus behavior to adapt.
+- [x] Sketch native Windows terminal coordinator API for Electron integration.
+- [ ] Build minimal direct-native `HwndTerminal` coordinator POC under Electron.
 - [ ] Reassess WPF after Electron spike.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.
 - [ ] Verify native terminal hosting feasibility for the chosen product shell.

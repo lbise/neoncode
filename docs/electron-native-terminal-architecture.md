@@ -143,6 +143,8 @@ Important behaviors to understand before implementation:
 
 This is the preferred product-shaped Windows terminal-host architecture to investigate next, after documenting the spike result. The current WPF host remains the working fallback while this is researched.
 
+A first concrete API/design sketch is in [`native-terminal-coordinator-design.md`](native-terminal-coordinator-design.md).
+
 ## Option 3 — Native coordinator process that still uses WPF internally
 
 ```text
