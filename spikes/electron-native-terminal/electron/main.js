@@ -16,6 +16,7 @@ const DEFAULT_ENDPOINT = 'ws://127.0.0.1:44777/ws';
 
 let mainWindow;
 let terminalHostProcess;
+let pendingFocusTimers = [];
 
 function hwndFromNativeWindowHandle(buffer) {
   if (process.platform !== 'win32') {
@@ -87,12 +88,32 @@ function sendTerminalFocusCommand(reason) {
   terminalHostProcess.stdin.write(`focus ${reason}\n`);
 }
 
-function focusTerminalHost(reason) {
-  // Native child HWND focus after activation/restore is timing-sensitive.
-  // Send a short burst so one command lands after Windows has completed the
-  // foreground/minimize/restore transition.
-  for (const delay of [0, 50, 150, 300, 600]) {
-    setTimeout(() => sendTerminalFocusCommand(`${reason}+${delay}`), delay);
+function clearPendingFocusTimers() {
+  for (const timer of pendingFocusTimers) {
+    clearTimeout(timer);
+  }
+  pendingFocusTimers = [];
+}
+
+function focusTerminalHost(reason, options = {}) {
+  clearPendingFocusTimers();
+
+  const delays = options.delays || [0, 50, 150, 300];
+  const requireFocusedWindow = options.requireFocusedWindow ?? true;
+
+  for (const delay of delays) {
+    const timer = setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) {
+        return;
+      }
+
+      if (requireFocusedWindow && !mainWindow.isFocused()) {
+        return;
+      }
+
+      sendTerminalFocusCommand(`${reason}+${delay}`);
+    }, delay);
+    pendingFocusTimers.push(timer);
   }
 }
 
@@ -119,6 +140,8 @@ function createWindow() {
 
   mainWindow.on('focus', () => focusTerminalHost('electron-focus'));
   mainWindow.on('show', () => focusTerminalHost('electron-show'));
+  mainWindow.on('blur', clearPendingFocusTimers);
+  mainWindow.on('minimize', clearPendingFocusTimers);
 
   mainWindow.on('restore', () => {
     // The native child HWND can need a nudge after parent minimize/restore.
@@ -126,11 +149,15 @@ function createWindow() {
     // fresh child-window layout event from the Electron side.
     if (terminalHostProcess && !terminalHostProcess.killed) {
       mainWindow.setSize(...mainWindow.getSize());
-      focusTerminalHost('electron-restore');
+      focusTerminalHost('electron-restore', {
+        delays: [50, 150, 300, 600],
+        requireFocusedWindow: false,
+      });
     }
   });
 
   mainWindow.on('closed', () => {
+    clearPendingFocusTimers();
     if (terminalHostProcess && !terminalHostProcess.killed) {
       terminalHostProcess.kill();
     }

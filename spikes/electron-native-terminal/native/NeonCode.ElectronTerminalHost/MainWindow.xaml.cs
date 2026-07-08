@@ -155,7 +155,7 @@ public partial class MainWindow : Window
         if (options.ParentHwnd != 0 && ownHwnd != 0)
         {
             NativeWindow.SetParent(ownHwnd, options.ParentHwnd);
-            NativeWindow.ShowWindow(ownHwnd, NativeWindow.SwShownormal);
+            NativeWindow.ShowWindow(ownHwnd, NativeWindow.SwRestore);
             FitIntoParent();
             FocusTerminal();
         }
