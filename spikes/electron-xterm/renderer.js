@@ -1,3 +1,4 @@
+const { clipboard } = require('electron');
 const { Terminal } = require('@xterm/xterm');
 const { FitAddon } = require('@xterm/addon-fit');
 
@@ -36,10 +37,47 @@ function base64ToBytes(data) {
 }
 
 function sendJson(socket, message) {
-  if (socket.readyState !== WebSocket.OPEN) {
+  if (socket?.readyState !== WebSocket.OPEN) {
     return;
   }
   socket.send(JSON.stringify(message));
+}
+
+function normalizeTerminalText(text) {
+  return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function sendTerminalBytes(state, bytes, reason = 'data') {
+  if (!bytes || bytes.length === 0) {
+    return;
+  }
+
+  state.inputEvents += 1;
+  window.neoncodeXtermState.panes[state.index].inputEvents = state.inputEvents;
+  console.log(`terminal_input ${state.index} ${bytes.length} ${reason}`);
+  sendJson(state.socket, {
+    type: 'input',
+    session_id: state.sessionId,
+    data_b64: bytesToBase64(bytes),
+  });
+}
+
+function sendTerminalText(state, text, reason = 'text') {
+  sendTerminalBytes(state, encoder.encode(text), reason);
+}
+
+function pasteText(state, text, reason = 'paste') {
+  const normalized = normalizeTerminalText(text || '');
+  if (!normalized) {
+    return;
+  }
+
+  console.log(`terminal_paste ${state.index} ${normalized.length} ${reason}`);
+  sendTerminalText(state, normalized, reason);
+}
+
+function pasteClipboardText(state, reason = 'clipboard') {
+  pasteText(state, clipboard.readText(), reason);
 }
 
 function buildTerminalTheme() {
@@ -112,15 +150,39 @@ function createPane(index) {
   terminal.writeln(`Connecting ${sessionId} to ${ENDPOINT}`);
 
   terminal.onData((data) => {
-    const bytes = encoder.encode(data);
-    state.inputEvents += 1;
-    window.neoncodeXtermState.panes[state.index].inputEvents = state.inputEvents;
-    console.log(`terminal_input ${state.index} ${bytes.length}`);
-    sendJson(state.socket, {
-      type: 'input',
-      session_id: sessionId,
-      data_b64: bytesToBase64(bytes),
-    });
+    sendTerminalText(state, data, 'xterm');
+  });
+
+  terminal.attachCustomKeyEventHandler((event) => {
+    if (event.type !== 'keydown') {
+      return true;
+    }
+
+    if (event.ctrlKey && !event.altKey && !event.shiftKey && (event.code === 'Space' || event.key === ' ')) {
+      console.log(`special_key ${state.index} ctrl_space`);
+      sendTerminalBytes(state, new Uint8Array([0]), 'ctrl_space');
+      return false;
+    }
+
+    if ((event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'v')
+        || (event.shiftKey && !event.ctrlKey && !event.altKey && event.key === 'Insert')) {
+      pasteClipboardText(state, 'key_paste');
+      return false;
+    }
+
+    if (event.altKey && !event.ctrlKey && event.key === 'Backspace') {
+      console.log(`special_key ${state.index} alt_backspace`);
+      sendTerminalText(state, '\x1b\x7f', 'alt_backspace');
+      return false;
+    }
+
+    return true;
+  });
+
+  container.addEventListener('paste', (event) => {
+    const text = event.clipboardData?.getData('text/plain') || clipboard.readText();
+    pasteText(state, text, 'dom_paste');
+    event.preventDefault();
   });
 
   const resizeObserver = new ResizeObserver(() => scheduleFitAndResize(state));

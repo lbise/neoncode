@@ -70,7 +70,8 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Define list/attach/detach protocol messages.
 - [x] Validate initial xterm.js renderer path against `neoncode-hub` start/output.
 - [x] Add basic xterm.js smoke validation for start/input/output.
-- [ ] Harden xterm.js renderer path for resize, copy/paste, special keys, nvim/tmux, and Playwright automation before deeper reconnect work.
+- [x] Add xterm.js paste and special-key handling for Ctrl+Shift+V, Shift+Insert, Ctrl+Space, and Alt+Backspace.
+- [ ] Harden xterm.js renderer path for resize, copy behavior, broader special keys, nvim/tmux, and Playwright automation before deeper reconnect work.
 - [ ] Define automatic reconnect flow on top of list/attach/detach.
 - [ ] Add structured tracing/logging refinements to the hub.
 
@@ -90,7 +91,7 @@ Goal: make the terminal experience trustworthy for daily terminal/TUI use.
 - [ ] Verify mouse mode in Neovim.
 - [ ] Verify mouse mode in tmux.
 - [ ] Implement or document copy behavior.
-- [ ] Implement or document paste behavior.
+- [x] Implement or document paste behavior for xterm.js path.
 - [ ] Add clean session kill/restart behavior.
 - [ ] Document scrollback behavior and limitations.
 - [x] Load terminal font from app config.

@@ -117,6 +117,14 @@ nvim
 tmux
 ```
 
+Automated smoke helpers:
+
+```bash
+./dev electron-xterm-smoke -PaneIndex 1
+./dev electron-xterm-smoke -PaneIndex 2
+./dev electron-xterm-smoke -PaneIndex 1 -PasteText 'echo xtermsmokepaste'
+```
+
 Also test:
 
 - resize Electron window and confirm `stty size` changes;
@@ -124,7 +132,7 @@ Also test:
 - copy/paste;
 - Ctrl+C / Ctrl+D / Ctrl+Z;
 - Ctrl+Space;
-- Alt key combinations;
+- Alt+Backspace and other Alt key combinations;
 - mouse mode in Neovim/tmux;
 - large output flood, e.g. `find /usr -maxdepth 4`;
 - minimize/restore refocus behavior;
@@ -135,3 +143,5 @@ Also test:
 Adopted as the default `./dev app` path after quick manual validation showed better focus/minimize/restore behavior and simpler visual integration than native Windows Terminal embedding.
 
 The direct native Windows Terminal coordinator remains available as a fallback/comparison path through `./dev electron-native`.
+
+Current input handling includes normalized paste, Ctrl+Shift+V, Shift+Insert, Ctrl+Space → NUL, and Alt+Backspace → ESC DEL.

@@ -1,6 +1,7 @@
 param(
     [int]$PaneIndex = 1,
     [string]$Command = "echo xtermsmoke",
+    [string]$PasteText = "",
     [int]$TimeoutSeconds = 10
 )
 
@@ -137,8 +138,18 @@ if ($PaneIndex -eq 1) {
 [NeonCodeXtermSmokeNative]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero) # MOUSEEVENTF_LEFTUP
 Start-Sleep -Milliseconds 500
 
-$payload = $Command + "{ENTER}"
-[System.Windows.Forms.SendKeys]::SendWait($payload)
+if ($PasteText) {
+    if ($PasteText -notmatch "xtermsmoke") {
+        throw "PasteText must include 'xtermsmoke' so the smoke helper can verify marker output."
+    }
+
+    Set-Clipboard -Value $PasteText
+    Start-Sleep -Milliseconds 250
+    [System.Windows.Forms.SendKeys]::SendWait("^+v{ENTER}")
+} else {
+    $payload = $Command + "{ENTER}"
+    [System.Windows.Forms.SendKeys]::SendWait($payload)
+}
 
 Wait-ForCondition -TimeoutSeconds $TimeoutSeconds -Description "terminal input for pane $PaneIndex" -Condition {
     $text = Read-SharedText -Path $log
