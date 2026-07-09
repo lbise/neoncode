@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NeonCode Electron xterm.js Spike</title>
+  <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <strong>NeonCode</strong>
+      <span>Electron xterm.js spike</span>
+    </div>
+    <div id="status" class="status">Connecting to neoncode-hub...</div>
+  </header>
+  <main id="terminal-grid" aria-label="xterm terminal region">
+    <section class="terminal-pane">
+      <div class="pane-title">Terminal 1</div>
+      <div id="terminal-1" class="terminal"></div>
+    </section>
+    <section class="terminal-pane">
+      <div class="pane-title">Terminal 2</div>
+      <div id="terminal-2" class="terminal"></div>
+    </section>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>

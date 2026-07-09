@@ -38,6 +38,11 @@ Electron/direct-native commands:
   ./dev electron-spike-focus-test Stress an already-running Electron window
   ./dev electron-spike-direct-hub-smoke Validate direct coordinator hub input/output
 
+Electron/xterm.js spike commands:
+  ./dev electron-xterm-publish Publish Electron xterm.js spike
+  ./dev electron-xterm         Start published Electron xterm.js spike
+  ./dev electron-xterm-install Install Electron xterm.js spike npm dependencies in-place
+
 Utility commands:
   ./dev status       Show git status and important output paths
   ./dev help         Show this help
@@ -108,6 +113,8 @@ case "$command" in
 
   check)
     node --check spikes/electron-native-terminal/electron/main.js
+    node --check spikes/electron-xterm/main.js
+    node --check spikes/electron-xterm/renderer.js
     ps_command 'dotnet build spikes\electron-native-terminal\native\NeonCode.ElectronTerminalHost\NeonCode.ElectronTerminalHost.csproj -v:minimal'
     ps_command 'dotnet build frontends\windows\NeonCode.Windows\NeonCode.Windows.csproj -v:minimal'
     cargo fmt --check
@@ -169,6 +176,18 @@ case "$command" in
 
   electron-spike-direct-hub-smoke)
     ps_file 'scripts\electron-spike-direct-hub-smoke.ps1' "$@"
+    ;;
+
+  electron-xterm-publish)
+    ps_file 'scripts\electron-xterm-spike.ps1' -Command publish "$@"
+    ;;
+
+  electron-xterm-install)
+    ps_file 'scripts\electron-xterm-spike.ps1' -Command install
+    ;;
+
+  electron-xterm)
+    ps_file 'scripts\electron-xterm-spike.ps1' -Command start "$@"
     ;;
 
   electron-spike)

@@ -20,7 +20,7 @@ Electron shell -> WPF native terminal host -> neoncode-hub
 WPF reference app -> Windows Terminal WPF wrapper -> neoncode-hub
 ```
 
-Keep the WPF paths working as reference/fallback, but new app work should target the Electron + direct native coordinator path unless the task says otherwise.
+Keep the WPF paths working as reference/fallback. The Electron + direct native coordinator path is the current default app, but the project is actively evaluating an Electron + xterm.js renderer spike because child-HWND focus/polish risk is real.
 
 ## Important paths
 
@@ -31,6 +31,7 @@ spikes/electron-native-terminal/native/NeonCode.NativeTerminalCoordinator/
                                                             Direct HwndTerminal coordinator
 spikes/electron-native-terminal/native/NeonCode.ElectronTerminalHost/
                                                             WPF native host fallback
+spikes/electron-xterm/                                     Electron xterm.js renderer spike
 frontends/windows/NeonCode.Windows/                        WPF reference app
 docs/hub.md                                                Hub usage/lifecycle docs
 docs/protocol.md                                           Hub WebSocket protocol docs
@@ -40,8 +41,9 @@ spikes/electron-native-terminal/README.md                  Electron/native coord
 Windows-local publish outputs:
 
 ```text
-%USERPROFILE%\neoncode-electron-spike   Electron app/native-host staging
-%USERPROFILE%\neoncode-publish          WPF reference app staging
+%USERPROFILE%\neoncode-electron-spike        Electron app/native-host staging
+%USERPROFILE%\neoncode-electron-xterm-spike  Electron xterm.js spike staging
+%USERPROFILE%\neoncode-publish               WPF reference app staging
 ```
 
 Debug logs:
@@ -112,6 +114,22 @@ Focus stress example:
 ```
 
 Known focus issue: taskbar/minimize/restore can still show a visible refocus delay. Treat this as deferred polish unless the task is specifically about focus hardening.
+
+## Electron/xterm.js spike commands
+
+```bash
+./dev electron-xterm-publish # publish xterm.js renderer spike
+./dev electron-xterm         # start published xterm.js renderer spike
+./dev electron-xterm-install # npm install in source spike directory
+```
+
+This spike uses:
+
+```text
+xterm.js in Electron DOM -> WebSocket -> Rust neoncode-hub -> portable-pty -> WSL/Linux PTY
+```
+
+It intentionally does not use `node-pty`. `node-pty` would be relevant for a VS Code-like local Electron terminal backend, especially Windows-local PowerShell/cmd or Windows-side `wsl.exe`, but NeonCode's current backend model remains Rust hub over WebSocket.
 
 ## WPF reference/fallback commands
 
@@ -289,6 +307,15 @@ node --check spikes/electron-native-terminal/electron/main.js
 ./dev electron-spike-coordinator
 ./dev check
 ./dev publish
+```
+
+For Electron/xterm.js spike changes:
+
+```bash
+bash -n dev
+node --check spikes/electron-xterm/main.js
+node --check spikes/electron-xterm/renderer.js
+./dev electron-xterm-publish
 ```
 
 If the task affects direct coordinator hub behavior, also run against a live app/hub:

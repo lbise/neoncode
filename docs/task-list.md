@@ -11,8 +11,8 @@ poc/windows-terminal-embedded
 ## Current stage
 
 ```text
-Stage: Phase 1/3 — shared session/protocol foundation
-Next task: add automatic Electron/direct-coordinator reconnect flow using list_sessions + attach
+Stage: Phase 1/3 — renderer/product-shell reassessment
+Next task: validate Electron xterm.js spike against neoncode-hub and compare with direct native coordinator
 ```
 
 ## Phase 0 — preserve the spike
@@ -53,6 +53,7 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Wire direct native `HwndTerminal` coordinator to `neoncode-hub` for start/input/output/resize.
 - [x] Make `./dev app` use Electron + direct native coordinator by default.
 - [x] Add direct coordinator hub smoke validation helper.
+- [x] Scaffold Electron xterm.js spike using `neoncode-hub`.
 - [ ] Add app-level error reporting for native terminal load failure.
 - [ ] Add app-level error reporting for backend disconnect.
 - [ ] Add app-level error reporting for session exit and protocol errors.
@@ -63,6 +64,7 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Add shared in-process hub session registry skeleton.
 - [x] Decouple PTY output from the creating WebSocket sender with session event broadcasting.
 - [x] Define list/attach/detach protocol messages.
+- [ ] Validate xterm.js renderer path before deeper native reconnect work.
 - [ ] Define automatic reconnect flow on top of list/attach/detach.
 - [ ] Add structured tracing/logging refinements to the hub.
 
@@ -186,6 +188,8 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Add direct coordinator hub smoke test for start/output/posted-input/output.
 - [x] Reassess WPF after Electron spike; keep as reference/fallback while Electron becomes default app path.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.
+- [ ] Validate Electron xterm.js renderer spike against hub/PTTY.
+- [ ] Compare xterm.js vs direct native Windows Terminal coordinator.
 - [ ] Verify native terminal hosting feasibility for the chosen product shell.
 - [ ] Verify keyboard/input fidelity for the chosen product shell.
 - [ ] Verify copy/paste and keybinding behavior against Windows Terminal expectations.
