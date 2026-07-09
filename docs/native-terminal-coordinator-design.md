@@ -637,7 +637,12 @@ Not implemented yet:
 - real session start/input/output/resize;
 - production-grade focus/layout protocol.
 
-Direct-native validation also showed that focus flicker and taskbar minimize/restore stress focus loss can still happen without WPF. Logs showed one concrete direct-mode bug: Electron was broadcasting `focus` to both native panes, causing the two child HWNDs to fight for focus. The spike now focuses only one active pane in direct-coordinator mode. Longer term, the coordinator should emit focus-change events so Electron can track the active pane accurately.
+Direct-native validation also showed that focus flicker and taskbar minimize/restore stress focus loss can still happen without WPF. Logs showed two concrete direct-mode bugs:
+
+- Electron was broadcasting `focus` to both native panes, causing the two child HWNDs to fight for focus. The spike now focuses only one active pane in direct-coordinator mode.
+- Electron emitted move/bounds events during minimize with invalid tiny content sizes, causing `bounds 0 0 1 1 96` / `bounds 9 0 1 1 96` and terminal resizes to 1x1. The spike now skips bounds while minimized or when content size is invalid, and throttles move/resize bounds updates.
+
+Longer term, the coordinator should emit focus-change events so Electron can track the active pane accurately.
 
 No hub connection yet.
 

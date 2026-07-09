@@ -21,6 +21,7 @@ let terminalHostProcesses = [];
 let pendingFocusTimers = [];
 let activeTerminalIndex = 0;
 let logFilePath;
+let pendingBoundsTimer;
 
 function ensureLogFile() {
   if (logFilePath) {
@@ -175,7 +176,16 @@ function currentDpi() {
 }
 
 function terminalBounds(index, count) {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) {
+    return undefined;
+  }
+
   const [contentWidth, contentHeight] = mainWindow.getContentSize();
+  if (contentWidth < 100 || contentHeight < HEADER_HEIGHT + 100) {
+    log('bounds.skip.invalidContentSize', { contentWidth, contentHeight, minimized: mainWindow.isMinimized() });
+    return undefined;
+  }
+
   const top = Math.max(0, Math.min(HEADER_HEIGHT, contentHeight - 1));
   const height = Math.max(1, contentHeight - top);
   const gapTotal = TERMINAL_GAP * Math.max(0, count - 1);
@@ -188,7 +198,8 @@ function terminalBounds(index, count) {
 }
 
 function sendTerminalBoundsCommand() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized()) {
+    log('bounds.skip.windowUnavailableOrMinimized');
     return;
   }
 
@@ -200,10 +211,26 @@ function sendTerminalBoundsCommand() {
     const count = process.neoncodeCount || terminalHostProcesses.length || 1;
     const index = process.neoncodeIndex || 0;
     const bounds = terminalBounds(index, count);
+    if (!bounds) {
+      continue;
+    }
+
     const command = `bounds ${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height} ${bounds.dpi}`;
     log('host.command.bounds', { index, command });
     process.stdin.write(`${command}\n`);
   }
+}
+
+function scheduleTerminalBoundsCommand(reason) {
+  if (pendingBoundsTimer) {
+    clearTimeout(pendingBoundsTimer);
+  }
+
+  pendingBoundsTimer = setTimeout(() => {
+    pendingBoundsTimer = undefined;
+    log('bounds.scheduled.fire', { reason });
+    sendTerminalBoundsCommand();
+  }, 50);
 }
 
 function sendTerminalBlurCommand(reason) {
@@ -294,12 +321,12 @@ function createWindow() {
     focusTerminalHost('electron-show');
   });
   mainWindow.on('resize', () => {
-    log('window.resize', { contentSize: mainWindow.getContentSize(), bounds: mainWindow.getBounds() });
-    sendTerminalBoundsCommand();
+    log('window.resize', { contentSize: mainWindow.getContentSize(), bounds: mainWindow.getBounds(), minimized: mainWindow.isMinimized() });
+    scheduleTerminalBoundsCommand('resize');
   });
   mainWindow.on('move', () => {
-    log('window.move', { bounds: mainWindow.getBounds() });
-    sendTerminalBoundsCommand();
+    log('window.move', { bounds: mainWindow.getBounds(), minimized: mainWindow.isMinimized() });
+    scheduleTerminalBoundsCommand('move');
   });
   mainWindow.on('blur', () => {
     log('window.blur', { isFocused: mainWindow.isFocused(), isMinimized: mainWindow.isMinimized() });
@@ -307,6 +334,10 @@ function createWindow() {
   });
   mainWindow.on('minimize', () => {
     log('window.minimize');
+    if (pendingBoundsTimer) {
+      clearTimeout(pendingBoundsTimer);
+      pendingBoundsTimer = undefined;
+    }
     sendTerminalBlurCommand('electron-minimize');
   });
 
@@ -328,6 +359,10 @@ function createWindow() {
   mainWindow.on('closed', () => {
     log('window.closed');
     clearPendingFocusTimers();
+    if (pendingBoundsTimer) {
+      clearTimeout(pendingBoundsTimer);
+      pendingBoundsTimer = undefined;
+    }
     killTerminalHosts();
     mainWindow = undefined;
   });

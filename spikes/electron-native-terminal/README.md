@@ -209,7 +209,10 @@ Get-Content $env:TEMP\NeonCode\direct-coordinator-*.log -Tail 200
 
 The logs include Electron window focus/blur/resize/move/restore events, commands sent to native hosts, native bounds application, native focus decisions, and relevant terminal HWND focus messages.
 
-Direct coordinator caveat: until it emits focus-change events back to Electron, Electron only restores focus to pane 1. This avoids the earlier focus fight where both native panes were asked to focus at the same time.
+Direct coordinator caveats:
+
+- Until it emits focus-change events back to Electron, Electron only restores focus to pane 1. This avoids the earlier focus fight where both native panes were asked to focus at the same time.
+- Electron skips bounds updates while minimized or when content size is invalid; this avoids the earlier `1x1` terminal resize during taskbar minimize.
 
 Manual Windows PowerShell equivalent:
 
