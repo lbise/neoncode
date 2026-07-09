@@ -72,7 +72,8 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Add basic xterm.js smoke validation for start/input/output.
 - [x] Add xterm.js paste and special-key handling for Ctrl+Shift+V, Shift+Insert, Ctrl+Space, and Alt+Backspace.
 - [x] Add xterm.js resize propagation smoke validation with `stty size`.
-- [ ] Harden xterm.js renderer path for copy behavior, broader special keys, nvim/tmux, and Playwright automation before deeper reconnect work.
+- [x] Add Playwright smoke validation for xterm app DOM/state/input.
+- [ ] Harden xterm.js renderer path for copy behavior, broader special keys, and nvim/tmux before deeper reconnect work.
 - [ ] Define automatic reconnect flow on top of list/attach/detach.
 - [ ] Add structured tracing/logging refinements to the hub.
 

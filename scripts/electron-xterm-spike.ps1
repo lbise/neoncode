@@ -64,6 +64,15 @@ function Copy-XtermFiles {
             Copy-Item -LiteralPath $source -Destination (Join-Path $DestinationDirectory $file) -Force
         }
     }
+
+    $testsSource = Join-Path $SourceDirectory "tests"
+    if (Test-Path -LiteralPath $testsSource -PathType Container) {
+        $testsDestination = Join-Path $DestinationDirectory "tests"
+        if (Test-Path -LiteralPath $testsDestination) {
+            Remove-Item -LiteralPath $testsDestination -Recurse -Force
+        }
+        Copy-Item -LiteralPath $testsSource -Destination $testsDestination -Recurse -Force
+    }
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot

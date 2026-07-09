@@ -136,6 +136,7 @@ function createPane(index) {
     outputEvents: 0,
     inputEvents: 0,
     resizeEvents: 0,
+    smokeMarkerCount: 0,
     lastRows: terminal.rows,
     lastCols: terminal.cols,
     outputScanBuffer: '',
@@ -148,6 +149,7 @@ function createPane(index) {
     outputEvents: 0,
     inputEvents: 0,
     resizeEvents: 0,
+    lastSmokeMarkerCount: 0,
     rows: terminal.rows,
     cols: terminal.cols,
   };
@@ -266,6 +268,8 @@ function connectPane(state) {
       const text = decoder.decode(bytes);
       state.outputScanBuffer = (state.outputScanBuffer + text).slice(-4096);
       if (state.outputScanBuffer.includes('xtermsmoke')) {
+        state.smokeMarkerCount += 1;
+        window.neoncodeXtermState.panes[state.index].lastSmokeMarkerCount = state.smokeMarkerCount;
         console.log(`hub_output_marker ${state.index} xtermsmoke`);
       }
       const resizeMatches = [...state.outputScanBuffer.matchAll(/xtermresize:([A-Za-z0-9_-]+):(\d+)\s+(\d+)/g)];

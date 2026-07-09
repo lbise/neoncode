@@ -5,13 +5,15 @@
   "description": "Spike: Electron shell rendering neoncode-hub PTYs with xterm.js.",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "smoke": "node tests/electron-smoke.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0"
   },
   "devDependencies": {
-    "electron": "^33.0.0"
+    "electron": "^33.0.0",
+    "playwright": "^1.56.0"
   }
 }

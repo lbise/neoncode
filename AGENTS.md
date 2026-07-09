@@ -88,7 +88,8 @@ Typical manual loop:
 ./dev electron-xterm         # start published xterm.js renderer app/spike
 ./dev electron-xterm-install # npm install in source spike directory
 ./dev electron-xterm-smoke          # validate running xterm app hub input/output
-./dev electron-xterm-resize-smoke   # validate xterm resize propagation with stty size
+./dev electron-xterm-resize-smoke       # validate xterm resize propagation with stty size
+./dev electron-xterm-playwright-smoke   # validate xterm DOM/state/input with Playwright
 ```
 
 This is now the default app path used by `./dev app` and `./dev publish`.
@@ -333,6 +334,7 @@ If the task affects xterm hub/input behavior, also run against a live app/hub:
 ./dev electron-xterm-smoke -PaneIndex 2
 ./dev electron-xterm-resize-smoke -PaneIndex 1
 ./dev electron-xterm-resize-smoke -PaneIndex 2
+./dev electron-xterm-playwright-smoke
 ```
 
 If the task affects direct coordinator hub behavior, also run against a live app/hub:

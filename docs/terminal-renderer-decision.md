@@ -112,7 +112,8 @@ Initial xterm.js validation:
 - manual focus after minimize/restore feels better than native child HWND path;
 - xterm smoke helper verifies scripted input produces hub output;
 - xterm path handles normalized paste, Ctrl+Shift+V, Shift+Insert, Ctrl+Space → NUL, and Alt+Backspace → ESC DEL;
-- xterm resize smoke verifies latest xterm rows/cols match `stty size` from the PTY.
+- xterm resize smoke verifies latest xterm rows/cols match `stty size` from the PTY;
+- Playwright smoke launches Electron, asserts DOM/test state, and verifies xterm input produces hub output.
 
 Validation command:
 
@@ -122,6 +123,7 @@ Validation command:
 ./dev electron-xterm-smoke -PaneIndex 1 -PasteText 'echo xtermsmokepaste'
 ./dev electron-xterm-resize-smoke -PaneIndex 1
 ./dev electron-xterm-resize-smoke -PaneIndex 2
+./dev electron-xterm-playwright-smoke
 ```
 
 ## Current commands

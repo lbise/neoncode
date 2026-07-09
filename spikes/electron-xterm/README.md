@@ -125,6 +125,7 @@ Automated smoke helpers:
 ./dev electron-xterm-smoke -PaneIndex 1 -PasteText 'echo xtermsmokepaste'
 ./dev electron-xterm-resize-smoke -PaneIndex 1
 ./dev electron-xterm-resize-smoke -PaneIndex 2
+./dev electron-xterm-playwright-smoke
 ```
 
 Also test:
@@ -138,7 +139,7 @@ Also test:
 - mouse mode in Neovim/tmux;
 - large output flood, e.g. `find /usr -maxdepth 4`;
 - minimize/restore refocus behavior;
-- Playwright inspection of the DOM shell.
+- Playwright inspection of the DOM shell; automated by `./dev electron-xterm-playwright-smoke`.
 
 ## Current status
 
