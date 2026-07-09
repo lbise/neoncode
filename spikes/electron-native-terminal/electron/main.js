@@ -193,15 +193,26 @@ function terminalBounds(index, count) {
     return undefined;
   }
 
-  const top = Math.max(0, Math.min(HEADER_HEIGHT, contentHeight - 1));
-  const height = Math.max(1, contentHeight - top);
-  const gapTotal = TERMINAL_GAP * Math.max(0, count - 1);
-  const availableWidth = Math.max(1, contentWidth - gapTotal);
-  const baseWidth = Math.max(1, Math.floor(availableWidth / count));
-  const left = index * (baseWidth + TERMINAL_GAP);
-  const width = index === count - 1 ? Math.max(1, contentWidth - left) : baseWidth;
+  // Electron reports BrowserWindow content sizes in logical pixels. The native
+  // child HWND is positioned with Win32 coordinates, which are physical pixels
+  // for a DPI-aware process. Scale the web layout before sending bounds so the
+  // terminal starts below the CSS header on >100% DPI displays.
+  const dpi = currentDpi();
+  const scale = dpi / 96;
+  const physicalContentWidth = Math.max(1, Math.round(contentWidth * scale));
+  const physicalContentHeight = Math.max(1, Math.round(contentHeight * scale));
+  const physicalHeaderHeight = Math.max(1, Math.round(HEADER_HEIGHT * scale));
+  const physicalGap = Math.max(0, Math.round(TERMINAL_GAP * scale));
 
-  return { x: left, y: top, width, height, dpi: currentDpi() };
+  const top = Math.max(0, Math.min(physicalHeaderHeight, physicalContentHeight - 1));
+  const height = Math.max(1, physicalContentHeight - top);
+  const gapTotal = physicalGap * Math.max(0, count - 1);
+  const availableWidth = Math.max(1, physicalContentWidth - gapTotal);
+  const baseWidth = Math.max(1, Math.floor(availableWidth / count));
+  const left = index * (baseWidth + physicalGap);
+  const width = index === count - 1 ? Math.max(1, physicalContentWidth - left) : baseWidth;
+
+  return { x: left, y: top, width, height, dpi, scale };
 }
 
 function sendTerminalBoundsCommand() {
@@ -223,7 +234,7 @@ function sendTerminalBoundsCommand() {
     }
 
     const command = `bounds ${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height} ${bounds.dpi}`;
-    log('host.command.bounds', { index, command });
+    log('host.command.bounds', { index, command, scale: bounds.scale });
     process.stdin.write(`${command}\n`);
   }
 }

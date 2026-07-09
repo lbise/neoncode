@@ -4,6 +4,7 @@ param(
     [string]$OutputPath = "$env:USERPROFILE\neoncode-electron-spike",
     [ValidateSet("wpf", "coordinator")]
     [string]$HostKind = "wpf",
+    [int]$TerminalCount = 0,
     [switch]$Clean
 )
 
@@ -186,7 +187,11 @@ switch ($Command) {
         }
 
         $env:NEONCODE_TERMINAL_HOST_KIND = $HostKind
+        if ($TerminalCount -gt 0) {
+            $env:NEONCODE_TERMINAL_COUNT = [string]$TerminalCount
+        }
         Write-Host "Terminal host kind: $env:NEONCODE_TERMINAL_HOST_KIND"
+        Write-Host "Terminal count:     $env:NEONCODE_TERMINAL_COUNT"
         Invoke-Npm -WorkingDirectory $publishedElectronDir -Arguments "start"
     }
 }

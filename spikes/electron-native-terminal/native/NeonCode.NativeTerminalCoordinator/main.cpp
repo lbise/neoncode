@@ -602,12 +602,15 @@ static RECT CalculateBounds(const RECT& parentClient)
 {
     const auto parentWidth = std::max(1L, parentClient.right - parentClient.left);
     const auto parentHeight = std::max(1L, parentClient.bottom - parentClient.top);
-    const auto top = std::clamp<long>(g_options.topOffset, 0, std::max(0L, parentHeight - 1));
+    const auto dpi = g_options.parentHwnd ? static_cast<int>(GetDpiForWindow(g_options.parentHwnd)) : 96;
+    const auto scaledTopOffset = MulDiv(g_options.topOffset, dpi, 96);
+    const auto scaledGap = MulDiv(g_options.columnGap, dpi, 96);
+    const auto top = std::clamp<long>(scaledTopOffset, 0, std::max(0L, parentHeight - 1));
     const auto height = std::max(1L, parentHeight - top);
-    const auto gapTotal = g_options.columnGap * std::max(0, g_options.columnCount - 1);
+    const auto gapTotal = scaledGap * std::max(0, g_options.columnCount - 1);
     const auto availableWidth = std::max(1L, parentWidth - gapTotal);
     const auto baseWidth = std::max(1L, availableWidth / g_options.columnCount);
-    const auto left = g_options.columnIndex * (baseWidth + g_options.columnGap);
+    const auto left = g_options.columnIndex * (baseWidth + scaledGap);
     const auto width = g_options.columnIndex == g_options.columnCount - 1 ? std::max(1L, parentWidth - left) : baseWidth;
 
     return RECT{ left, top, left + width, top + height };

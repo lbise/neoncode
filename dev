@@ -76,11 +76,11 @@ publish_electron_app() {
 }
 
 run_electron_app() {
-  ps_file 'scripts\electron-spike.ps1' -Command start -HostKind coordinator
+  ps_file 'scripts\electron-spike.ps1' -Command start -HostKind coordinator -TerminalCount 2
 }
 
 run_electron_wpf_app() {
-  ps_file 'scripts\electron-spike.ps1' -Command start -HostKind wpf
+  ps_file 'scripts\electron-spike.ps1' -Command start -HostKind wpf -TerminalCount 2
 }
 
 command="${1:-help}"

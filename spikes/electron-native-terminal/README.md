@@ -190,7 +190,7 @@ WPF fallback/reference host:
 ./dev electron-spike-wpf
 ```
 
-The default helper passes `-HostKind coordinator` to `scripts/electron-spike.ps1`, which sets `NEONCODE_TERMINAL_HOST_KIND=coordinator` for the Electron process. The startup console and Electron log should show `kind: "coordinator"`.
+The default helper passes `-HostKind coordinator -TerminalCount 2` to `scripts/electron-spike.ps1`, which sets `NEONCODE_TERMINAL_HOST_KIND=coordinator` and forces the default two-pane layout even if a stale `NEONCODE_TERMINAL_COUNT` exists in the Windows environment. The startup console and Electron log should show `kind: "coordinator"` and `count: 2`.
 
 The direct-native mode should show the `HwndTerminal` renderer, start bash through `neoncode-hub`, display shell output, and send typed input back through the hub.
 
@@ -265,11 +265,17 @@ Expected result:
 - each region starts its own bash session through `neoncode-hub`;
 - typing in each terminal works after clicking/focusing it.
 
-Optional single-terminal mode:
+Optional single-terminal mode from the published Electron directory:
 
 ```powershell
 $env:NEONCODE_TERMINAL_COUNT = '1'
 npm.cmd start
+```
+
+Or through the helper:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\electron-spike.ps1 -Command start -HostKind coordinator -TerminalCount 1
 ```
 
 ## Validation commands
