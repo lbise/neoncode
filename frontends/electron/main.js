@@ -17,8 +17,8 @@ function ensureLogFile() {
 
   const logDir = path.join(app.getPath('temp'), 'NeonCode');
   fs.mkdirSync(logDir, { recursive: true });
-  logFilePath = path.join(logDir, 'electron-xterm-spike-main.log');
-  fs.appendFileSync(logFilePath, `\n=== Electron xterm spike start ${new Date().toISOString()} pid=${process.pid} ===\n`);
+  logFilePath = path.join(logDir, 'electron-app-main.log');
+  fs.appendFileSync(logFilePath, `\n=== NeonCode Electron app start ${new Date().toISOString()} pid=${process.pid} ===\n`);
   return logFilePath;
 }
 
@@ -27,7 +27,7 @@ function log(message, details) {
     const payload = details === undefined ? '' : ` ${JSON.stringify(details)}`;
     fs.appendFileSync(ensureLogFile(), `${new Date().toISOString()} ${message}${payload}\n`);
   } catch {
-    // Logging must never break the spike.
+    // Logging must never break the app.
   }
 }
 
@@ -38,7 +38,7 @@ function createWindow() {
     width: 1200,
     height: 800,
     backgroundColor: '#0c0c0c',
-    title: 'NeonCode Electron xterm.js Spike',
+    title: 'NeonCode',
     webPreferences: {
       contextIsolation: false,
       nodeIntegration: true,

@@ -172,7 +172,7 @@ function createPane(index) {
     cols: terminal.cols,
   };
 
-  terminal.writeln('\x1b[36mNeonCode xterm.js spike\x1b[0m');
+  terminal.writeln('\x1b[36mNeonCode\x1b[0m');
   terminal.writeln(`Connecting ${sessionId} to ${ENDPOINT}`);
 
   terminal.onData((data) => {

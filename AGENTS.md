@@ -1,8 +1,8 @@
 # NeonCode agent guide
 
-## Current product direction
+## Product direction
 
-Default app path:
+Supported Windows app stack:
 
 ```text
 Electron shell
@@ -11,45 +11,32 @@ Electron shell
   -> WSL/Linux PTY
 ```
 
-Fallback/reference/comparison paths:
-
-```text
-Electron shell -> direct native Windows Terminal HwndTerminal coordinator -> neoncode-hub
-Electron shell -> WPF native terminal host -> neoncode-hub
-WPF reference app -> Windows Terminal WPF wrapper -> neoncode-hub
-```
-
-Product direction is moving to Electron + xterm.js because it avoids child-HWND focus/polish risk and is much easier to automate. Keep native Windows Terminal embedding paths working as fallback/comparison, but do not build new product UX on them unless explicitly requested.
+Previous Windows Terminal/WPF embedding POCs are obsolete. Do not build new work on native Windows Terminal embedding, WPF hosting, or child-HWND terminal coordination.
 
 ## Important paths
 
 ```text
-hub/                                                        Rust neoncode-hub backend
-spikes/electron-xterm/                                     Electron xterm.js app/default renderer
-spikes/electron-native-terminal/                           Native Windows Terminal fallback/reference
-frontends/windows/NeonCode.Windows/                        WPF reference app
-docs/product-requirements.md                               Product requirements / PRD
-docs/architecture.md                                       Current technical architecture
-docs/development-plan.md                                   Roadmap and progress tracker
-docs/hub.md                                                Hub usage/lifecycle docs
-docs/protocol.md                                           Hub WebSocket protocol docs
-docs/terminal-renderer-decision.md                         Renderer decision record
-docs/external-tool-inspiration.md                          cmux/wmux/t3code analysis
+hub/                              Rust neoncode-hub backend
+frontends/electron/               Electron + xterm.js app
+docs/product-requirements.md      Product requirements / PRD
+docs/architecture.md              Current technical architecture
+docs/development-plan.md          Roadmap and progress tracker
+docs/hub.md                       Hub usage/lifecycle docs
+docs/protocol.md                  Hub WebSocket protocol docs
+docs/terminal-renderer-decision.md Renderer decision record
+docs/external-tool-inspiration.md cmux/wmux/t3code analysis
 ```
 
-Windows-local publish outputs:
+Windows-local publish output:
 
 ```text
-%USERPROFILE%\neoncode-electron-spike        Electron app/native-host staging
-%USERPROFILE%\neoncode-electron-xterm-spike  Electron xterm.js spike staging
-%USERPROFILE%\neoncode-publish               WPF reference app staging
+%USERPROFILE%\neoncode-electron
 ```
 
-Debug logs:
+Debug log:
 
 ```text
-%TEMP%\NeonCode\electron-native-spike-main.log
-%TEMP%\NeonCode\direct-coordinator-<pid>-pane-<n>.log
+%TEMP%\NeonCode\electron-app-main.log
 ```
 
 ## Daily commands
@@ -58,9 +45,9 @@ Run from WSL repo root unless noted.
 
 ```bash
 ./dev hub       # run Rust hub on 127.0.0.1:44777
-./dev app       # publish/start Electron xterm.js app, two panes
-./dev publish   # publish Electron xterm.js app only
-./dev check     # JS syntax + WPF builds + Rust fmt/check/clippy
+./dev app       # publish/start Electron app, two xterm panes
+./dev publish   # publish Electron app only
+./dev check     # JS syntax + Rust fmt/check/clippy
 ```
 
 The app expects the hub at:
@@ -79,19 +66,17 @@ Typical manual loop:
 ./dev app
 ```
 
-## Electron/xterm.js commands
+## Electron app commands
 
 ```bash
-./dev electron-xterm-publish # publish xterm.js renderer app/spike
-./dev electron-xterm         # start published xterm.js renderer app/spike
-./dev electron-xterm-install # npm install in source spike directory
-./dev electron-xterm-smoke          # validate running xterm app hub input/output
-./dev electron-xterm-resize-smoke       # validate xterm resize propagation with stty size
-./dev electron-xterm-playwright-smoke   # validate xterm DOM/state/input with Playwright
-./dev electron-xterm-behavior-smoke     # validate basic command/Ctrl+C/tool availability
+./dev electron-publish              # publish Electron app
+./dev electron                      # start published Electron app
+./dev electron-install              # npm install in source app directory
+./dev electron-xterm-smoke          # validate running app hub input/output
+./dev electron-xterm-resize-smoke   # validate resize propagation with stty size
+./dev electron-xterm-playwright-smoke # validate DOM/state/input with Playwright
+./dev electron-xterm-behavior-smoke # validate command/Ctrl+C/tool availability
 ```
-
-This is now the default app path used by `./dev app` and `./dev publish`.
 
 This path uses:
 
@@ -127,15 +112,17 @@ Keep these synchronized when changing hub behavior or protocol messages.
 
 ## Playwright tooling
 
-A specific skill exists to explain how to use playwright, if missing inform the user.
+A project skill exists for Playwright CLI usage:
+
+```text
+.agents/skills/playwright-cli/SKILL.md
+```
 
 Repo config:
 
 ```text
 .playwright/cli.config.json
 ```
-
-### What Playwright can test well here
 
 Playwright is useful for the Electron/web shell layer:
 
@@ -146,24 +133,10 @@ Playwright is useful for the Electron/web shell layer:
 - collecting console/network/tracing info;
 - coordinating higher-level smoke workflows.
 
-### What Playwright cannot test alone
+For the Electron app, also use the app-level Playwright smoke:
 
-The terminal panes are native child HWNDs, not DOM elements. Playwright cannot deeply inspect the Windows Terminal renderer contents or native HWND focus by itself.
-
-For native terminal validation, combine Playwright with:
-
-- PowerShell/Win32 helpers;
-- coordinator stdout events in Electron logs;
-- `%TEMP%\NeonCode\direct-coordinator-*.log`;
-- `./dev electron-spike-direct-hub-smoke`;
-- screenshot/image checks if visual layout needs verification.
-
-Recommended future test shape:
-
-```text
-Playwright: launch/inspect Electron shell and UI
-PowerShell/Win32: locate native HWNDs, send input, check process/window state
-Coordinator logs/events: assert hub_connected/hub_started/hub_output/focus_changed
+```bash
+./dev electron-xterm-playwright-smoke
 ```
 
 ## Useful log commands
@@ -172,15 +145,14 @@ Windows PowerShell:
 
 ```powershell
 Get-ChildItem $env:TEMP\NeonCode\*.log | Sort-Object LastWriteTime
-Get-Content $env:TEMP\NeonCode\electron-native-spike-main.log -Tail 200
-Get-Content $env:TEMP\NeonCode\direct-coordinator-*.log -Tail 200
-Select-String -Path $env:TEMP\NeonCode\electron-native-spike-main.log -Pattern "hub_connected|hub_started|hub_output|focus_changed|host.command.bounds"
+Get-Content $env:TEMP\NeonCode\electron-app-main.log -Tail 200
+Select-String -Path $env:TEMP\NeonCode\electron-app-main.log -Pattern "hub_connected|hub_started|hub_output|terminal_input|terminal_resize"
 ```
 
 From WSL:
 
 ```bash
-powershell.exe -NoProfile -Command 'Get-Content $env:TEMP\NeonCode\electron-native-spike-main.log -Tail 200'
+powershell.exe -NoProfile -Command 'Get-Content $env:TEMP\NeonCode\electron-app-main.log -Tail 200'
 ```
 
 ## Validation expectations before committing
@@ -193,16 +165,17 @@ cargo check
 cargo clippy --all-targets -- -D warnings
 ```
 
-For Electron/xterm.js spike changes:
+For Electron app changes:
 
 ```bash
 bash -n dev
-node --check spikes/electron-xterm/main.js
-node --check spikes/electron-xterm/renderer.js
-./dev electron-xterm-publish
+node --check frontends/electron/main.js
+node --check frontends/electron/renderer.js
+node --check frontends/electron/tests/electron-smoke.js
+./dev publish
 ```
 
-If the task affects xterm hub/input behavior, also run against a live app/hub:
+If the task affects terminal hub/input behavior, also run against a live app/hub:
 
 ```bash
 ./dev electron-xterm-smoke -PaneIndex 1
@@ -214,13 +187,6 @@ If the task affects xterm hub/input behavior, also run against a live app/hub:
 ./dev electron-xterm-behavior-smoke -PaneIndex 2
 ```
 
-If the task affects direct coordinator hub behavior, also run against a live app/hub:
-
-```bash
-./dev electron-spike-direct-hub-smoke -PaneIndex 1
-./dev electron-spike-direct-hub-smoke -PaneIndex 2
-```
-
 For docs-only changes, at minimum run:
 
 ```bash
@@ -229,10 +195,16 @@ git diff --check
 
 ## Process hygiene
 
-Before publish/run tests, stop stale Windows processes when needed:
+Before publish/run tests, stop stale Electron processes when needed:
 
 ```powershell
-Get-Process electron,NeonCode.NativeTerminalCoordinator,NeonCode.ElectronTerminalHost,NeonCode.Windows -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process electron -ErrorAction SilentlyContinue | Stop-Process -Force
 ```
 
-Common transient issue: MSBuild may fail with `LNK1104` on `NeonCode.NativeTerminalCoordinator.exe` if a stale coordinator process still holds the file. Stop processes and retry.
+## Current known deferred issues
+
+- automatic reconnect/list/attach flow has not been added to the Electron app yet;
+- deeper tmux/Neovim interactive behavior still needs validation;
+- mouse mode still needs validation;
+- copy/selection behavior still needs product design;
+- long output/performance soak still needs validation.

@@ -1,7 +1,7 @@
 param(
     [ValidateSet("install", "publish", "start")]
     [string]$Command = "start",
-    [string]$OutputPath = "$env:USERPROFILE\neoncode-electron-xterm-spike",
+    [string]$OutputPath = "$env:USERPROFILE\neoncode-electron",
     [int]$TerminalCount = 2,
     [switch]$Clean
 )
@@ -46,12 +46,12 @@ function Invoke-Npm {
     }
 }
 
-function Stop-XtermSpikeProcesses {
+function Stop-ElectronAppProcesses {
     Get-Process electron -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Milliseconds 500
 }
 
-function Copy-XtermFiles {
+function Copy-ElectronAppFiles {
     param(
         [Parameter(Mandatory=$true)][string]$SourceDirectory,
         [Parameter(Mandatory=$true)][string]$DestinationDirectory
@@ -76,7 +76,7 @@ function Copy-XtermFiles {
 }
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$sourceDir = (Resolve-Path -LiteralPath (Join-Path $repoRoot "spikes\electron-xterm")).ProviderPath
+$sourceDir = (Resolve-Path -LiteralPath (Join-Path $repoRoot "frontends\electron")).ProviderPath
 $publishedDir = Join-Path $OutputPath "electron"
 
 switch ($Command) {
@@ -85,16 +85,16 @@ switch ($Command) {
     }
 
     "publish" {
-        Stop-XtermSpikeProcesses
+        Stop-ElectronAppProcesses
 
         if ($Clean -and (Test-Path -LiteralPath $OutputPath)) {
-            Write-Host "Cleaning Electron xterm spike output: $OutputPath"
+            Write-Host "Cleaning Electron app output: $OutputPath"
             Remove-Item -LiteralPath $OutputPath -Recurse -Force
         }
 
         New-Item -ItemType Directory -Force -Path $OutputPath | Out-Null
-        Write-Host "Copying Electron xterm shell to: $publishedDir"
-        Copy-XtermFiles -SourceDirectory $sourceDir -DestinationDirectory $publishedDir
+        Write-Host "Copying Electron app to: $publishedDir"
+        Copy-ElectronAppFiles -SourceDirectory $sourceDir -DestinationDirectory $publishedDir
         Invoke-Npm -WorkingDirectory $publishedDir -Arguments "install"
 
         $packageJson = Join-Path $publishedDir "package.json"
@@ -104,22 +104,22 @@ switch ($Command) {
 
         foreach ($required in @($packageJson, $electronBin, $xtermPackage, $fitPackage)) {
             if (-not (Test-Path -LiteralPath $required)) {
-                throw "Published Electron xterm spike file missing: $required"
+                throw "Published Electron app file missing: $required"
             }
         }
 
         Write-Host ""
-        Write-Host "Electron xterm spike publish succeeded."
+        Write-Host "Electron app publish succeeded."
         Write-Host "Output: $OutputPath"
         Write-Host "Run:"
-        Write-Host "  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\electron-xterm-spike.ps1 -Command start"
+        Write-Host "  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\electron-app.ps1 -Command start"
     }
 
     "start" {
-        Stop-XtermSpikeProcesses
+        Stop-ElectronAppProcesses
 
         if (-not (Test-Path -LiteralPath (Join-Path $publishedDir "package.json"))) {
-            throw "Published Electron xterm spike not found at $OutputPath. Run './dev electron-xterm-publish' first."
+            throw "Published Electron app not found at $OutputPath. Run './dev publish' first."
         }
 
         $env:NEONCODE_TERMINAL_COUNT = [string]$TerminalCount

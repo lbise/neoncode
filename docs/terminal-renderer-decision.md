@@ -2,25 +2,15 @@
 
 ## Decision
 
-Adopt **Electron + xterm.js** as the default NeonCode app terminal renderer.
+Adopt **Electron + xterm.js** as the Windows terminal renderer for NeonCode.
 
-Keep the native Windows Terminal embedding work as a fallback/reference/comparison path, not the default product path.
+The previous native Windows Terminal embedding POCs are obsolete. They proved useful facts, but they are not a fallback product path.
 
-Default path:
+Supported path:
 
 ```text
 Electron shell
   -> xterm.js renderer in DOM
-  -> neoncode-hub WebSocket
-  -> WSL/Linux PTY via portable-pty
-```
-
-Fallback/reference path:
-
-```text
-Electron shell
-  -> direct native HwndTerminal coordinator
-  -> Microsoft.Terminal.Control.dll
   -> neoncode-hub WebSocket
   -> WSL/Linux PTY via portable-pty
 ```
@@ -30,16 +20,16 @@ Electron shell
 The native Windows Terminal path proved that NeonCode can embed a real Windows Terminal renderer, but it carries significant product risk:
 
 - child-HWND focus behavior is subtle;
-- minimize/restore and taskbar-return focus restoration still show visible latency;
+- minimize/restore and taskbar-return focus restoration showed visible latency;
 - Electron/native z-order and bounds synchronization need constant hardening;
-- mixed-DPI/multi-monitor behavior remains risky;
+- mixed-DPI/multi-monitor behavior is risky;
 - packaging/building `Microsoft.Terminal.Control.dll` requires heavy Windows Terminal/Visual Studio tooling;
 - DOM/UI automation cannot directly inspect native terminal panes.
 
 The xterm.js path removes the biggest integration risks:
 
 - terminal is part of the Electron DOM;
-- focus/minimize/restore feels much more natural;
+- focus/minimize/restore feels natural;
 - panes/splits/tabs are regular web layout;
 - Playwright can inspect and automate much more of the app;
 - packaging is simpler;
@@ -88,12 +78,12 @@ So `node-pty` is not required for WSL terminals as long as `neoncode-hub` runs i
 - simpler Electron integration;
 - better focus behavior;
 - no native child-window layout/focus fight;
-- no Windows Terminal source checkout/build for default app;
+- no Windows Terminal source checkout/build;
 - easier test automation;
 - easier cross-platform story;
 - easier UI composition around tabs/splits/panes.
 
-### Losses vs Windows Terminal renderer
+### Costs vs Windows Terminal renderer
 
 - not the exact native Windows Terminal renderer;
 - possible differences in Unicode, emoji, CJK, ligatures, and font fallback;
@@ -101,22 +91,27 @@ So `node-pty` is not required for WSL terminals as long as `neoncode-hub` runs i
 - copy/paste/selection/search/hyperlink behavior is app-owned;
 - performance under heavy output/large scrollback must be validated.
 
+These costs are acceptable compared with the native child-HWND integration risk.
+
 ## Current validation
 
-Initial xterm.js validation:
+Validated xterm.js behavior:
 
-- Electron xterm app launches;
+- Electron app launches;
 - two xterm panes connect to `neoncode-hub`;
 - sessions start;
 - shell output appears;
-- manual focus after minimize/restore feels better than native child HWND path;
-- xterm smoke helper verifies scripted input produces hub output;
-- xterm path handles normalized paste, Ctrl+Shift+V, Shift+Insert, Ctrl+Space → NUL, and Alt+Backspace → ESC DEL;
-- xterm resize smoke verifies latest xterm rows/cols match `stty size` from the PTY;
+- scripted input produces hub output;
+- normalized paste works;
+- duplicate paste suppression works;
+- Ctrl+Shift+V and Shift+Insert paste work;
+- Ctrl+Space → NUL;
+- Alt+Backspace → ESC DEL;
+- resize smoke verifies latest xterm rows/cols match `stty size` from the PTY;
 - Playwright smoke launches Electron, asserts DOM/test state, and verifies xterm input produces hub output;
 - behavior smoke verifies basic command round-trip, Ctrl+C signal handling, and tmux/nvim availability reporting.
 
-Validation command:
+Validation commands:
 
 ```bash
 ./dev electron-xterm-smoke -PaneIndex 1
@@ -138,35 +133,23 @@ Default app:
 ./dev app
 ```
 
-Explicit xterm app:
+Explicit app commands:
 
 ```bash
-./dev electron-xterm-publish
-./dev electron-xterm
-```
-
-Native fallback:
-
-```bash
-./dev electron-native-publish
-./dev electron-native
+./dev publish
+./dev electron
 ```
 
 ## Next validation checklist
 
-Before building more product UX on xterm.js, validate:
+Before building much more product UX, validate:
 
-- `stty size` after resize;
-- Ctrl+C;
 - Ctrl+D;
 - Ctrl+Z;
-- Ctrl+Space;
-- Alt key combinations;
-- paste;
+- broader Alt key combinations;
 - copy/selection;
-- Neovim;
-- tmux;
+- Neovim interactive behavior;
+- tmux interactive behavior;
 - mouse mode in Neovim/tmux;
 - large output throughput;
-- long-session soak;
-- Playwright coverage for Electron shell and xterm DOM state.
+- long-session soak.

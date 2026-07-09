@@ -18,7 +18,7 @@ PTY child process, usually bash in WSL/Linux
 
 ## Status
 
-The hub is still a prototype service, but it is now the shared foundation for the Electron xterm.js app and fallback native/WPF hosts.
+The hub is still a prototype service, but it is now the shared foundation for the Electron xterm.js app.
 
 Current capabilities:
 
@@ -73,7 +73,7 @@ Override:
 NEONCODE_HUB_BIND=127.0.0.1:44777 cargo run -p neoncode-hub
 ```
 
-Legacy fallback is still accepted for now:
+Legacy environment variable compatibility is still accepted for now:
 
 ```bash
 WORKSPACE_HUB_BIND=127.0.0.1:44777 cargo run -p neoncode-hub

@@ -2,7 +2,7 @@
 
 ## Overview
 
-Current default architecture:
+Supported Windows architecture:
 
 ```text
 Electron app
@@ -15,14 +15,16 @@ Electron app
 
 The frontend owns presentation and layout. The hub owns session lifecycle and PTY/process state.
 
+Previous Windows Terminal/WPF embedding POCs are obsolete and are not part of the supported product direction.
+
 ## Components
 
-### Electron xterm app
+### Electron app
 
 Source:
 
 ```text
-spikes/electron-xterm/
+frontends/electron/
 ```
 
 Current role:
@@ -39,11 +41,11 @@ Run:
 ./dev app
 ```
 
-Explicit xterm commands:
+Explicit commands:
 
 ```bash
-./dev electron-xterm-publish
-./dev electron-xterm
+./dev electron-publish
+./dev electron
 ```
 
 ### neoncode-hub
@@ -96,51 +98,20 @@ This protocol is intentionally simple. Product work should evolve it toward:
 - better exit/error reporting;
 - launch profiles.
 
-### Native Windows Terminal fallback
-
-Source:
-
-```text
-spikes/electron-native-terminal/
-frontends/windows/NeonCode.Windows/
-```
-
-Current role:
-
-- validated fallback/reference path;
-- proves Windows Terminal control embedding works;
-- no longer the default product renderer because child-HWND focus/layout polish risk is high.
-
-Commands:
-
-```bash
-./dev electron-native
-./dev electron-native-wpf
-./dev wpf-app
-```
-
-Tooling doc:
-
-- [windows-terminal-embedding.md](windows-terminal-embedding.md)
-
-Renderer decision:
-
-- [terminal-renderer-decision.md](terminal-renderer-decision.md)
-
 ## Source layout
 
 ```text
-hub/src/main.rs       hub process setup, routes, logging, shutdown
-hub/src/protocol.rs   JSON protocol types
-hub/src/session.rs    PTY lifecycle, IO, session events
-hub/src/state.rs      app state and session registry
-hub/src/ws.rs         WebSocket handling and protocol dispatch
+hub/src/main.rs                    hub process setup, routes, logging, shutdown
+hub/src/protocol.rs                JSON protocol types
+hub/src/session.rs                 PTY lifecycle, IO, session events
+hub/src/state.rs                   app state and session registry
+hub/src/ws.rs                      WebSocket handling and protocol dispatch
 
-spikes/electron-xterm/main.js            Electron main process
-spikes/electron-xterm/renderer.js        xterm.js panes and hub client
-spikes/electron-xterm/tests/             Playwright smoke tests
-scripts/electron-xterm-spike.ps1         Windows-local publish/start helper
-scripts/electron-xterm-*-smoke.ps1       smoke/validation helpers
+frontends/electron/main.js         Electron main process
+frontends/electron/renderer.js     xterm.js panes and hub client
+frontends/electron/tests/          Playwright smoke tests
+scripts/electron-app.ps1           Windows-local publish/start helper
+scripts/electron-xterm-*-smoke.ps1 smoke/validation helpers
 ```
 
 ## Validation commands
@@ -152,7 +123,7 @@ Baseline:
 ./dev publish
 ```
 
-With `./dev hub` and a running xterm app:
+With `./dev hub` and a running app:
 
 ```bash
 ./dev electron-xterm-smoke -PaneIndex 1
@@ -164,7 +135,7 @@ With `./dev hub` and a running xterm app:
 ./dev electron-xterm-behavior-smoke -PaneIndex 2
 ```
 
-Currently validated on xterm path:
+Currently validated:
 
 - two panes;
 - hub connect/start/output;
@@ -263,8 +234,7 @@ Do not build the remote daemon before local/session/workspace semantics are soli
 ## Design rules
 
 - Do not use UI indexes as stable identities.
-- Keep terminal renderer swappable behind the hub protocol.
-- Keep native Windows Terminal embedding as fallback/reference only.
+- Electron + xterm.js is the Windows product path.
 - Prefer typed protocol events and explicit state over log scraping.
 - Add trust prompts before running project-local commands.
 - Do not store secrets in workspace files.

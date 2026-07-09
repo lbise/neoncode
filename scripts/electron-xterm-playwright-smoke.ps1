@@ -1,5 +1,5 @@
 param(
-    [string]$OutputPath = "$env:USERPROFILE\neoncode-electron-xterm-spike",
+    [string]$OutputPath = "$env:USERPROFILE\neoncode-electron",
     [int]$TimeoutSeconds = 15
 )
 

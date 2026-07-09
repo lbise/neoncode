@@ -1,8 +1,8 @@
 {
-  "name": "neoncode-electron-xterm-spike",
+  "name": "neoncode-electron-app",
   "version": "0.1.0",
   "private": true,
-  "description": "Spike: Electron shell rendering neoncode-hub PTYs with xterm.js.",
+  "description": "NeonCode Electron app rendering neoncode-hub PTYs with xterm.js.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

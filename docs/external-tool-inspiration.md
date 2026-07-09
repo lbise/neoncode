@@ -34,7 +34,7 @@ Current design intent:
 
 - Electron is the product shell.
 - xterm.js is the default terminal renderer because it avoids native child-HWND focus/polish risk.
-- Native Windows Terminal/WPF paths remain fallback/reference implementations.
+- Native Windows Terminal/WPF paths were useful POCs but are obsolete for the Windows product path.
 - The Rust `neoncode-hub` should own PTYs, session lifecycle, attach/detach/reconnect, and launch profiles.
 - The GUI should own visible layout: tabs, panes, workspaces, command palette, overview.
 - tmux may be used for remote persistence, but should not be the visible layout owner.
@@ -69,7 +69,7 @@ The UI can quit/reopen while sessions live in a daemon. This directly matches Ne
 NeonCode adaptation:
 
 ```text
-Electron/WPF frontend
+Electron frontend
   ⇄ neoncode-hub
       ⇄ PTY / SSH / tmux / command
 ```
@@ -165,7 +165,7 @@ License note: `cmux` is dual-licensed GPL-3.0-or-later/commercial. Treat it as a
 NeonCode adaptation:
 
 ```text
-Windows: xterm.js default; Windows Terminal control / HwndTerminal fallback
+Windows: xterm.js default
 Linux:   xterm.js default for Electron path; native renderer candidates can be revisited later
 macOS:   xterm.js default for Electron path; native renderer candidates can be revisited later
 ```

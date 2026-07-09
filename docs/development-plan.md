@@ -3,12 +3,12 @@
 ## Current stage
 
 ```text
-Stage: product foundation after renderer decision
-Default app: Electron + xterm.js + neoncode-hub
+Stage: product foundation after Windows stack decision
+Supported Windows app: Electron + xterm.js + neoncode-hub
 Next focus: app/session model and reconnect/attach behavior
 ```
 
-The Windows tech stack is settled enough for product-oriented work:
+The Windows tech stack is now:
 
 ```text
 Electron shell
@@ -18,7 +18,7 @@ portable-pty in WSL/Linux
 Playwright + PowerShell smoke validation
 ```
 
-Native Windows Terminal embedding and WPF remain fallback/reference paths.
+Previous Windows Terminal/WPF embedding POCs are obsolete and are not a product path.
 
 ## Recently completed
 
@@ -26,10 +26,10 @@ Native Windows Terminal embedding and WPF remain fallback/reference paths.
 
 - [x] Built Rust `neoncode-hub` POC with `/health` and `/ws`.
 - [x] Implemented PTY start/input/output/resize/kill.
-- [x] Validated WPF + Windows Terminal embedding.
-- [x] Validated Electron + native Windows Terminal coordinator.
-- [x] Switched default app direction to Electron + xterm.js.
-- [x] Kept native Windows Terminal path as fallback/comparison.
+- [x] Tested WPF/Windows Terminal and Electron/native Windows Terminal POCs.
+- [x] Rejected native child-HWND terminal embedding as the product path due to focus/polish/automation risk.
+- [x] Adopted Electron + xterm.js as the supported Windows app stack.
+- [x] Moved the Electron app to `frontends/electron`.
 
 ### Hub/session foundation
 
@@ -42,8 +42,8 @@ Native Windows Terminal embedding and WPF remain fallback/reference paths.
 ### xterm.js validation
 
 - [x] Added Electron xterm app.
-- [x] Made `./dev app` and `./dev publish` target xterm app.
-- [x] Added xterm smoke for hub start/input/output.
+- [x] Made `./dev app` and `./dev publish` target the Electron app.
+- [x] Added smoke for hub start/input/output.
 - [x] Added paste handling and common special keys:
   - Ctrl+Shift+V;
   - Shift+Insert;
@@ -68,18 +68,18 @@ Native Windows Terminal embedding and WPF remain fallback/reference paths.
 Goal:
 
 ```text
-Close/reopen the Electron xterm app and reattach to existing hub sessions instead of always starting fresh sessions.
+Close/reopen the Electron app and reattach to existing hub sessions instead of always starting fresh sessions.
 ```
 
 Why this matters:
 
 - moves NeonCode from terminal proxy to session cockpit;
-- exercises hub `list_sessions`/`attach`/`detach` in the default app;
+- exercises hub `list_sessions`/`attach`/`detach` in the supported app;
 - creates the foundation for workspaces, layouts, and reconnect.
 
 Tasks:
 
-- [ ] Refactor xterm Electron app out of a single `renderer.js` into modules:
+- [ ] Refactor `frontends/electron/renderer.js` into modules:
   - hub client;
   - terminal pane;
   - session model;
@@ -103,7 +103,7 @@ Acceptance criteria:
 
 ### 1. App architecture
 
-- [ ] Move xterm app from `spikes/electron-xterm` to product path, likely `frontends/electron`.
+- [x] Move Electron app to product path `frontends/electron`.
 - [ ] Introduce a small state model for panes/sessions/workspaces.
 - [ ] Add app-level error display for hub disconnect/session exit/protocol errors.
 - [ ] Add config storage under `%APPDATA%\NeonCode`.
@@ -194,13 +194,16 @@ Inspired by wmux/cmux/t3code analysis:
 - [ ] Notify when agent/test/log needs attention.
 - [ ] Consider supervised/full-access modes later.
 
-## Deferred/fallback work
+## Obsolete POCs
 
-Native Windows Terminal embedding is no longer the default path, but remains useful as a reference:
+The following were useful to de-risk the project but are no longer part of the active Windows product path:
 
-- [ ] Keep native fallback buildable when practical.
-- [ ] Do not invest in child-HWND focus polish unless xterm.js fails a critical requirement.
-- [ ] Keep WPF app as reference for old Windows Terminal control behavior.
+- WPF Windows Terminal embedding;
+- Electron + direct native Windows Terminal coordinator;
+- Electron + WPF native terminal host;
+- Windows Terminal source/build dependency.
+
+Do not add new product work to these paths.
 
 ## Validation commands
 

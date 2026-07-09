@@ -58,20 +58,20 @@ function Read-SharedText {
 }
 
 function Get-XtermElectronLog {
-    $path = Join-Path $env:TEMP "NeonCode\electron-xterm-spike-main.log"
+    $path = Join-Path $env:TEMP "NeonCode\electron-app-main.log"
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        throw "Electron xterm log not found: $path. Start './dev app' or './dev electron-xterm' first."
+        throw "Electron app log not found: $path. Start './dev app' or './dev electron' first."
     }
     return $path
 }
 
 function Get-XtermWindow {
     $process = Get-Process electron -ErrorAction SilentlyContinue |
-        Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -like "*NeonCode Electron xterm.js Spike*" } |
+        Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -like "*NeonCode*" } |
         Select-Object -First 1
 
     if (-not $process) {
-        throw "Electron xterm window not found. Start './dev app' or './dev electron-xterm' first."
+        throw "Electron app window not found. Start './dev app' or './dev electron' first."
     }
 
     return $process
@@ -116,7 +116,7 @@ function Get-LatestResizeEvent {
 }
 
 if ($PaneIndex -lt 1 -or $PaneIndex -gt 2) {
-    throw "PaneIndex is 1-based and must be 1 or 2 for the current xterm spike."
+    throw "PaneIndex is 1-based and must be 1 or 2 for the current Electron app."
 }
 
 $zeroBasedPaneIndex = $PaneIndex - 1
