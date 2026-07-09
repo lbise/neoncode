@@ -11,7 +11,7 @@ docs/hub.md                  hub run/lifecycle/development documentation
 docs/protocol.md             temporary WebSocket PTY protocol
 ```
 
-The current daily app path is the Electron shell with the direct native `HwndTerminal` coordinator. The WPF frontend/native host remains a validated reference/fallback because it proved the Windows Terminal renderer + hub protocol path first.
+The current daily app path is the Electron shell with `xterm.js` rendering connected to `neoncode-hub`. The native Windows Terminal coordinator and WPF frontend/native host remain validated fallback/comparison paths, but product direction is moving away from child-HWND terminal embedding because of focus/polish risk.
 
 ## Daily development commands
 
@@ -30,14 +30,15 @@ Typical loop from WSL:
 Common commands:
 
 ```bash
-./dev app          # publish/start Electron app with direct HwndTerminal coordinator
-./dev publish      # publish Electron app to a Windows-local folder
+./dev app          # publish/start Electron xterm.js app
+./dev publish      # publish Electron xterm.js app to a Windows-local folder
 ./dev hub          # run the Rust NeonCode hub (see docs/hub.md)
 ./dev check        # Electron/WPF frontend checks + Rust fmt/check/clippy
 ./dev wt-build     # bootstrap/build Microsoft.Terminal.Control.dll
-./dev full         # build Windows Terminal control, then publish Electron app
+./dev full         # build Windows Terminal control, then publish native fallback app
 ./dev wpf-app      # publish/start the validated WPF reference app
-./dev electron-spike-wpf # start Electron with the WPF terminal host fallback
+./dev electron-native # start Electron with direct HwndTerminal fallback
+./dev electron-native-wpf # start Electron with WPF terminal host fallback
 ./dev status       # show useful paths/status
 ```
 
@@ -48,11 +49,11 @@ The detailed manual workflow is below for troubleshooting and fresh-machine setu
 The full manual workflow is:
 
 1. check the Rust hub from WSL/Linux;
-2. bootstrap the pinned Windows Terminal dependency with Windows tooling;
-3. build the native Windows Terminal control;
-4. publish the Electron app to a Windows-local folder;
-5. run the hub from WSL;
-6. run the published Electron app.
+2. publish the Electron xterm.js app to a Windows-local folder;
+3. run the hub from WSL;
+4. run the published Electron app.
+
+The native Windows Terminal paths still require the pinned Windows Terminal dependency/tooling described below, but the default xterm.js app does not.
 
 The validated WPF app remains available through `./dev wpf-app` and `scripts/publish-windows-frontend.ps1` for fallback/reference testing.
 
@@ -62,7 +63,11 @@ Required on WSL/Linux:
 
 - Rust toolchain with Cargo.
 
-Required on Windows:
+Required on Windows for the default Electron xterm.js app:
+
+- Node.js/npm for Windows.
+
+Required on Windows for WPF/native Windows Terminal fallback paths:
 
 - .NET 8 SDK;
 - Git for Windows;
@@ -87,7 +92,7 @@ cargo check
 cargo clippy --all-targets -- -D warnings
 ```
 
-### 2. Bootstrap the pinned Windows Terminal dependency
+### 2. Optional: bootstrap the pinned Windows Terminal dependency for native fallback testing
 
 From the repo root in WSL:
 
@@ -97,7 +102,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\bootstrap-windo
 
 This reads `deps/windows-terminal.json`, verifies Windows tooling, checks out the pinned Windows Terminal version, applies repository-owned patches, and prepares vcpkg.
 
-### 3. Build the native Windows Terminal control
+### 3. Optional: build the native Windows Terminal control for native fallback testing
 
 From the repo root in WSL:
 
@@ -111,9 +116,9 @@ Expected native output:
 C:\Users\13lbise\gitrepo\microsoft-terminal\bin\x64\Debug\Microsoft.Terminal.Control\Microsoft.Terminal.Control.dll
 ```
 
-This step is required before publishing/running the real terminal frontend because the WPF app copies these native files into its output.
+This step is required before publishing/running the native Windows Terminal fallback paths because the WPF/native apps copy these files into their output. It is not required for the default xterm.js app.
 
-### 4. Publish the Electron app
+### 4. Publish the Electron xterm.js app
 
 From the repo root in WSL:
 
@@ -124,24 +129,22 @@ From the repo root in WSL:
 Equivalent direct command:
 
 ```bash
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\electron-spike.ps1 -Command publish
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\electron-xterm-spike.ps1 -Command publish
 ```
 
 Default publish output:
 
 ```text
-C:\Users\13lbise\neoncode-electron-spike
+C:\Users\13lbise\neoncode-electron-xterm-spike
 ```
 
-The publish script builds/stages:
+The publish script stages the Electron xterm.js shell and installs its npm dependencies in a Windows-local folder.
 
-```text
-electron\                                  Electron shell
-native-host\NeonCode.ElectronTerminalHost.exe
-native-host\NeonCode.NativeTerminalCoordinator.exe
+Native Windows Terminal fallback publish remains available with:
+
+```bash
+./dev electron-native-publish
 ```
-
-The default app command uses the direct native `HwndTerminal` coordinator, which now connects to `neoncode-hub`. The WPF native terminal host remains staged and available as a fallback/reference path.
 
 Optional clean publish:
 
@@ -177,13 +180,19 @@ From WSL:
 ./dev app
 ```
 
-Or start an already-published Electron app:
+Or start an already-published Electron xterm.js app:
 
 ```bash
-./dev electron-spike
+./dev electron-xterm
 ```
 
-The Electron app passes the hub endpoint to its native terminal hosts:
+Native Windows Terminal fallback app:
+
+```bash
+./dev electron-native
+```
+
+The Electron xterm.js app connects directly to the hub endpoint:
 
 ```text
 ws://127.0.0.1:44777/ws

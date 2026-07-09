@@ -12,8 +12,8 @@ Usage:
   ./dev <command>
 
 Daily commands:
-  ./dev app          Publish/start Electron app with direct HwndTerminal coordinator
-  ./dev publish      Publish Electron app to %USERPROFILE%\neoncode-electron-spike
+  ./dev app          Publish/start Electron xterm.js app
+  ./dev publish      Publish Electron xterm.js app to %USERPROFILE%\neoncode-electron-xterm-spike
   ./dev hub          Run the Rust NeonCode hub
   ./dev check        Run Electron/WPF frontend checks + Rust fmt/check/clippy
 
@@ -28,20 +28,22 @@ WPF reference app commands:
   ./dev wpf-run      Start the already-published WPF reference app
   ./dev wpf-stop     Stop running NeonCode.Windows processes
 
-Electron/direct-native commands:
-  ./dev electron-spike-publish Publish Electron app/spike to %USERPROFILE%\neoncode-electron-spike
-  ./dev electron-spike         Start Electron with direct HwndTerminal coordinator
-  ./dev electron-spike-wpf     Start Electron with the WPF terminal host fallback
-  ./dev electron-spike-install Install Electron npm dependencies in-place
-  ./dev electron-spike-native  Build the Electron native WPF host and direct native coordinator
-  ./dev electron-spike-coordinator Build only the direct native HwndTerminal coordinator
-  ./dev electron-spike-focus-test Stress an already-running Electron window
-  ./dev electron-spike-direct-hub-smoke Validate direct coordinator hub input/output
+Electron/xterm.js commands:
+  ./dev electron-xterm-publish Publish Electron xterm.js app/spike
+  ./dev electron-xterm         Start published Electron xterm.js app/spike
+  ./dev electron-xterm-install Install Electron xterm.js npm dependencies in-place
 
-Electron/xterm.js spike commands:
-  ./dev electron-xterm-publish Publish Electron xterm.js spike
-  ./dev electron-xterm         Start published Electron xterm.js spike
-  ./dev electron-xterm-install Install Electron xterm.js spike npm dependencies in-place
+Electron/native Windows Terminal fallback commands:
+  ./dev electron-native-publish Publish Electron native HwndTerminal fallback
+  ./dev electron-native         Start Electron with direct HwndTerminal coordinator fallback
+  ./dev electron-native-wpf     Start Electron with the WPF terminal host fallback
+  ./dev electron-spike-publish  Alias for electron-native-publish
+  ./dev electron-spike          Alias for electron-native
+  ./dev electron-spike-wpf      Alias for electron-native-wpf
+  ./dev electron-spike-native   Build the Electron native WPF host and direct native coordinator
+  ./dev electron-spike-coordinator Build only the direct native HwndTerminal coordinator
+  ./dev electron-spike-focus-test Stress an already-running Electron/native window
+  ./dev electron-spike-direct-hub-smoke Validate direct coordinator hub input/output
 
 Utility commands:
   ./dev status       Show git status and important output paths
@@ -76,16 +78,28 @@ run_wpf_app() {
   ps_command 'Start-Process "$env:USERPROFILE\neoncode-publish\NeonCode.Windows.exe"'
 }
 
-publish_electron_app() {
+publish_native_electron_app() {
   ps_file 'scripts\electron-spike.ps1' -Command publish "$@"
 }
 
-run_electron_app() {
+run_native_electron_app() {
   ps_file 'scripts\electron-spike.ps1' -Command start -HostKind coordinator -TerminalCount 2
 }
 
-run_electron_wpf_app() {
+run_native_electron_wpf_app() {
   ps_file 'scripts\electron-spike.ps1' -Command start -HostKind wpf -TerminalCount 2
+}
+
+publish_xterm_electron_app() {
+  ps_file 'scripts\electron-xterm-spike.ps1' -Command publish "$@"
+}
+
+run_xterm_electron_app() {
+  if [[ $# -gt 0 ]]; then
+    ps_file 'scripts\electron-xterm-spike.ps1' -Command start "$@"
+  else
+    ps_file 'scripts\electron-xterm-spike.ps1' -Command start -TerminalCount 2
+  fi
 }
 
 command="${1:-help}"
@@ -99,12 +113,12 @@ case "$command" in
     ;;
 
   app)
-    publish_electron_app "$@"
-    run_electron_app
+    publish_xterm_electron_app "$@"
+    run_xterm_electron_app
     ;;
 
   publish)
-    publish_electron_app "$@"
+    publish_xterm_electron_app "$@"
     ;;
 
   hub)
@@ -132,7 +146,7 @@ case "$command" in
 
   full)
     ps_file 'scripts\build-windows-terminal-control.ps1'
-    publish_electron_app
+    publish_native_electron_app
     ;;
 
   wpf-app)
@@ -154,8 +168,12 @@ case "$command" in
     stop_wpf_app
     ;;
 
+  electron-native-publish)
+    publish_native_electron_app "$@"
+    ;;
+
   electron-spike-publish)
-    publish_electron_app "$@"
+    publish_native_electron_app "$@"
     ;;
 
   electron-spike-install)
@@ -187,19 +205,27 @@ case "$command" in
     ;;
 
   electron-xterm)
-    ps_file 'scripts\electron-xterm-spike.ps1' -Command start "$@"
+    run_xterm_electron_app "$@"
+    ;;
+
+  electron-native)
+    run_native_electron_app
+    ;;
+
+  electron-native-wpf)
+    run_native_electron_wpf_app
     ;;
 
   electron-spike)
-    run_electron_app
+    run_native_electron_app
     ;;
 
   electron-spike-wpf)
-    run_electron_wpf_app
+    run_native_electron_wpf_app
     ;;
 
   electron-spike-direct)
-    run_electron_app
+    run_native_electron_app
     ;;
 
   status)
@@ -207,7 +233,8 @@ case "$command" in
     cat <<'EOF'
 
 Important paths:
-  Electron app:    %USERPROFILE%\neoncode-electron-spike
+  Electron xterm:  %USERPROFILE%\neoncode-electron-xterm-spike
+  Electron native: %USERPROFILE%\neoncode-electron-spike
   WPF reference:   %USERPROFILE%\neoncode-publish
   App config:      %APPDATA%\NeonCode\config.json
   WT checkout:     %USERPROFILE%\gitrepo\microsoft-terminal

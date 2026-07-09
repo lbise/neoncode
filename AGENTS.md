@@ -8,19 +8,20 @@ Default app path:
 
 ```text
 Electron shell
-  -> direct native Windows Terminal HwndTerminal coordinator
+  -> xterm.js renderer in the DOM
   -> neoncode-hub WebSocket
   -> WSL/Linux PTY
 ```
 
-Fallback/reference paths:
+Fallback/reference/comparison paths:
 
 ```text
+Electron shell -> direct native Windows Terminal HwndTerminal coordinator -> neoncode-hub
 Electron shell -> WPF native terminal host -> neoncode-hub
 WPF reference app -> Windows Terminal WPF wrapper -> neoncode-hub
 ```
 
-Keep the WPF paths working as reference/fallback. The Electron + direct native coordinator path is the current default app, but the project is actively evaluating an Electron + xterm.js renderer spike because child-HWND focus/polish risk is real.
+Product direction is moving to Electron + xterm.js because it avoids child-HWND focus/polish risk and is much easier to automate. Keep native Windows Terminal embedding paths working as fallback/comparison, but do not build new product UX on them unless explicitly requested.
 
 ## Important paths
 
@@ -59,8 +60,8 @@ Run from WSL repo root unless noted.
 
 ```bash
 ./dev hub       # run Rust hub on 127.0.0.1:44777
-./dev app       # publish/start Electron + direct HwndTerminal coordinator, two panes
-./dev publish   # publish Electron app/native hosts only
+./dev app       # publish/start Electron xterm.js app, two panes
+./dev publish   # publish Electron xterm.js app only
 ./dev check     # JS syntax + WPF builds + Rust fmt/check/clippy
 ```
 
@@ -80,12 +81,33 @@ Typical manual loop:
 ./dev app
 ```
 
-## Electron/native commands
+## Electron/xterm.js commands
 
 ```bash
-./dev electron-spike                  # start published Electron app with direct coordinator
-./dev electron-spike-wpf              # start published Electron app with WPF native host fallback
-./dev electron-spike-publish          # publish Electron app/native hosts
+./dev electron-xterm-publish # publish xterm.js renderer app/spike
+./dev electron-xterm         # start published xterm.js renderer app/spike
+./dev electron-xterm-install # npm install in source spike directory
+```
+
+This is now the default app path used by `./dev app` and `./dev publish`.
+
+This path uses:
+
+```text
+xterm.js in Electron DOM -> WebSocket -> Rust neoncode-hub -> portable-pty -> WSL/Linux PTY
+```
+
+It intentionally does not use `node-pty`. `node-pty` would be relevant for a VS Code-like local Electron terminal backend, especially Windows-local PowerShell/cmd or Windows-side `wsl.exe`, but NeonCode's current backend model remains Rust hub over WebSocket.
+
+## Electron/native Windows Terminal fallback commands
+
+```bash
+./dev electron-native                 # start published Electron app with direct coordinator
+./dev electron-native-wpf             # start published Electron app with WPF native host fallback
+./dev electron-native-publish         # publish Electron app/native hosts
+./dev electron-spike                  # legacy alias for electron-native
+./dev electron-spike-wpf              # legacy alias for electron-native-wpf
+./dev electron-spike-publish          # legacy alias for electron-native-publish
 ./dev electron-spike-native           # build WPF host + direct coordinator
 ./dev electron-spike-coordinator      # build only direct coordinator
 ./dev electron-spike-direct-hub-smoke # validate direct coordinator hub IO against running app
@@ -114,22 +136,6 @@ Focus stress example:
 ```
 
 Known focus issue: taskbar/minimize/restore can still show a visible refocus delay. Treat this as deferred polish unless the task is specifically about focus hardening.
-
-## Electron/xterm.js spike commands
-
-```bash
-./dev electron-xterm-publish # publish xterm.js renderer spike
-./dev electron-xterm         # start published xterm.js renderer spike
-./dev electron-xterm-install # npm install in source spike directory
-```
-
-This spike uses:
-
-```text
-xterm.js in Electron DOM -> WebSocket -> Rust neoncode-hub -> portable-pty -> WSL/Linux PTY
-```
-
-It intentionally does not use `node-pty`. `node-pty` would be relevant for a VS Code-like local Electron terminal backend, especially Windows-local PowerShell/cmd or Windows-side `wsl.exe`, but NeonCode's current backend model remains Rust hub over WebSocket.
 
 ## WPF reference/fallback commands
 

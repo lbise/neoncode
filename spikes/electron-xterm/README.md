@@ -1,8 +1,8 @@
 # Electron xterm.js spike
 
-Goal: compare a pure web terminal renderer against the native Windows Terminal embedding path.
+Goal: make the default Electron terminal path use a pure web terminal renderer instead of native Windows Terminal child-HWND embedding.
 
-This spike intentionally reuses `neoncode-hub` so the comparison is about rendering/integration, not backend/session architecture.
+This app intentionally reuses `neoncode-hub` so the renderer can change without changing backend/session architecture.
 
 ## Architecture
 
@@ -83,6 +83,12 @@ Terminal 1:
 Terminal 2:
 
 ```bash
+./dev app
+```
+
+Equivalent explicit xterm commands:
+
+```bash
 ./dev electron-xterm-publish
 ./dev electron-xterm
 ```
@@ -126,6 +132,6 @@ Also test:
 
 ## Current status
 
-Initial scaffold. Not yet product direction.
+Adopted as the default `./dev app` path after quick manual validation showed better focus/minimize/restore behavior and simpler visual integration than native Windows Terminal embedding.
 
-Use this spike to decide whether xterm.js is good enough to replace or complement the direct native Windows Terminal coordinator path.
+The direct native Windows Terminal coordinator remains available as a fallback/comparison path through `./dev electron-native`.

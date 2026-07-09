@@ -11,8 +11,8 @@ poc/windows-terminal-embedded
 ## Current stage
 
 ```text
-Stage: Phase 1/3 — renderer/product-shell reassessment
-Next task: validate Electron xterm.js spike against neoncode-hub and compare with direct native coordinator
+Stage: Phase 1/3 — xterm.js product-shell pivot
+Next task: harden Electron xterm.js app behavior and validation
 ```
 
 ## Phase 0 — preserve the spike
@@ -54,6 +54,8 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Make `./dev app` use Electron + direct native coordinator by default.
 - [x] Add direct coordinator hub smoke validation helper.
 - [x] Scaffold Electron xterm.js spike using `neoncode-hub`.
+- [x] Make Electron xterm.js app the default `./dev app` path.
+- [x] Move native Windows Terminal coordinator to explicit fallback/comparison commands.
 - [ ] Add app-level error reporting for native terminal load failure.
 - [ ] Add app-level error reporting for backend disconnect.
 - [ ] Add app-level error reporting for session exit and protocol errors.
@@ -64,7 +66,8 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Add shared in-process hub session registry skeleton.
 - [x] Decouple PTY output from the creating WebSocket sender with session event broadcasting.
 - [x] Define list/attach/detach protocol messages.
-- [ ] Validate xterm.js renderer path before deeper native reconnect work.
+- [x] Validate initial xterm.js renderer path against `neoncode-hub` start/output.
+- [ ] Harden xterm.js renderer path for input, resize, copy/paste, special keys, nvim/tmux, and Playwright automation before deeper native reconnect work.
 - [ ] Define automatic reconnect flow on top of list/attach/detach.
 - [ ] Add structured tracing/logging refinements to the hub.
 
@@ -188,9 +191,9 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Add direct coordinator hub smoke test for start/output/posted-input/output.
 - [x] Reassess WPF after Electron spike; keep as reference/fallback while Electron becomes default app path.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.
-- [ ] Validate Electron xterm.js renderer spike against hub/PTTY.
-- [ ] Compare xterm.js vs direct native Windows Terminal coordinator.
-- [ ] Verify native terminal hosting feasibility for the chosen product shell.
+- [x] Validate initial Electron xterm.js renderer spike against hub/PTTY.
+- [x] Compare xterm.js vs direct native Windows Terminal coordinator enough to choose xterm.js as default path.
+- [ ] Keep native Windows Terminal coordinator available as fallback/comparison, not default product path.
 - [ ] Verify keyboard/input fidelity for the chosen product shell.
 - [ ] Verify copy/paste and keybinding behavior against Windows Terminal expectations.
 - [x] Validate Electron two-terminal split spike for independent input and process cleanup.
