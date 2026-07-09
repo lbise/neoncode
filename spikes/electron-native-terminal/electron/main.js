@@ -19,6 +19,7 @@ const TERMINAL_GAP = 8;
 let mainWindow;
 let terminalHostProcesses = [];
 let pendingFocusTimers = [];
+let activeTerminalIndex = 0;
 let logFilePath;
 
 function ensureLogFile() {
@@ -56,6 +57,10 @@ function hwndFromNativeWindowHandle(buffer) {
 
 function terminalHostKind() {
   return (process.env.NEONCODE_TERMINAL_HOST_KIND || 'wpf').toLowerCase();
+}
+
+function isCoordinatorMode() {
+  return terminalHostKind() === 'coordinator';
 }
 
 function nativeHostExePath() {
@@ -213,8 +218,13 @@ function sendTerminalBlurCommand(reason) {
 
 function sendTerminalFocusCommand(reason) {
   for (const process of liveTerminalHosts()) {
+    const index = process.neoncodeIndex || 0;
+    if (isCoordinatorMode() && index !== activeTerminalIndex) {
+      continue;
+    }
+
     if (process.stdin?.writable) {
-      log('host.command.focus', { index: process.neoncodeIndex || 0, reason });
+      log('host.command.focus', { index, reason, activeTerminalIndex });
       process.stdin.write(`focus ${reason}\n`);
     }
   }
