@@ -54,17 +54,17 @@ Write-Host "Logs: $env:TEMP\NeonCode"
 Start-Sleep -Milliseconds $DelayMilliseconds
 
 for ($i = 1; $i -le $Cycles; $i++) {
-    Write-Host "Cycle $i: type before minimize"
+    Write-Host "Cycle ${i}: type before minimize"
     [NativeFocusTest]::SetForegroundWindow($hwnd) | Out-Null
     Start-Sleep -Milliseconds $DelayMilliseconds
     Send-TestText "$TextPrefix$i"
     Start-Sleep -Milliseconds $DelayMilliseconds
 
-    Write-Host "Cycle $i: minimize"
+    Write-Host "Cycle ${i}: minimize"
     [NativeFocusTest]::ShowWindowAsync($hwnd, 6) | Out-Null # SW_MINIMIZE
     Start-Sleep -Milliseconds $DelayMilliseconds
 
-    Write-Host "Cycle $i: restore"
+    Write-Host "Cycle ${i}: restore"
     [NativeFocusTest]::ShowWindowAsync($hwnd, 9) | Out-Null # SW_RESTORE
     Start-Sleep -Milliseconds $DelayMilliseconds
     [NativeFocusTest]::SetForegroundWindow($hwnd) | Out-Null
@@ -72,7 +72,7 @@ for ($i = 1; $i -le $Cycles; $i++) {
 
     $foreground = [NativeFocusTest]::GetForegroundWindow()
     $isMinimized = [NativeFocusTest]::IsIconic($hwnd)
-    Write-Host "Cycle $i: foreground=$foreground minimized=$isMinimized type after restore"
+    Write-Host "Cycle ${i}: foreground=$foreground minimized=$isMinimized type after restore"
     Send-TestText "R$i"
     Start-Sleep -Milliseconds $DelayMilliseconds
 }

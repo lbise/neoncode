@@ -215,6 +215,8 @@ A basic automation harness can stress an already-running Electron spike window:
 
 It minimizes/restores the Electron window and sends test keystrokes. Direct coordinator logs include `WM_CHAR` entries, which help verify whether typed characters reached the terminal child HWND.
 
+Current automated result: an 8-cycle minimize/restore run against direct coordinator pane 1 kept the Electron window foreground after each restore and delivered all generated keystrokes to the terminal HWND (`WM_CHAR` entries present). Pane 2 active-focus restoration still needs automated coverage.
+
 The logs include Electron window focus/blur/resize/move/restore events, commands sent to native hosts, native bounds application, native focus decisions, and relevant terminal HWND focus messages.
 
 Direct coordinator caveats:

@@ -171,7 +171,8 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Add initial explicit bounds/focus/blur IPC to direct-native coordinator before deeper hub integration.
 - [x] Add debug file logging for Electron/direct-native coordinator focus and bounds events.
 - [x] Add basic automated Electron focus/minimize/restore stress harness.
-- [ ] Validate direct-native coordinator explicit bounds/focus/blur IPC under Electron stress tests using debug logs.
+- [x] Validate direct-native coordinator explicit bounds/focus/blur IPC under automated Electron minimize/restore stress test for pane 1.
+- [ ] Extend direct-native automated stress coverage for pane 2 active-focus restoration.
 - [ ] Add hub/WebSocket/PTTY bridge to direct-native coordinator if direct-native focus/layout remains acceptable.
 - [ ] Reassess WPF after Electron spike.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.
