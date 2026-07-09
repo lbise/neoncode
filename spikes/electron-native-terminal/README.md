@@ -217,6 +217,8 @@ It minimizes/restores the Electron window and sends test keystrokes. Direct coor
 
 Current automated result: an 8-cycle minimize/restore run against direct coordinator pane 1 kept the Electron window foreground after each restore and delivered all generated keystrokes to the terminal HWND (`WM_CHAR` entries present). Pane 2 active-focus restoration still needs automated coverage.
 
+Restore polish note: direct coordinator restore now sends an immediate focus command and shorter retry timings to reduce the visible delay between the Electron window reappearing and terminal input focus returning.
+
 The logs include Electron window focus/blur/resize/move/restore events, commands sent to native hosts, native bounds application, native focus decisions, and relevant terminal HWND focus messages.
 
 Direct coordinator caveats:

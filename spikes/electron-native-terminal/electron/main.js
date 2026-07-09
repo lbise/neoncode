@@ -297,7 +297,7 @@ function clearPendingFocusTimers() {
 function focusTerminalHost(reason, options = {}) {
   clearPendingFocusTimers();
 
-  const delays = options.delays || [0, 50, 150, 300];
+  const delays = options.delays || (isCoordinatorMode() ? [0, 25, 75, 150] : [0, 50, 150, 300]);
   const requireFocusedWindow = options.requireFocusedWindow ?? true;
 
   for (const delay of delays) {
@@ -377,10 +377,11 @@ function createWindow() {
     // The native host also polls the parent bounds, but this gives Windows a
     // fresh child-window layout event from the Electron side.
     if (liveTerminalHosts().length > 0) {
+      mainWindow.focus();
       mainWindow.setSize(...mainWindow.getSize());
       sendTerminalBoundsCommand();
       focusTerminalHost('electron-restore', {
-        delays: [50, 150, 300, 600],
+        delays: isCoordinatorMode() ? [0, 25, 75, 150] : [0, 50, 150, 300],
         requireFocusedWindow: false,
       });
     }
