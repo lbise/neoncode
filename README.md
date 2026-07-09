@@ -7,6 +7,7 @@ The repository now contains the first proof-of-concept skeleton:
 ```text
 hub/                         Rust WSL/Linux neoncode-hub POC
 frontends/windows/           WPF/.NET 8 Windows frontend POC shell
+docs/hub.md                  hub run/lifecycle/development documentation
 docs/protocol.md             temporary WebSocket PTY protocol
 ```
 
@@ -31,7 +32,7 @@ Common commands:
 ```bash
 ./dev app          # stop running Windows app, publish frontend, start published app
 ./dev publish      # stop running Windows app, then publish frontend
-./dev hub          # run the Rust NeonCode hub
+./dev hub          # run the Rust NeonCode hub (see docs/hub.md)
 ./dev check        # dotnet build + cargo fmt/check/clippy
 ./dev wt-build              # bootstrap/build Microsoft.Terminal.Control.dll
 ./dev full                  # build Windows Terminal control, then publish app
@@ -214,7 +215,7 @@ Important observations:
 - WPF is validated as a pragmatic Windows host for this control. It should remain the near-term Windows prototype shell unless another GUI stack explicitly re-proves native HWND/control hosting.
 - The current Windows Terminal dependency process is good enough for a spike, but product work needs reproducible dependency checkout, patching, build, and publish scripts.
 
-This changes the project status from “can this work?” to “build the proper prototype/product foundation.” See `docs/poc-to-product-roadmap.md` for the next route, `docs/ui-toolkit-decision.md` for the WPF/WinUI/Electron decision, `spikes/electron-native-terminal/README.md` for the Electron native terminal spike, and `docs/task-list.md` for the active checkbox task tracker.
+This changes the project status from “can this work?” to “build the proper prototype/product foundation.” See `docs/hub.md` for hub usage/development, `docs/protocol.md` for the current WebSocket protocol, `docs/poc-to-product-roadmap.md` for the next route, `docs/ui-toolkit-decision.md` for the WPF/WinUI/Electron decision, `spikes/electron-native-terminal/README.md` for the Electron native terminal spike, and `docs/task-list.md` for the active checkbox task tracker.
 
 ---
 

@@ -12,7 +12,7 @@ poc/windows-terminal-embedded
 
 ```text
 Stage: Phase 1/3 — shared session/protocol foundation
-Next task: choose between starting the direct native coordinator POC or continuing Rust protocol/session refactor
+Next task: continue Rust hub session model work: session registry, list/attach/detach/reconnect shape
 ```
 
 ## Phase 0 — preserve the spike
@@ -52,10 +52,11 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [ ] Add app-level error reporting for native terminal load failure.
 - [ ] Add app-level error reporting for backend disconnect.
 - [ ] Add app-level error reporting for session exit and protocol errors.
-- [ ] Reorganize Rust hub around explicit session management modules.
-- [ ] Define protocol message structs/enums cleanly in Rust.
-- [ ] Keep `docs/protocol.md` synchronized with protocol types.
-- [ ] Add structured tracing/logging to the hub.
+- [x] Reorganize Rust hub around explicit session management modules.
+- [x] Define protocol message structs/enums cleanly in Rust.
+- [x] Keep `docs/protocol.md` synchronized with protocol types.
+- [x] Document `neoncode-hub` run/lifecycle/source layout in `docs/hub.md`.
+- [ ] Add structured tracing/logging refinements to the hub.
 
 ## Phase 2 — terminal correctness and usability
 

@@ -1,7 +1,9 @@
 # NeonCode Hub POC Protocol
 
-This is the temporary protocol for the first terminal/session proof of concept.
-It is intentionally simple and optimized for getting a native frontend talking to a WSL/Linux PTY quickly.
+This is the temporary WebSocket protocol for `neoncode-hub`.
+It is intentionally simple and optimized for getting native frontends talking to WSL/Linux PTYs quickly.
+
+For hub run commands, logging, lifecycle, and source layout, see [`hub.md`](hub.md).
 
 ## Endpoint
 
@@ -29,6 +31,12 @@ Terminal bytes are base64-encoded in `data_b64` fields.
 
 This is not the final high-performance protocol. Later we can move terminal output/input to binary frames while keeping JSON for control messages.
 
+The Rust protocol types live in:
+
+```text
+hub/src/protocol.rs
+```
+
 ## Client messages
 
 ### Start a PTY session
@@ -47,7 +55,7 @@ This is not the final high-performance protocol. Later we can move terminal outp
 
 Fields:
 
-- `session_id`: frontend-owned ID, unique per WebSocket connection.
+- `session_id`: frontend-owned ID, unique per WebSocket connection for the current POC.
 - `command`: executable to spawn. Defaults to `$SHELL`, then `bash`.
 - `args`: optional argument list.
 - `cwd`: optional working directory.
@@ -140,6 +148,12 @@ Fields:
 ## Manual smoke test
 
 Start the hub:
+
+```bash
+./dev hub
+```
+
+Equivalent direct command:
 
 ```bash
 cargo run -p neoncode-hub
