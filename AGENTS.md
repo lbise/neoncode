@@ -200,11 +200,3 @@ Before publish/run tests, stop stale Electron processes when needed:
 ```powershell
 Get-Process electron -ErrorAction SilentlyContinue | Stop-Process -Force
 ```
-
-## Current known deferred issues
-
-- automatic reconnect/list/attach flow has not been added to the Electron app yet;
-- deeper tmux/Neovim interactive behavior still needs validation;
-- mouse mode still needs validation;
-- copy/selection behavior still needs product design;
-- long output/performance soak still needs validation.
