@@ -71,7 +71,8 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Validate initial xterm.js renderer path against `neoncode-hub` start/output.
 - [x] Add basic xterm.js smoke validation for start/input/output.
 - [x] Add xterm.js paste and special-key handling for Ctrl+Shift+V, Shift+Insert, Ctrl+Space, and Alt+Backspace.
-- [ ] Harden xterm.js renderer path for resize, copy behavior, broader special keys, nvim/tmux, and Playwright automation before deeper reconnect work.
+- [x] Add xterm.js resize propagation smoke validation with `stty size`.
+- [ ] Harden xterm.js renderer path for copy behavior, broader special keys, nvim/tmux, and Playwright automation before deeper reconnect work.
 - [ ] Define automatic reconnect flow on top of list/attach/detach.
 - [ ] Add structured tracing/logging refinements to the hub.
 
@@ -79,7 +80,7 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 
 Goal: make the terminal experience trustworthy for daily terminal/TUI use.
 
-- [ ] Confirm resize propagation with `stty size`.
+- [x] Confirm resize propagation with `stty size` for xterm.js path.
 - [ ] Verify Ctrl+C.
 - [ ] Verify Ctrl+D.
 - [ ] Verify Ctrl+Z.

@@ -123,11 +123,13 @@ Automated smoke helpers:
 ./dev electron-xterm-smoke -PaneIndex 1
 ./dev electron-xterm-smoke -PaneIndex 2
 ./dev electron-xterm-smoke -PaneIndex 1 -PasteText 'echo xtermsmokepaste'
+./dev electron-xterm-resize-smoke -PaneIndex 1
+./dev electron-xterm-resize-smoke -PaneIndex 2
 ```
 
 Also test:
 
-- resize Electron window and confirm `stty size` changes;
+- resize Electron window and confirm `stty size` changes; automated by `./dev electron-xterm-resize-smoke`;
 - two independent panes;
 - copy/paste;
 - Ctrl+C / Ctrl+D / Ctrl+Z;

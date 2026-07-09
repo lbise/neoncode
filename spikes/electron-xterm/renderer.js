@@ -135,6 +135,11 @@ function createPane(index) {
     resizePending: false,
     outputEvents: 0,
     inputEvents: 0,
+    resizeEvents: 0,
+    lastRows: terminal.rows,
+    lastCols: terminal.cols,
+    outputScanBuffer: '',
+    lastResizeMarker: '',
   };
   terminals.push(state);
   window.neoncodeXtermState.panes[index] = {
@@ -142,6 +147,7 @@ function createPane(index) {
     started: false,
     outputEvents: 0,
     inputEvents: 0,
+    resizeEvents: 0,
     rows: terminal.rows,
     cols: terminal.cols,
   };
@@ -204,6 +210,13 @@ function scheduleFitAndResize(state) {
       state.fitAddon.fit();
       window.neoncodeXtermState.panes[state.index].rows = state.terminal.rows;
       window.neoncodeXtermState.panes[state.index].cols = state.terminal.cols;
+      if (state.terminal.rows !== state.lastRows || state.terminal.cols !== state.lastCols) {
+        state.lastRows = state.terminal.rows;
+        state.lastCols = state.terminal.cols;
+        state.resizeEvents += 1;
+        window.neoncodeXtermState.panes[state.index].resizeEvents = state.resizeEvents;
+        console.log(`terminal_resize ${state.index} ${state.terminal.rows} ${state.terminal.cols}`);
+      }
       if (state.started) {
         sendJson(state.socket, {
           type: 'resize',
@@ -251,8 +264,18 @@ function connectPane(state) {
       window.neoncodeXtermState.panes[state.index].outputEvents = state.outputEvents;
       console.log(`hub_output ${state.index} ${bytes.length}`);
       const text = decoder.decode(bytes);
-      if (text.includes('xtermsmoke')) {
+      state.outputScanBuffer = (state.outputScanBuffer + text).slice(-4096);
+      if (state.outputScanBuffer.includes('xtermsmoke')) {
         console.log(`hub_output_marker ${state.index} xtermsmoke`);
+      }
+      const resizeMatches = [...state.outputScanBuffer.matchAll(/xtermresize:([A-Za-z0-9_-]+):(\d+)\s+(\d+)/g)];
+      if (resizeMatches.length > 0) {
+        const latest = resizeMatches[resizeMatches.length - 1];
+        const marker = `${latest[1]} ${latest[2]} ${latest[3]}`;
+        if (marker !== state.lastResizeMarker) {
+          state.lastResizeMarker = marker;
+          console.log(`hub_output_resize ${state.index} ${latest[1]} ${latest[2]} ${latest[3]}`);
+        }
       }
       state.terminal.write(bytes);
     } else if (message.type === 'started' && message.session_id === state.sessionId) {
