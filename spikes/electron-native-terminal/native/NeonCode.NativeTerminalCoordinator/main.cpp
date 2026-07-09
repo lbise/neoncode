@@ -161,6 +161,19 @@ static void LogFormat(const wchar_t* format, ...)
     Log(buffer);
 }
 
+static void WriteCoordinatorEvent(const std::string& line)
+{
+    const auto output = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (!output || output == INVALID_HANDLE_VALUE)
+    {
+        return;
+    }
+
+    DWORD written = 0;
+    const auto payload = line + "\n";
+    WriteFile(output, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr);
+}
+
 static std::wstring GetArgValue(std::wstring_view arg, std::wstring_view name)
 {
     const auto prefix = std::wstring(name) + L"=";
@@ -487,6 +500,7 @@ static void FocusTerminal()
     g_exports.TerminalSetFocus(g_terminal);
     g_focused = true;
     LogFormat(L"FocusTerminal applied previousFocus=%s currentFocus=%s", HwndToString(previousFocus).c_str(), HwndToString(GetFocus()).c_str());
+    WriteCoordinatorEvent("focus_changed " + std::to_string(g_options.columnIndex));
 }
 
 static void BlurTerminal()
@@ -659,6 +673,7 @@ static LRESULT CALLBACK TerminalSubclassProc(HWND hwnd, UINT message, WPARAM wPa
         if (g_terminal)
         {
             const auto scanCode = static_cast<WORD>((lParam >> 16) & 0xff);
+            LogFormat(L"WM_CHAR message=0x%04x ch=0x%04x scanCode=%u", message, static_cast<unsigned int>(wParam), scanCode);
             g_exports.TerminalSendCharEvent(g_terminal, static_cast<wchar_t>(wParam), CurrentModifierFlags(false), scanCode);
             return 0;
         }

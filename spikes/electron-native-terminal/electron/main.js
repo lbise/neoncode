@@ -143,14 +143,20 @@ function spawnTerminalHosts() {
     ];
 
     log('host.spawn', { index, args });
+    const coordinatorMode = isCoordinatorMode();
     const hostProcess = spawn(hostExe, args, {
-      stdio: ['pipe', 'inherit', 'inherit'],
+      stdio: coordinatorMode ? ['pipe', 'pipe', 'inherit'] : ['pipe', 'inherit', 'inherit'],
       windowsHide: false,
     });
 
     hostProcess.neoncodeIndex = index;
     hostProcess.neoncodeCount = count;
+    hostProcess.neoncodeStdoutBuffer = '';
     hostProcess.stdin.setDefaultEncoding('utf8');
+    if (coordinatorMode && hostProcess.stdout) {
+      hostProcess.stdout.setEncoding('utf8');
+      hostProcess.stdout.on('data', (chunk) => handleCoordinatorOutput(hostProcess, chunk));
+    }
     hostProcess.on('exit', (code, signal) => {
       terminalHostProcesses = terminalHostProcesses.filter((process) => process !== hostProcess);
       log('host.exit', { index, code, signal });
@@ -239,6 +245,30 @@ function sendTerminalBlurCommand(reason) {
     if (process.stdin?.writable) {
       log('host.command.blur', { index: process.neoncodeIndex || 0, reason });
       process.stdin.write(`blur ${reason}\n`);
+    }
+  }
+}
+
+function handleCoordinatorOutput(hostProcess, chunk) {
+  hostProcess.neoncodeStdoutBuffer += chunk;
+
+  for (;;) {
+    const newline = hostProcess.neoncodeStdoutBuffer.indexOf('\n');
+    if (newline < 0) {
+      break;
+    }
+
+    const line = hostProcess.neoncodeStdoutBuffer.slice(0, newline).trim();
+    hostProcess.neoncodeStdoutBuffer = hostProcess.neoncodeStdoutBuffer.slice(newline + 1);
+    if (!line) {
+      continue;
+    }
+
+    log('coordinator.event', { index: hostProcess.neoncodeIndex || 0, line });
+    const match = /^focus_changed\s+(\d+)$/.exec(line);
+    if (match) {
+      activeTerminalIndex = Number.parseInt(match[1], 10);
+      log('activeTerminalIndex.changed', { activeTerminalIndex });
     }
   }
 }

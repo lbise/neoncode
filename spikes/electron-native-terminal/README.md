@@ -207,6 +207,14 @@ Get-Content $env:TEMP\NeonCode\electron-native-spike-main.log -Tail 200
 Get-Content $env:TEMP\NeonCode\direct-coordinator-*.log -Tail 200
 ```
 
+A basic automation harness can stress an already-running Electron spike window:
+
+```bash
+./dev electron-spike-focus-test -Cycles 10
+```
+
+It minimizes/restores the Electron window and sends test keystrokes. Direct coordinator logs include `WM_CHAR` entries, which help verify whether typed characters reached the terminal child HWND.
+
 The logs include Electron window focus/blur/resize/move/restore events, commands sent to native hosts, native bounds application, native focus decisions, and relevant terminal HWND focus messages.
 
 Direct coordinator caveats:

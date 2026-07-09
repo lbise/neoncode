@@ -170,6 +170,7 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Validate direct-native `HwndTerminal` coordinator visually under Electron.
 - [x] Add initial explicit bounds/focus/blur IPC to direct-native coordinator before deeper hub integration.
 - [x] Add debug file logging for Electron/direct-native coordinator focus and bounds events.
+- [x] Add basic automated Electron focus/minimize/restore stress harness.
 - [ ] Validate direct-native coordinator explicit bounds/focus/blur IPC under Electron stress tests using debug logs.
 - [ ] Add hub/WebSocket/PTTY bridge to direct-native coordinator if direct-native focus/layout remains acceptable.
 - [ ] Reassess WPF after Electron spike.
