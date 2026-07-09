@@ -57,6 +57,7 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Keep `docs/protocol.md` synchronized with protocol types.
 - [x] Document `neoncode-hub` run/lifecycle/source layout in `docs/hub.md`.
 - [x] Add shared in-process hub session registry skeleton.
+- [x] Decouple PTY output from the creating WebSocket sender with session event broadcasting.
 - [ ] Define list/attach/detach/reconnect protocol messages.
 - [ ] Add structured tracing/logging refinements to the hub.
 
@@ -102,7 +103,7 @@ Goal: evolve from one hardcoded shell session to real session orchestration.
 - [ ] Replace hardcoded frontend session ID.
 - [ ] Decide whether session IDs are frontend-provided or backend-generated.
 - [ ] Add protocol message to list active sessions.
-- [ ] Add attach behavior.
+- [ ] Add attach behavior using the session event broadcaster.
 - [ ] Add detach behavior.
 - [ ] Add reconnect without killing PTY.
 - [ ] Report session exit status/reason.

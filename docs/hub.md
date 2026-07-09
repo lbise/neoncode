@@ -9,7 +9,9 @@ Current path:
 ```text
 frontend/native terminal host
   ⇄ ws://127.0.0.1:44777/ws
-neoncode-hub
+neoncode-hub WebSocket handler
+  ⇄ in-process session registry
+  ⇄ session-owned event broadcaster
   ⇄ portable-pty
 PTY child process, usually bash in WSL/Linux
 ```
@@ -24,7 +26,7 @@ Current capabilities:
 - WebSocket endpoint;
 - start PTY session;
 - send terminal input;
-- stream terminal output;
+- stream terminal output through a session-owned event broadcaster;
 - resize PTY;
 - kill PTY session;
 - maintain sessions in a shared in-process session registry;
@@ -33,7 +35,7 @@ Current capabilities:
 
 Current limitations:
 
-- sessions are still owned by a single WebSocket connection at the protocol level;
+- sessions are still owned by a single WebSocket connection at the protocol/lifetime level;
 - no attach/detach/reconnect yet;
 - the session registry is in-process only and does not yet expose list/attach semantics;
 - session IDs are currently frontend-provided;
@@ -97,7 +99,8 @@ The hub logs:
 - PTY session start;
 - protocol errors;
 - PTY read/write/resize failures;
-- session cleanup on disconnect.
+- session cleanup on disconnect;
+- output broadcaster lag or missing-subscriber diagnostics.
 
 ## HTTP endpoints
 
@@ -157,11 +160,13 @@ Frontend sends `start` with a frontend-owned `session_id`.
 The hub:
 
 1. registers the new session in the shared in-process registry;
-2. opens a PTY with requested/default rows and columns;
-3. spawns the requested command or default shell;
-4. starts a reader thread for PTY output;
-5. emits `started`;
-6. streams `output` messages.
+2. creates a session-owned event broadcaster;
+3. opens a PTY with requested/default rows and columns;
+4. spawns the requested command or default shell;
+5. starts a reader thread for PTY output;
+6. subscribes the creating WebSocket to the session event stream;
+7. emits `started`;
+8. forwards session events as `output`, `exit`, and `error` messages.
 
 Default shell resolution:
 
@@ -191,6 +196,22 @@ The hub calls `portable-pty` resize with zero pixel dimensions for now.
 Frontend sends `kill` with `session_id`.
 
 The hub removes the session, kills the child process, and emits `killed`.
+
+### Output forwarding
+
+PTY reader threads do not write directly to WebSocket channels anymore.
+
+Instead, each session owns an internal broadcast channel:
+
+```text
+PTY reader thread
+  → SessionEvent::{Output, Exit, Error}
+  → broadcast channel owned by Session
+  → attached WebSocket forwarder task
+  → ServerMessage::{output, exit, error}
+```
+
+Only the creating WebSocket subscribes today, but this shape prepares the hub for future `attach` and reconnect behavior where another WebSocket can subscribe to an already-running session.
 
 ### WebSocket disconnect
 
@@ -247,9 +268,9 @@ Kill:
 ```text
 hub/src/main.rs       process setup, routing, logging, shutdown
 hub/src/protocol.rs   JSON protocol structs/enums
-hub/src/session.rs    PTY session lifecycle and IO
+hub/src/session.rs    PTY session lifecycle, IO, and session event broadcasting
 hub/src/state.rs      shared app state and in-process session registry
-hub/src/ws.rs         WebSocket handling and protocol dispatch
+hub/src/ws.rs         WebSocket handling, protocol dispatch, and event forwarding
 ```
 
 ## Development checks

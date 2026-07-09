@@ -8,16 +8,24 @@ use std::{
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
-use crate::protocol::ServerMessage;
+const SESSION_EVENT_BUFFER: usize = 1024;
+
+#[derive(Debug, Clone)]
+pub enum SessionEvent {
+    Output { data_b64: String },
+    Exit { status: Option<i32> },
+    Error { message: String },
+}
 
 pub struct Session {
     id: String,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
+    event_tx: broadcast::Sender<SessionEvent>,
 }
 
 impl Session {
@@ -29,8 +37,9 @@ impl Session {
         cwd: Option<String>,
         rows: u16,
         cols: u16,
-        outgoing: mpsc::UnboundedSender<ServerMessage>,
     ) -> Result<Self> {
+        let (event_tx, _) = broadcast::channel(SESSION_EVENT_BUFFER);
+
         let pty_system = native_pty_system();
         let pair = pty_system
             .openpty(PtySize {
@@ -67,6 +76,7 @@ impl Session {
             .context("failed to take PTY writer")?;
 
         let reader_session_id = id.clone();
+        let reader_event_tx = event_tx.clone();
         thread::Builder::new()
             .name(format!("pty-reader-{reader_session_id}"))
             .spawn(move || {
@@ -76,19 +86,15 @@ impl Session {
                         Ok(0) => break,
                         Ok(n) => {
                             let data_b64 = BASE64.encode(&buffer[..n]);
-                            if outgoing
-                                .send(ServerMessage::Output {
-                                    session_id: reader_session_id.clone(),
-                                    data_b64,
-                                })
+                            if reader_event_tx
+                                .send(SessionEvent::Output { data_b64 })
                                 .is_err()
                             {
-                                break;
+                                debug!(session_id = %reader_session_id, "PTY output had no subscribers");
                             }
                         }
                         Err(err) => {
-                            let _ = outgoing.send(ServerMessage::Error {
-                                session_id: Some(reader_session_id.clone()),
+                            let _ = reader_event_tx.send(SessionEvent::Error {
                                 message: format!("PTY read failed: {err}"),
                             });
                             break;
@@ -96,10 +102,7 @@ impl Session {
                     }
                 }
 
-                let _ = outgoing.send(ServerMessage::Exit {
-                    session_id: reader_session_id,
-                    status: None,
-                });
+                let _ = reader_event_tx.send(SessionEvent::Exit { status: None });
             })
             .context("failed to spawn PTY reader thread")?;
 
@@ -108,7 +111,12 @@ impl Session {
             writer: Arc::new(Mutex::new(writer)),
             master: Arc::new(Mutex::new(pair.master)),
             child: Arc::new(Mutex::new(child)),
+            event_tx,
         })
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<SessionEvent> {
+        self.event_tx.subscribe()
     }
 
     pub fn write_input(&self, bytes: &[u8]) -> Result<()> {

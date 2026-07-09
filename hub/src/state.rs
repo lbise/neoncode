@@ -1,10 +1,10 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use anyhow::{Result, anyhow};
-use tokio::sync::mpsc;
+use tokio::sync::broadcast;
 use tracing::debug;
 
-use crate::{protocol::ServerMessage, session::Session};
+use crate::session::{Session, SessionEvent};
 
 const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_COLS: u16 = 80;
@@ -30,8 +30,7 @@ impl SessionRegistry {
         &self,
         owner_connection_id: &str,
         request: StartSessionRequest,
-        outgoing: mpsc::UnboundedSender<ServerMessage>,
-    ) -> Result<()> {
+    ) -> Result<broadcast::Receiver<SessionEvent>> {
         let mut sessions = self
             .sessions
             .lock()
@@ -48,8 +47,8 @@ impl SessionRegistry {
             request.cwd,
             request.rows.unwrap_or(DEFAULT_ROWS),
             request.cols.unwrap_or(DEFAULT_COLS),
-            outgoing,
         )?;
+        let events = session.subscribe();
 
         sessions.insert(
             request.session_id,
@@ -59,7 +58,7 @@ impl SessionRegistry {
             },
         );
 
-        Ok(())
+        Ok(events)
     }
 
     pub fn write_input(&self, session_id: &str, bytes: &[u8]) -> Result<()> {
