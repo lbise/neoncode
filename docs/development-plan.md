@@ -85,7 +85,7 @@ Tasks:
   - session model;
   - app/bootstrap.
 - [x] Introduce stable frontend session IDs independent of pane indexes.
-- [ ] On startup, call `list_sessions`.
+- [x] On startup, call `list_sessions`.
 - [ ] Attach to known sessions when present.
 - [ ] Start missing sessions when not present.
 - [ ] Detach sessions before app close when persistence is desired.

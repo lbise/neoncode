@@ -44,6 +44,8 @@ renderer/terminal-pane.js
 tests/               Playwright smoke tests
 ```
 
+On startup, the renderer calls `list_sessions` to discover existing hub sessions before starting pane sessions.
+
 Default panes use stable frontend session keys instead of deriving session identity from UI indexes:
 
 ```text

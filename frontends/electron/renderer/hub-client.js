@@ -72,6 +72,12 @@ class HubClient {
     return true;
   }
 
+  listSessions() {
+    return this.send({
+      type: 'list_sessions',
+    });
+  }
+
   start({ command = 'bash', rows = 30, cols = 120 }) {
     return this.send({
       type: 'start',

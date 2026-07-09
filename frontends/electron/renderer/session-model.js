@@ -1,8 +1,28 @@
 class SessionModel {
   constructor({ windowRef = window } = {}) {
     this.windowRef = windowRef;
-    this.publicState = { panes: [] };
+    this.publicState = {
+      panes: [],
+      sessionDiscovery: {
+        status: 'idle',
+        sessionListEvents: 0,
+        sessions: [],
+        error: '',
+      },
+    };
     this.windowRef.neoncodeXtermState = this.publicState;
+  }
+
+  setSessionDiscoveryStatus(status, error = '') {
+    this.publicState.sessionDiscovery.status = status;
+    this.publicState.sessionDiscovery.error = error;
+  }
+
+  recordSessionList(sessions) {
+    this.publicState.sessionDiscovery.status = 'ready';
+    this.publicState.sessionDiscovery.sessionListEvents += 1;
+    this.publicState.sessionDiscovery.sessions = sessions;
+    this.publicState.sessionDiscovery.error = '';
   }
 
   createPaneState({ index, paneId, sessionKey, sessionId, terminal, fitAddon }) {

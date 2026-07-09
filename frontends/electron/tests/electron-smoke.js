@@ -37,6 +37,7 @@ async function main() {
     await page.waitForSelector('[data-testid="terminal-pane-1"]', { timeout });
     await page.waitForSelector('[data-testid="terminal-pane-2"]', { timeout });
 
+    await page.waitForFunction(() => window.neoncodeXtermState?.sessionDiscovery?.sessionListEvents > 0, null, { timeout });
     await page.waitForFunction(() => window.neoncodeXtermState?.panes?.length >= 2, null, { timeout });
     await page.waitForFunction(() => window.neoncodeXtermState.panes[0]?.started === true, null, { timeout });
     await page.waitForFunction(() => window.neoncodeXtermState.panes[1]?.started === true, null, { timeout });
@@ -45,6 +46,10 @@ async function main() {
 
     const state = await page.evaluate(() => JSON.parse(JSON.stringify(window.neoncodeXtermState)));
     log('state.ready', state);
+
+    if (state.sessionDiscovery?.status !== 'ready' || state.sessionDiscovery?.sessionListEvents < 1) {
+      throw new Error(`expected startup session discovery to be ready, got ${JSON.stringify(state.sessionDiscovery)}`);
+    }
 
     const expectedPanes = [
       { paneId: 'shell', sessionKey: 'shell', sessionId: `${sessionPrefix}-shell` },

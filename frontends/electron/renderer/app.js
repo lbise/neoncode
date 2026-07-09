@@ -1,3 +1,4 @@
+const { HubClient } = require('./hub-client');
 const { SessionModel } = require('./session-model');
 const { TerminalPane } = require('./terminal-pane');
 
@@ -5,6 +6,7 @@ const DEFAULT_ENDPOINT = 'ws://127.0.0.1:44777/ws';
 const DEFAULT_TERMINAL_COUNT = 2;
 const DEFAULT_SESSION_PREFIX = 'electron-xterm-shell';
 const MAX_STATIC_TERMINAL_PANES = 2;
+const STARTUP_SESSION_LIST_TIMEOUT_MS = 2000;
 const DEFAULT_PANE_DEFINITIONS = Object.freeze([
   Object.freeze({ paneId: 'shell', sessionKey: 'shell', terminalElementId: 'terminal-1' }),
   Object.freeze({ paneId: 'tasks', sessionKey: 'tasks', terminalElementId: 'terminal-2' }),
@@ -55,7 +57,10 @@ class NeonCodeApp {
     this.statusElement = this.document.getElementById('status');
     this.terminalGrid = this.document.getElementById('terminal-grid');
     this.sessionModel = new SessionModel({ windowRef: this.window });
+    this.sessionDiscoveryClient = undefined;
+    this.knownSessionIds = [];
     this.panes = [];
+    this.closed = false;
   }
 
   setStatus(text) {
@@ -74,11 +79,83 @@ class NeonCodeApp {
     }
   }
 
-  start() {
+  async start() {
     this.configureGrid();
+    this.knownSessionIds = await this.discoverSessions();
+    if (this.closed) {
+      return;
+    }
     for (const descriptor of this.config.panes) {
       this.createPane(descriptor);
     }
+  }
+
+  discoverSessions() {
+    this.sessionModel.setSessionDiscoveryStatus('connecting');
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (sessions) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeoutHandle);
+        this.sessionDiscoveryClient?.close();
+        resolve(sessions);
+      };
+
+      const timeoutHandle = setTimeout(() => {
+        console.log('hub_session_list_timeout');
+        this.sessionModel.setSessionDiscoveryStatus('timeout', 'Timed out waiting for session_list');
+        finish([]);
+      }, STARTUP_SESSION_LIST_TIMEOUT_MS);
+
+      this.sessionDiscoveryClient = new HubClient({
+        endpoint: this.config.endpoint,
+        onOpen: () => {
+          console.log('hub_session_list_requested');
+          this.sessionModel.setSessionDiscoveryStatus('requested');
+          this.sessionDiscoveryClient.listSessions();
+        },
+        onMessage: (message) => {
+          if (message.type === 'session_list') {
+            const sessions = (message.sessions || [])
+              .map((session) => session.session_id)
+              .filter((sessionId) => typeof sessionId === 'string' && sessionId.length > 0);
+            console.log(`hub_session_list ${sessions.length} ${sessions.join(',')}`);
+            this.sessionModel.recordSessionList(sessions);
+            finish(sessions);
+          } else if (message.type === 'error') {
+            const error = message.message || 'Hub session discovery error';
+            console.log(`hub_session_list_error ${error}`);
+            this.sessionModel.setSessionDiscoveryStatus('error', error);
+            finish([]);
+          }
+        },
+        onInvalidMessage: (error) => {
+          console.log(`hub_session_list_invalid_json ${error.message}`);
+          this.sessionModel.setSessionDiscoveryStatus('error', error.message);
+          finish([]);
+        },
+        onClose: () => {
+          if (!settled) {
+            console.log('hub_session_list_closed');
+            this.sessionModel.setSessionDiscoveryStatus('closed', 'Session discovery WebSocket closed');
+            finish([]);
+          }
+        },
+        onError: () => {
+          if (!settled) {
+            console.log('hub_session_list_websocket_error');
+            this.sessionModel.setSessionDiscoveryStatus('error', 'WebSocket error during session discovery');
+            finish([]);
+          }
+        },
+      });
+
+      this.sessionDiscoveryClient.connect();
+    });
   }
 
   createPane(descriptor) {
@@ -102,6 +179,8 @@ class NeonCodeApp {
   }
 
   close() {
+    this.closed = true;
+    this.sessionDiscoveryClient?.close();
     for (const pane of this.panes) {
       pane.close();
     }
@@ -111,7 +190,10 @@ class NeonCodeApp {
 function startRendererApp() {
   const app = new NeonCodeApp();
   window.addEventListener('DOMContentLoaded', () => {
-    app.start();
+    app.start().catch((error) => {
+      console.error('app_start_failed', error);
+      app.setStatus('Failed to start NeonCode app');
+    });
   });
   window.addEventListener('beforeunload', () => {
     app.close();
@@ -124,6 +206,7 @@ module.exports = {
   DEFAULT_PANE_DEFINITIONS,
   DEFAULT_SESSION_PREFIX,
   DEFAULT_TERMINAL_COUNT,
+  STARTUP_SESSION_LIST_TIMEOUT_MS,
   NeonCodeApp,
   createAppConfig,
   createPaneDescriptors,

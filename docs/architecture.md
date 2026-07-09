@@ -31,6 +31,7 @@ Current role:
 
 - default Windows app path;
 - renders terminals with xterm.js;
+- performs startup session discovery with `list_sessions`;
 - opens one WebSocket per pane/session for the current prototype;
 - sends `start`, `input`, `resize`, and later attach/detach messages;
 - provides smoke-test state for Playwright and PowerShell validation.
