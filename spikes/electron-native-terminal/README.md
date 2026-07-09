@@ -221,7 +221,15 @@ Get-Content $env:TEMP\NeonCode\electron-native-spike-main.log -Tail 200
 Get-Content $env:TEMP\NeonCode\direct-coordinator-*.log -Tail 200
 ```
 
-A basic automation harness can stress an already-running Electron spike window:
+A direct coordinator hub smoke test can validate an already-running Electron/direct app:
+
+```bash
+./dev electron-spike-direct-hub-smoke -PaneIndex 1
+```
+
+It checks that the chosen pane emitted `hub_connected` and `hub_started`, posts `WM_CHAR` input directly to the terminal HWND, and verifies new `hub_output` events arrive from `neoncode-hub`.
+
+A separate automation harness can stress an already-running Electron window:
 
 ```bash
 ./dev electron-spike-focus-test -Cycles 10
@@ -229,7 +237,9 @@ A basic automation harness can stress an already-running Electron spike window:
 
 It minimizes/restores the Electron window and sends test keystrokes. Direct coordinator logs include `WM_CHAR` entries, which help verify whether typed characters reached the terminal child HWND.
 
-Current automated result: an 8-cycle minimize/restore run against direct coordinator pane 1 kept the Electron window foreground after each restore and delivered all generated keystrokes to the terminal HWND (`WM_CHAR` entries present). Pane 2 active-focus restoration still needs automated coverage.
+Current automated direct-hub result: pane 1 and pane 2 connect to `neoncode-hub`, start shell sessions, receive shell output, accept posted terminal input, and return hub output (`./dev electron-spike-direct-hub-smoke -PaneIndex 1/2`).
+
+Current automated focus result: an 8-cycle minimize/restore run against direct coordinator pane 1 kept the Electron window foreground after each restore and delivered all generated keystrokes to the terminal HWND (`WM_CHAR` entries present). Pane 2 active-focus restoration still needs automated coverage.
 
 Restore polish note: direct coordinator restore now sends an immediate focus command and shorter retry timings to reduce the visible delay between the Electron window reappearing and terminal input focus returning.
 
@@ -283,6 +293,7 @@ Also test:
 - copy/paste;
 - Ctrl+C / Ctrl+D;
 - Alt keys if possible;
+- minimize/restore refocus latency;
 - closing the Electron window and confirming both native host processes exit.
 
 ## Success criteria

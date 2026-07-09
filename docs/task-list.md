@@ -52,6 +52,7 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Make `./dev app` target the Electron app path; keep WPF as explicit reference/fallback commands.
 - [x] Wire direct native `HwndTerminal` coordinator to `neoncode-hub` for start/input/output/resize.
 - [x] Make `./dev app` use Electron + direct native coordinator by default.
+- [x] Add direct coordinator hub smoke validation helper.
 - [ ] Add app-level error reporting for native terminal load failure.
 - [ ] Add app-level error reporting for backend disconnect.
 - [ ] Add app-level error reporting for session exit and protocol errors.
@@ -169,7 +170,7 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Run focused Electron native Windows Terminal embedding spike.
 - [x] Document Electron spike pass/fail conclusion.
 - [x] Fix/investigate Alt+Tab native terminal refocus in Electron spike.
-- [ ] Track intermittent taskbar-return refocus race in Electron spike; direct-native testing suggests this is a general child-HWND activation issue, not WPF-specific.
+- [ ] Track intermittent taskbar-return refocus race / restore-focus latency in Electron spike; direct-native testing suggests this is a general child-HWND activation issue, not WPF-specific.
 - [x] Record startup polish plan for Electron/native host attach.
 - [x] Record Electron/native terminal host architecture options.
 - [x] Explore Windows Terminal app-layer source for paste/copy/keybindings/focus behavior to adapt.
@@ -182,6 +183,7 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Validate direct-native coordinator explicit bounds/focus/blur IPC under automated Electron minimize/restore stress test for pane 1.
 - [ ] Extend direct-native automated stress coverage for pane 2 active-focus restoration.
 - [x] Add hub/WebSocket/PTTY bridge to direct-native coordinator for basic start/input/output/resize.
+- [x] Add direct coordinator hub smoke test for start/output/posted-input/output.
 - [x] Reassess WPF after Electron spike; keep as reference/fallback while Electron becomes default app path.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.
 - [ ] Verify native terminal hosting feasibility for the chosen product shell.

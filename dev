@@ -36,6 +36,7 @@ Electron/direct-native commands:
   ./dev electron-spike-native  Build the Electron native WPF host and direct native coordinator
   ./dev electron-spike-coordinator Build only the direct native HwndTerminal coordinator
   ./dev electron-spike-focus-test Stress an already-running Electron window
+  ./dev electron-spike-direct-hub-smoke Validate direct coordinator hub input/output
 
 Utility commands:
   ./dev status       Show git status and important output paths
@@ -164,6 +165,10 @@ case "$command" in
 
   electron-spike-focus-test)
     ps_file 'scripts\electron-spike-focus-test.ps1' "$@"
+    ;;
+
+  electron-spike-direct-hub-smoke)
+    ps_file 'scripts\electron-spike-direct-hub-smoke.ps1' "$@"
     ;;
 
   electron-spike)
