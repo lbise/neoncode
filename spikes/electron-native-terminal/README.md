@@ -188,6 +188,25 @@ blur <reason>
 
 These are a spike precursor to the planned JSON coordinator IPC.
 
+## Debug logs
+
+The Electron/direct-native coordinator path writes debug logs to:
+
+```text
+%TEMP%\NeonCode\electron-native-spike-main.log
+%TEMP%\NeonCode\direct-coordinator-<pid>-pane-<n>.log
+```
+
+Useful PowerShell commands after a bad focus/flicker run:
+
+```powershell
+Get-ChildItem $env:TEMP\NeonCode\*.log | Sort-Object LastWriteTime
+Get-Content $env:TEMP\NeonCode\electron-native-spike-main.log -Tail 200
+Get-Content $env:TEMP\NeonCode\direct-coordinator-*.log -Tail 200
+```
+
+The logs include Electron window focus/blur/resize/move/restore events, commands sent to native hosts, native bounds application, native focus decisions, and relevant terminal HWND focus messages.
+
 Manual Windows PowerShell equivalent:
 
 ```powershell

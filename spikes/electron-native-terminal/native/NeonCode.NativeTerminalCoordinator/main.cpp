@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <cstdarg>
 #include <cwchar>
+#include <cstdio>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -93,6 +95,71 @@ struct BoundsCommand
 static constexpr UINT WM_NEONCODE_FOCUS_TERMINAL = WM_APP + 1;
 static constexpr UINT WM_NEONCODE_BLUR_TERMINAL = WM_APP + 2;
 static constexpr UINT WM_NEONCODE_SET_BOUNDS = WM_APP + 3;
+
+static std::wstring g_logPath{};
+
+static std::wstring HwndToString(HWND hwnd)
+{
+    wchar_t buffer[32]{};
+    swprintf_s(buffer, L"0x%p", hwnd);
+    return buffer;
+}
+
+static void InitializeLogPath()
+{
+    wchar_t tempPath[MAX_PATH]{};
+    if (!GetTempPathW(MAX_PATH, tempPath))
+    {
+        wcscpy_s(tempPath, L"C:\\Windows\\Temp\\");
+    }
+
+    std::wstring logDir = tempPath;
+    logDir += L"NeonCode";
+    CreateDirectoryW(logDir.c_str(), nullptr);
+
+    wchar_t fileName[128]{};
+    swprintf_s(fileName, L"direct-coordinator-%lu-pane-%d.log", GetCurrentProcessId(), g_options.columnIndex + 1);
+    g_logPath = logDir + L"\\" + fileName;
+}
+
+static void Log(const wchar_t* message)
+{
+    if (g_logPath.empty())
+    {
+        return;
+    }
+
+    FILE* file = nullptr;
+    if (_wfopen_s(&file, g_logPath.c_str(), L"a, ccs=UTF-8") != 0 || !file)
+    {
+        return;
+    }
+
+    SYSTEMTIME now{};
+    GetLocalTime(&now);
+    fwprintf(
+        file,
+        L"%04hu-%02hu-%02huT%02hu:%02hu:%02hu.%03hu %s\n",
+        now.wYear,
+        now.wMonth,
+        now.wDay,
+        now.wHour,
+        now.wMinute,
+        now.wSecond,
+        now.wMilliseconds,
+        message);
+    fclose(file);
+}
+
+static void LogFormat(const wchar_t* format, ...)
+{
+    wchar_t buffer[1024]{};
+    va_list args;
+    va_start(args, format);
+    vswprintf_s(buffer, format, args);
+    va_end(args);
+    Log(buffer);
+}
 
 static std::wstring GetArgValue(std::wstring_view arg, std::wstring_view name)
 {
@@ -190,9 +257,11 @@ static FARPROC RequireProc(HMODULE module, const char* name)
 
 static bool LoadTerminalExports()
 {
+    Log(L"LoadTerminalExports.begin");
     auto module = LoadLibraryW(L"Microsoft.Terminal.Control.dll");
     if (!module)
     {
+        LogFormat(L"LoadTerminalExports.failed error=%lu", GetLastError());
         MessageBoxW(nullptr, L"Failed to load Microsoft.Terminal.Control.dll. Ensure the coordinator runs next to the Windows Terminal control files.", L"NeonCode Native Coordinator", MB_ICONERROR | MB_OK);
         return false;
     }
@@ -210,7 +279,7 @@ static bool LoadTerminalExports()
     g_exports.TerminalSetFocus = reinterpret_cast<wt::TerminalSetFocusFn>(RequireProc(module, "TerminalSetFocus"));
     g_exports.TerminalKillFocus = reinterpret_cast<wt::TerminalKillFocusFn>(RequireProc(module, "TerminalKillFocus"));
 
-    return g_exports.CreateTerminal &&
+    const auto loaded = g_exports.CreateTerminal &&
            g_exports.DestroyTerminal &&
            g_exports.TerminalTriggerResize &&
            g_exports.TerminalDpiChanged &&
@@ -221,6 +290,8 @@ static bool LoadTerminalExports()
            g_exports.TerminalSendCharEvent &&
            g_exports.TerminalSetFocus &&
            g_exports.TerminalKillFocus;
+    LogFormat(L"LoadTerminalExports.end loaded=%d", loaded ? 1 : 0);
+    return loaded;
 }
 
 static WORD CurrentModifierFlags(bool enhancedKey)
@@ -271,6 +342,7 @@ static void ApplyTheme()
 
     const auto dpi = GetDpiForWindow(g_terminalHwnd ? g_terminalHwnd : g_options.parentHwnd);
     g_lastDpi = static_cast<int>(dpi);
+    LogFormat(L"ApplyTheme dpi=%d", g_lastDpi);
     g_exports.TerminalSetTheme(g_terminal, theme, L"Consolas", 14, g_lastDpi);
 }
 
@@ -311,6 +383,7 @@ static void ApplyBounds(const RECT& bounds, int dpi)
     ShowWindow(g_terminalHwnd, SW_SHOW);
     if (sizeChanged)
     {
+        LogFormat(L"ApplyBounds x=%ld y=%ld width=%ld height=%ld dpi=%d", bounds.left, bounds.top, width, height, dpi);
         SetWindowPos(g_terminalHwnd, HWND_TOP, bounds.left, bounds.top, width, height, SWP_SHOWWINDOW);
         g_appliedBounds = bounds;
         g_hasAppliedBounds = true;
@@ -318,6 +391,7 @@ static void ApplyBounds(const RECT& bounds, int dpi)
 
     if (dpi > 0 && dpi != g_lastDpi)
     {
+        LogFormat(L"ApplyBounds.dpiChanged old=%d new=%d", g_lastDpi, dpi);
         g_lastDpi = dpi;
         g_exports.TerminalDpiChanged(g_terminal, dpi);
     }
@@ -325,9 +399,15 @@ static void ApplyBounds(const RECT& bounds, int dpi)
     if (sizeChanged)
     {
         wt::Size cellSize{};
-        if (SUCCEEDED(g_exports.TerminalTriggerResize(g_terminal, static_cast<wt::CoordType>(width), static_cast<wt::CoordType>(height), &cellSize)))
+        const auto hr = g_exports.TerminalTriggerResize(g_terminal, static_cast<wt::CoordType>(width), static_cast<wt::CoordType>(height), &cellSize);
+        if (SUCCEEDED(hr))
         {
+            LogFormat(L"ApplyBounds.resize cells=%ldx%ld", cellSize.width, cellSize.height);
             g_lastCellSize = cellSize;
+        }
+        else
+        {
+            LogFormat(L"ApplyBounds.resize.failed hr=0x%08lx", static_cast<unsigned long>(hr));
         }
     }
 }
@@ -347,6 +427,7 @@ static void RefreshBounds()
 
     if (IsIconic(g_options.parentHwnd))
     {
+        Log(L"RefreshBounds.parentMinimized hide");
         ShowWindow(g_terminalHwnd, SW_HIDE);
         return;
     }
@@ -386,25 +467,40 @@ static bool IsParentForeground()
 
 static void FocusTerminal()
 {
-    if (!g_terminalHwnd || !g_terminal || !IsParentForeground())
+    const auto foreground = GetForegroundWindow();
+    const auto parentForeground = IsParentForeground();
+    LogFormat(
+        L"FocusTerminal requested terminal=%s parent=%s foreground=%s parentForeground=%d focused=%d",
+        HwndToString(g_terminalHwnd).c_str(),
+        HwndToString(g_options.parentHwnd).c_str(),
+        HwndToString(foreground).c_str(),
+        parentForeground ? 1 : 0,
+        g_focused ? 1 : 0);
+
+    if (!g_terminalHwnd || !g_terminal || !parentForeground)
     {
+        Log(L"FocusTerminal skipped");
         return;
     }
 
-    SetFocus(g_terminalHwnd);
+    const auto previousFocus = SetFocus(g_terminalHwnd);
     g_exports.TerminalSetFocus(g_terminal);
     g_focused = true;
+    LogFormat(L"FocusTerminal applied previousFocus=%s currentFocus=%s", HwndToString(previousFocus).c_str(), HwndToString(GetFocus()).c_str());
 }
 
 static void BlurTerminal()
 {
+    LogFormat(L"BlurTerminal requested focused=%d currentFocus=%s", g_focused ? 1 : 0, HwndToString(GetFocus()).c_str());
     if (!g_terminal || !g_focused)
     {
+        Log(L"BlurTerminal skipped");
         return;
     }
 
     g_exports.TerminalKillFocus(g_terminal);
     g_focused = false;
+    Log(L"BlurTerminal applied");
 }
 
 static DWORD WINAPI ControlPipeThread(void*)
@@ -438,6 +534,7 @@ static DWORD WINAPI ControlPipeThread(void*)
 
             if (line.rfind("bounds", 0) == 0 && g_terminalHwnd)
             {
+                LogFormat(L"ControlPipe.command bounds raw='%S'", line.c_str());
                 std::istringstream stream{ line };
                 std::string command;
                 long x = 0;
@@ -456,10 +553,12 @@ static DWORD WINAPI ControlPipeThread(void*)
             }
             else if (line.rfind("focus", 0) == 0 && g_terminalHwnd)
             {
+                LogFormat(L"ControlPipe.command focus raw='%S'", line.c_str());
                 PostMessageW(g_terminalHwnd, WM_NEONCODE_FOCUS_TERMINAL, 0, 0);
             }
             else if (line.rfind("blur", 0) == 0 && g_terminalHwnd)
             {
+                LogFormat(L"ControlPipe.command blur raw='%S'", line.c_str());
                 PostMessageW(g_terminalHwnd, WM_NEONCODE_BLUR_TERMINAL, 0, 0);
             }
         }
@@ -497,21 +596,25 @@ static LRESULT CALLBACK TerminalSubclassProc(HWND hwnd, UINT message, WPARAM wPa
     switch (message)
     {
     case WM_NEONCODE_FOCUS_TERMINAL:
+        Log(L"WM_NEONCODE_FOCUS_TERMINAL");
         RefreshBounds();
         FocusTerminal();
         return 0;
 
     case WM_NEONCODE_BLUR_TERMINAL:
+        Log(L"WM_NEONCODE_BLUR_TERMINAL");
         BlurTerminal();
         return 0;
 
     case WM_NEONCODE_SET_BOUNDS:
+        Log(L"WM_NEONCODE_SET_BOUNDS");
         if (lParam)
         {
             const std::unique_ptr<BoundsCommand> command{ reinterpret_cast<BoundsCommand*>(lParam) };
             g_explicitBounds = command->bounds;
             g_explicitDpi = command->dpi;
             g_hasExplicitBounds = true;
+            LogFormat(L"WM_NEONCODE_SET_BOUNDS parsed x=%ld y=%ld width=%ld height=%ld dpi=%d", g_explicitBounds.left, g_explicitBounds.top, g_explicitBounds.right - g_explicitBounds.left, g_explicitBounds.bottom - g_explicitBounds.top, g_explicitDpi);
             ApplyBounds(g_explicitBounds, g_explicitDpi);
         }
         return 0;
@@ -521,16 +624,19 @@ static LRESULT CALLBACK TerminalSubclassProc(HWND hwnd, UINT message, WPARAM wPa
         return 0;
 
     case WM_SETFOCUS:
+        LogFormat(L"WM_SETFOCUS wParam=%s", HwndToString(reinterpret_cast<HWND>(wParam)).c_str());
         FocusTerminal();
         break;
 
     case WM_KILLFOCUS:
+        LogFormat(L"WM_KILLFOCUS wParam=%s", HwndToString(reinterpret_cast<HWND>(wParam)).c_str());
         BlurTerminal();
         break;
 
     case WM_LBUTTONDOWN:
     case WM_MBUTTONDOWN:
     case WM_RBUTTONDOWN:
+        LogFormat(L"WM_MOUSE_BUTTON message=0x%04x", message);
         FocusTerminal();
         break;
 
@@ -568,8 +674,10 @@ static LRESULT CALLBACK TerminalSubclassProc(HWND hwnd, UINT message, WPARAM wPa
 
 static bool CreateDirectTerminal()
 {
+    LogFormat(L"CreateDirectTerminal.begin parent=%s", HwndToString(g_options.parentHwnd).c_str());
     if (!g_options.parentHwnd || !IsWindow(g_options.parentHwnd))
     {
+        Log(L"CreateDirectTerminal.invalidParent");
         MessageBoxW(nullptr, L"Invalid or missing --parent-hwnd.", L"NeonCode Native Coordinator", MB_ICONERROR | MB_OK);
         return false;
     }
@@ -579,12 +687,14 @@ static bool CreateDirectTerminal()
     const auto hr = g_exports.CreateTerminal(g_options.parentHwnd, &hwndValue, &terminalValue);
     if (FAILED(hr) || !hwndValue || !terminalValue)
     {
+        LogFormat(L"CreateDirectTerminal.CreateTerminal.failed hr=0x%08lx hwnd=%p terminal=%p", static_cast<unsigned long>(hr), hwndValue, terminalValue);
         MessageBoxW(nullptr, L"CreateTerminal failed.", L"NeonCode Native Coordinator", MB_ICONERROR | MB_OK);
         return false;
     }
 
     g_terminalHwnd = static_cast<HWND>(hwndValue);
     g_terminal = terminalValue;
+    LogFormat(L"CreateDirectTerminal.created terminalHwnd=%s terminal=%p", HwndToString(g_terminalHwnd).c_str(), g_terminal);
 
     g_originalTerminalProc = reinterpret_cast<WNDPROC>(SetWindowLongPtrW(g_terminalHwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(TerminalSubclassProc)));
 
@@ -602,11 +712,13 @@ static bool CreateDirectTerminal()
         CloseHandle(controlThread);
     }
 
+    Log(L"CreateDirectTerminal.end ok");
     return true;
 }
 
 static void DestroyDirectTerminal()
 {
+    Log(L"DestroyDirectTerminal.begin");
     if (g_terminalHwnd)
     {
         KillTimer(g_terminalHwnd, 1);
@@ -624,6 +736,7 @@ static void DestroyDirectTerminal()
         FreeLibrary(g_exports.module);
         g_exports = {};
     }
+    Log(L"DestroyDirectTerminal.end");
 }
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
@@ -631,6 +744,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 
     g_options = ParseOptions();
+    InitializeLogPath();
+    LogFormat(
+        L"wWinMain.start pid=%lu parent=%s topOffset=%d columnIndex=%d columnCount=%d columnGap=%d",
+        GetCurrentProcessId(),
+        HwndToString(g_options.parentHwnd).c_str(),
+        g_options.topOffset,
+        g_options.columnIndex,
+        g_options.columnCount,
+        g_options.columnGap);
+
     if (!LoadTerminalExports() || !CreateDirectTerminal())
     {
         DestroyDirectTerminal();
@@ -645,6 +768,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
         DispatchMessageW(&message);
     }
 
+    Log(L"wWinMain.messageLoop.exit");
     DestroyDirectTerminal();
     CoUninitialize();
     return 0;

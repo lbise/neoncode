@@ -169,7 +169,8 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Build minimal direct-native `HwndTerminal` coordinator POC under Electron.
 - [x] Validate direct-native `HwndTerminal` coordinator visually under Electron.
 - [x] Add initial explicit bounds/focus/blur IPC to direct-native coordinator before deeper hub integration.
-- [ ] Validate direct-native coordinator explicit bounds/focus/blur IPC under Electron stress tests.
+- [x] Add debug file logging for Electron/direct-native coordinator focus and bounds events.
+- [ ] Validate direct-native coordinator explicit bounds/focus/blur IPC under Electron stress tests using debug logs.
 - [ ] Add hub/WebSocket/PTTY bridge to direct-native coordinator if direct-native focus/layout remains acceptable.
 - [ ] Reassess WPF after Electron spike.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.

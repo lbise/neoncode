@@ -19,6 +19,28 @@ const TERMINAL_GAP = 8;
 let mainWindow;
 let terminalHostProcesses = [];
 let pendingFocusTimers = [];
+let logFilePath;
+
+function ensureLogFile() {
+  if (logFilePath) {
+    return logFilePath;
+  }
+
+  const logDir = path.join(app.getPath('temp'), 'NeonCode');
+  fs.mkdirSync(logDir, { recursive: true });
+  logFilePath = path.join(logDir, 'electron-native-spike-main.log');
+  fs.appendFileSync(logFilePath, `\n=== Electron spike start ${new Date().toISOString()} pid=${process.pid} ===\n`);
+  return logFilePath;
+}
+
+function log(message, details) {
+  try {
+    const payload = details === undefined ? '' : ` ${JSON.stringify(details)}`;
+    fs.appendFileSync(ensureLogFile(), `${new Date().toISOString()} ${message}${payload}\n`);
+  } catch {
+    // Logging must never break the spike.
+  }
+}
 
 function hwndFromNativeWindowHandle(buffer) {
   if (process.platform !== 'win32') {
@@ -89,6 +111,7 @@ function killTerminalHosts() {
 
 function spawnTerminalHosts() {
   const hostExe = process.env.NEONCODE_TERMINAL_HOST_EXE || nativeHostExePath();
+  log('spawnTerminalHosts.begin', { hostExe, kind: terminalHostKind(), count: terminalCount() });
   if (!fs.existsSync(hostExe)) {
     dialog.showErrorBox(
       'Native terminal host missing',
@@ -113,6 +136,7 @@ function spawnTerminalHosts() {
       '--command=bash',
     ];
 
+    log('host.spawn', { index, args });
     const hostProcess = spawn(hostExe, args, {
       stdio: ['pipe', 'inherit', 'inherit'],
       windowsHide: false,
@@ -123,6 +147,7 @@ function spawnTerminalHosts() {
     hostProcess.stdin.setDefaultEncoding('utf8');
     hostProcess.on('exit', (code, signal) => {
       terminalHostProcesses = terminalHostProcesses.filter((process) => process !== hostProcess);
+      log('host.exit', { index, code, signal });
       console.log(`Native terminal host ${index + 1} exited: code=${code} signal=${signal}`);
     });
 
@@ -170,7 +195,9 @@ function sendTerminalBoundsCommand() {
     const count = process.neoncodeCount || terminalHostProcesses.length || 1;
     const index = process.neoncodeIndex || 0;
     const bounds = terminalBounds(index, count);
-    process.stdin.write(`bounds ${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height} ${bounds.dpi}\n`);
+    const command = `bounds ${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height} ${bounds.dpi}`;
+    log('host.command.bounds', { index, command });
+    process.stdin.write(`${command}\n`);
   }
 }
 
@@ -178,6 +205,7 @@ function sendTerminalBlurCommand(reason) {
   clearPendingFocusTimers();
   for (const process of liveTerminalHosts()) {
     if (process.stdin?.writable) {
+      log('host.command.blur', { index: process.neoncodeIndex || 0, reason });
       process.stdin.write(`blur ${reason}\n`);
     }
   }
@@ -186,6 +214,7 @@ function sendTerminalBlurCommand(reason) {
 function sendTerminalFocusCommand(reason) {
   for (const process of liveTerminalHosts()) {
     if (process.stdin?.writable) {
+      log('host.command.focus', { index: process.neoncodeIndex || 0, reason });
       process.stdin.write(`focus ${reason}\n`);
     }
   }
@@ -237,22 +266,42 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  log('window.create');
+
   mainWindow.once('ready-to-show', () => {
+    log('window.ready-to-show');
     mainWindow.show();
     spawnTerminalHosts();
   });
 
-  mainWindow.on('focus', () => focusTerminalHost('electron-focus'));
+  mainWindow.on('focus', () => {
+    log('window.focus', { isFocused: mainWindow.isFocused(), isMinimized: mainWindow.isMinimized() });
+    focusTerminalHost('electron-focus');
+  });
   mainWindow.on('show', () => {
+    log('window.show');
     sendTerminalBoundsCommand();
     focusTerminalHost('electron-show');
   });
-  mainWindow.on('resize', sendTerminalBoundsCommand);
-  mainWindow.on('move', sendTerminalBoundsCommand);
-  mainWindow.on('blur', () => sendTerminalBlurCommand('electron-blur'));
-  mainWindow.on('minimize', () => sendTerminalBlurCommand('electron-minimize'));
+  mainWindow.on('resize', () => {
+    log('window.resize', { contentSize: mainWindow.getContentSize(), bounds: mainWindow.getBounds() });
+    sendTerminalBoundsCommand();
+  });
+  mainWindow.on('move', () => {
+    log('window.move', { bounds: mainWindow.getBounds() });
+    sendTerminalBoundsCommand();
+  });
+  mainWindow.on('blur', () => {
+    log('window.blur', { isFocused: mainWindow.isFocused(), isMinimized: mainWindow.isMinimized() });
+    sendTerminalBlurCommand('electron-blur');
+  });
+  mainWindow.on('minimize', () => {
+    log('window.minimize');
+    sendTerminalBlurCommand('electron-minimize');
+  });
 
   mainWindow.on('restore', () => {
+    log('window.restore', { isFocused: mainWindow.isFocused(), isMinimized: mainWindow.isMinimized() });
     // The native child HWND can need a nudge after parent minimize/restore.
     // The native host also polls the parent bounds, but this gives Windows a
     // fresh child-window layout event from the Electron side.
@@ -267,6 +316,7 @@ function createWindow() {
   });
 
   mainWindow.on('closed', () => {
+    log('window.closed');
     clearPendingFocusTimers();
     killTerminalHosts();
     mainWindow = undefined;

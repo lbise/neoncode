@@ -614,6 +614,7 @@ spikes/electron-native-terminal/native/NeonCode.NativeTerminalCoordinator
 
 Current behavior:
 
+- writes debug logs to `%TEMP%\\NeonCode\\direct-coordinator-<pid>-pane-<n>.log`;
 - accepts `--parent-hwnd` and split-column geometry arguments as fallback startup geometry;
 - loads `Microsoft.Terminal.Control.dll` dynamically;
 - creates an `HwndTerminal` child via `CreateTerminal`;
@@ -625,6 +626,7 @@ Current behavior:
   - `focus reason`
   - `blur reason`
 - applies explicit bounds with `SetWindowPos`, `TerminalDpiChanged`, and `TerminalTriggerResize`;
+- logs focus decisions, foreground HWND, applied bounds, DPI changes, resize results, and terminal focus window messages;
 - keeps light parent polling only as fallback/parent-death/minimized-state detection;
 - destroys terminal cleanly on process exit.
 
