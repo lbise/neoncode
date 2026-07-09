@@ -182,7 +182,7 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Validate Electron two-terminal split spike for independent input and process cleanup.
 - [x] Validate Electron two-terminal split resize/snap and Neovim+tmux behavior.
 - [ ] Continue Electron two-terminal split validation for less-common z-order, DPI, long-session stability, and visual polish.
-- [ ] Track Electron/native terminal focus flicker as a deferred polish/coordinator issue.
+- [ ] Track Electron/native terminal focus flicker and restore-focus latency as deferred polish/coordinator issues.
 - [ ] Verify docking/tabs/layout support for the chosen product shell.
 - [ ] Verify dependency and packaging risk for the chosen product shell.
 - [x] Decide current near-product GUI direction: Electron is viable enough to continue as likely shell; WPF remains reference/fallback.
