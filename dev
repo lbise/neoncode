@@ -88,9 +88,11 @@ case "$command" in
 
   check)
     bash -n dev
-    node --check frontends/electron/main.js
-    node --check frontends/electron/renderer.js
-    node --check frontends/electron/tests/electron-smoke.js
+    while IFS= read -r -d '' js_file; do
+      node --check "$js_file"
+    done < <(find frontends/electron \
+      -path 'frontends/electron/node_modules' -prune -o \
+      -name '*.js' -print0)
     cargo fmt --check
     cargo check
     cargo clippy --all-targets -- -D warnings

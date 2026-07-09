@@ -29,6 +29,21 @@ Explicit commands:
 ./dev electron
 ```
 
+## Source layout
+
+```text
+main.js              Electron main process
+renderer.js          renderer bootstrap entrypoint
+renderer/app.js      app/bootstrap and pane grid wiring
+renderer/hub-client.js
+                     WebSocket protocol client helpers
+renderer/session-model.js
+                     pane/session state mirrored to test state
+renderer/terminal-pane.js
+                     xterm.js pane, input, resize, output handling
+tests/               Playwright smoke tests
+```
+
 ## Validation
 
 With hub and app running:

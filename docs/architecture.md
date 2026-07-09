@@ -107,10 +107,15 @@ hub/src/session.rs                 PTY lifecycle, IO, session events
 hub/src/state.rs                   app state and session registry
 hub/src/ws.rs                      WebSocket handling and protocol dispatch
 
-frontends/electron/main.js         Electron main process
-frontends/electron/renderer.js     xterm.js panes and hub client
-frontends/electron/tests/          Playwright smoke tests
-scripts/electron-app.ps1           Windows-local publish/start helper
+frontends/electron/main.js          Electron main process
+frontends/electron/renderer.js      renderer bootstrap entrypoint
+frontends/electron/renderer/        renderer modules:
+  app.js                            app/bootstrap and pane grid wiring
+  hub-client.js                     WebSocket protocol client helpers
+  session-model.js                  pane/session state mirrored to test state
+  terminal-pane.js                  xterm.js pane, input, resize, output handling
+frontends/electron/tests/           Playwright smoke tests
+scripts/electron-app.ps1            Windows-local publish/start helper
 scripts/electron-xterm-*-smoke.ps1 smoke/validation helpers
 ```
 

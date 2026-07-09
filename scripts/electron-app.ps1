@@ -65,13 +65,15 @@ function Copy-ElectronAppFiles {
         }
     }
 
-    $testsSource = Join-Path $SourceDirectory "tests"
-    if (Test-Path -LiteralPath $testsSource -PathType Container) {
-        $testsDestination = Join-Path $DestinationDirectory "tests"
-        if (Test-Path -LiteralPath $testsDestination) {
-            Remove-Item -LiteralPath $testsDestination -Recurse -Force
+    foreach ($directory in @("renderer", "tests")) {
+        $source = Join-Path $SourceDirectory $directory
+        if (Test-Path -LiteralPath $source -PathType Container) {
+            $destination = Join-Path $DestinationDirectory $directory
+            if (Test-Path -LiteralPath $destination) {
+                Remove-Item -LiteralPath $destination -Recurse -Force
+            }
+            Copy-Item -LiteralPath $source -Destination $destination -Recurse -Force
         }
-        Copy-Item -LiteralPath $testsSource -Destination $testsDestination -Recurse -Force
     }
 }
 

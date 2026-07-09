@@ -169,9 +169,7 @@ For Electron app changes:
 
 ```bash
 bash -n dev
-node --check frontends/electron/main.js
-node --check frontends/electron/renderer.js
-node --check frontends/electron/tests/electron-smoke.js
+find frontends/electron -path 'frontends/electron/node_modules' -prune -o -name '*.js' -print0 | xargs -0 -n1 node --check
 ./dev publish
 ```
 

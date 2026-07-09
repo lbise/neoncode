@@ -79,7 +79,7 @@ Why this matters:
 
 Tasks:
 
-- [ ] Refactor `frontends/electron/renderer.js` into modules:
+- [x] Refactor `frontends/electron/renderer.js` into modules:
   - hub client;
   - terminal pane;
   - session model;
