@@ -11,10 +11,10 @@ Reviewed tools:
 Related NeonCode docs:
 
 - [`README.md`](../README.md)
-- [`poc-to-product-roadmap.md`](poc-to-product-roadmap.md)
-- [`ui-toolkit-decision.md`](ui-toolkit-decision.md)
-- [`native-terminal-coordinator-design.md`](native-terminal-coordinator-design.md)
-- [`wmux-review.md`](wmux-review.md)
+- [`product-requirements.md`](product-requirements.md)
+- [`architecture.md`](architecture.md)
+- [`development-plan.md`](development-plan.md)
+- [`terminal-renderer-decision.md`](terminal-renderer-decision.md)
 
 ## NeonCode context
 
@@ -23,8 +23,8 @@ NeonCode is currently moving from a validated terminal-rendering POC toward a re
 Already validated:
 
 ```text
-Windows/Electron or WPF shell
-  ⇄ native Windows Terminal renderer/control
+Electron shell
+  ⇄ xterm.js renderer
   ⇄ neoncode-hub WebSocket protocol
   ⇄ WSL/Linux PTY
   ⇄ bash / tmux / Neovim / agents
@@ -32,8 +32,9 @@ Windows/Electron or WPF shell
 
 Current design intent:
 
-- Electron is the likely polished product shell.
-- WPF remains the proven Windows-native reference/fallback host.
+- Electron is the product shell.
+- xterm.js is the default terminal renderer because it avoids native child-HWND focus/polish risk.
+- Native Windows Terminal/WPF paths remain fallback/reference implementations.
 - The Rust `neoncode-hub` should own PTYs, session lifecycle, attach/detach/reconnect, and launch profiles.
 - The GUI should own visible layout: tabs, panes, workspaces, command palette, overview.
 - tmux may be used for remote persistence, but should not be the visible layout owner.
@@ -54,8 +55,6 @@ Therefore, this document focuses on **concepts and product primitives**, not cop
 ---
 
 ## wmux
-
-Detailed review: [`wmux-review.md`](wmux-review.md).
 
 ### What it is
 
@@ -141,8 +140,7 @@ Useful details:
 
 ### What not to copy
 
-- Do not copy the Windows-local ConPTY-first model. NeonCode's Windows workflow intentionally uses WSL as backend.
-- Do not copy xterm.js as the main Windows renderer unless native Windows Terminal hosting fails.
+- Do not copy the Windows-local ConPTY-first backend model. NeonCode's current terminal backend is the Rust hub in WSL/Linux, even though the renderer is now xterm.js.
 - Do not make NeonCode agent-first too early.
 - Do not assume Windows reboot can preserve live terminal processes; use remote/tmux persistence where needed.
 
@@ -167,9 +165,9 @@ License note: `cmux` is dual-licensed GPL-3.0-or-later/commercial. Treat it as a
 NeonCode adaptation:
 
 ```text
-Windows: Windows Terminal control / HwndTerminal
-Linux:   libghostty or VTE candidate
-macOS:   libghostty candidate
+Windows: xterm.js default; Windows Terminal control / HwndTerminal fallback
+Linux:   xterm.js default for Electron path; native renderer candidates can be revisited later
+macOS:   xterm.js default for Electron path; native renderer candidates can be revisited later
 ```
 
 #### 2. Sidebar as operational cockpit

@@ -27,16 +27,16 @@ Product direction is moving to Electron + xterm.js because it avoids child-HWND 
 
 ```text
 hub/                                                        Rust neoncode-hub backend
-spikes/electron-native-terminal/electron/                  Electron shell
-spikes/electron-native-terminal/native/NeonCode.NativeTerminalCoordinator/
-                                                            Direct HwndTerminal coordinator
-spikes/electron-native-terminal/native/NeonCode.ElectronTerminalHost/
-                                                            WPF native host fallback
-spikes/electron-xterm/                                     Electron xterm.js renderer spike
+spikes/electron-xterm/                                     Electron xterm.js app/default renderer
+spikes/electron-native-terminal/                           Native Windows Terminal fallback/reference
 frontends/windows/NeonCode.Windows/                        WPF reference app
+docs/product-requirements.md                               Product requirements / PRD
+docs/architecture.md                                       Current technical architecture
+docs/development-plan.md                                   Roadmap and progress tracker
 docs/hub.md                                                Hub usage/lifecycle docs
 docs/protocol.md                                           Hub WebSocket protocol docs
-spikes/electron-native-terminal/README.md                  Electron/native coordinator docs
+docs/terminal-renderer-decision.md                         Renderer decision record
+docs/external-tool-inspiration.md                          cmux/wmux/t3code analysis
 ```
 
 Windows-local publish outputs:

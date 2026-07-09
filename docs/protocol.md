@@ -1,7 +1,7 @@
-# NeonCode Hub POC Protocol
+# NeonCode hub protocol
 
-This is the temporary WebSocket protocol for `neoncode-hub`.
-It is intentionally simple and optimized for getting native frontends talking to WSL/Linux PTYs quickly.
+This is the current WebSocket protocol for `neoncode-hub`.
+It is intentionally simple and optimized for getting Electron/xterm frontends talking to WSL/Linux PTYs quickly.
 
 For hub run commands, logging, lifecycle, and source layout, see [`hub.md`](hub.md).
 
@@ -26,7 +26,7 @@ NEONCODE_HUB_BIND=127.0.0.1:44777 cargo run -p neoncode-hub
 
 ## Framing
 
-For the POC, all WebSocket messages are JSON text frames.
+For the current prototype, all WebSocket messages are JSON text frames.
 Terminal bytes are base64-encoded in `data_b64` fields.
 
 This is not the final high-performance protocol. Later we can move terminal output/input to binary frames while keeping JSON for control messages.

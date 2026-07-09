@@ -7,7 +7,7 @@ It runs on WSL/Linux today and exposes a small HTTP/WebSocket API that frontends
 Current path:
 
 ```text
-frontend/native terminal host
+Electron xterm.js frontend
   ⇄ ws://127.0.0.1:44777/ws
 neoncode-hub WebSocket handler
   ⇄ in-process session registry
@@ -18,7 +18,7 @@ PTY child process, usually bash in WSL/Linux
 
 ## Status
 
-The hub is still a prototype service, but it is now the shared foundation for WPF, Electron, and future native coordinator work.
+The hub is still a prototype service, but it is now the shared foundation for the Electron xterm.js app and fallback native/WPF hosts.
 
 Current capabilities:
 
