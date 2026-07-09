@@ -32,6 +32,7 @@ Electron/xterm.js commands:
   ./dev electron-xterm-publish Publish Electron xterm.js app/spike
   ./dev electron-xterm         Start published Electron xterm.js app/spike
   ./dev electron-xterm-install Install Electron xterm.js npm dependencies in-place
+  ./dev electron-xterm-smoke   Validate running xterm app hub input/output
 
 Electron/native Windows Terminal fallback commands:
   ./dev electron-native-publish Publish Electron native HwndTerminal fallback
@@ -206,6 +207,10 @@ case "$command" in
 
   electron-xterm)
     run_xterm_electron_app "$@"
+    ;;
+
+  electron-xterm-smoke)
+    ps_file 'scripts\electron-xterm-smoke.ps1' "$@"
     ;;
 
   electron-native)

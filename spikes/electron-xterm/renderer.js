@@ -6,9 +6,13 @@ const ENDPOINT = process.env.NEONCODE_HUB_ENDPOINT || DEFAULT_ENDPOINT;
 const TERMINAL_COUNT = Number.parseInt(process.env.NEONCODE_TERMINAL_COUNT || '2', 10) || 2;
 
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 const statusElement = document.getElementById('status');
 const terminalGrid = document.getElementById('terminal-grid');
 const terminals = [];
+window.neoncodeXtermState = {
+  panes: [],
+};
 
 function setStatus(text) {
   statusElement.textContent = text;
@@ -91,17 +95,31 @@ function createPane(index) {
     socket: undefined,
     started: false,
     resizePending: false,
+    outputEvents: 0,
+    inputEvents: 0,
   };
   terminals.push(state);
+  window.neoncodeXtermState.panes[index] = {
+    sessionId,
+    started: false,
+    outputEvents: 0,
+    inputEvents: 0,
+    rows: terminal.rows,
+    cols: terminal.cols,
+  };
 
   terminal.writeln('\x1b[36mNeonCode xterm.js spike\x1b[0m');
   terminal.writeln(`Connecting ${sessionId} to ${ENDPOINT}`);
 
   terminal.onData((data) => {
+    const bytes = encoder.encode(data);
+    state.inputEvents += 1;
+    window.neoncodeXtermState.panes[state.index].inputEvents = state.inputEvents;
+    console.log(`terminal_input ${state.index} ${bytes.length}`);
     sendJson(state.socket, {
       type: 'input',
       session_id: sessionId,
-      data_b64: bytesToBase64(encoder.encode(data)),
+      data_b64: bytesToBase64(bytes),
     });
   });
 
@@ -122,6 +140,8 @@ function scheduleFitAndResize(state) {
     state.resizePending = false;
     try {
       state.fitAddon.fit();
+      window.neoncodeXtermState.panes[state.index].rows = state.terminal.rows;
+      window.neoncodeXtermState.panes[state.index].cols = state.terminal.cols;
       if (state.started) {
         sendJson(state.socket, {
           type: 'resize',
@@ -165,10 +185,17 @@ function connectPane(state) {
 
     if (message.type === 'output' && message.session_id === state.sessionId) {
       const bytes = base64ToBytes(message.data_b64 || '');
+      state.outputEvents += 1;
+      window.neoncodeXtermState.panes[state.index].outputEvents = state.outputEvents;
       console.log(`hub_output ${state.index} ${bytes.length}`);
+      const text = decoder.decode(bytes);
+      if (text.includes('xtermsmoke')) {
+        console.log(`hub_output_marker ${state.index} xtermsmoke`);
+      }
       state.terminal.write(bytes);
     } else if (message.type === 'started' && message.session_id === state.sessionId) {
       console.log(`hub_started ${state.index}`);
+      window.neoncodeXtermState.panes[state.index].started = true;
       state.terminal.writeln('\r\n\x1b[32mHub session started\x1b[0m');
     } else if (message.type === 'exit' && message.session_id === state.sessionId) {
       state.terminal.writeln('\r\n\x1b[33mHub session exited\x1b[0m');
@@ -180,6 +207,7 @@ function connectPane(state) {
   socket.addEventListener('close', () => {
     console.log(`hub_closed ${state.index}`);
     state.started = false;
+    window.neoncodeXtermState.panes[state.index].started = false;
     state.terminal.writeln('\r\n\x1b[33mDisconnected from neoncode-hub\x1b[0m');
     setStatus('Disconnected from neoncode-hub');
   });

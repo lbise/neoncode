@@ -87,6 +87,7 @@ Typical manual loop:
 ./dev electron-xterm-publish # publish xterm.js renderer app/spike
 ./dev electron-xterm         # start published xterm.js renderer app/spike
 ./dev electron-xterm-install # npm install in source spike directory
+./dev electron-xterm-smoke   # validate running xterm app hub input/output
 ```
 
 This is now the default app path used by `./dev app` and `./dev publish`.
@@ -322,6 +323,13 @@ bash -n dev
 node --check spikes/electron-xterm/main.js
 node --check spikes/electron-xterm/renderer.js
 ./dev electron-xterm-publish
+```
+
+If the task affects xterm hub/input behavior, also run against a live app/hub:
+
+```bash
+./dev electron-xterm-smoke -PaneIndex 1
+./dev electron-xterm-smoke -PaneIndex 2
 ```
 
 If the task affects direct coordinator hub behavior, also run against a live app/hub:

@@ -249,7 +249,7 @@ Important observations:
 - WPF is validated as a pragmatic Windows host for this control. It should remain the near-term Windows prototype shell unless another GUI stack explicitly re-proves native HWND/control hosting.
 - The current Windows Terminal dependency process is good enough for a spike, but product work needs reproducible dependency checkout, patching, build, and publish scripts.
 
-This changes the project status from “can this work?” to “build the proper prototype/product foundation.” See `docs/hub.md` for hub usage/development, `docs/protocol.md` for the current WebSocket protocol, `docs/poc-to-product-roadmap.md` for the next route, `docs/ui-toolkit-decision.md` for the WPF/WinUI/Electron decision, `spikes/electron-native-terminal/README.md` for the Electron native terminal spike, and `docs/task-list.md` for the active checkbox task tracker.
+This changes the project status from “can this work?” to “build the proper prototype/product foundation.” See `docs/hub.md` for hub usage/development, `docs/protocol.md` for the current WebSocket protocol, `docs/terminal-renderer-decision.md` for the xterm.js renderer decision, `docs/poc-to-product-roadmap.md` for the next route, `docs/ui-toolkit-decision.md` for the WPF/WinUI/Electron decision, `spikes/electron-xterm/README.md` for the default Electron xterm app, `spikes/electron-native-terminal/README.md` for the native terminal fallback spike, and `docs/task-list.md` for the active checkbox task tracker.
 
 ---
 

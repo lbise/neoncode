@@ -8,21 +8,21 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header>
+  <header data-testid="app-header">
     <div>
       <strong>NeonCode</strong>
       <span>Electron xterm.js spike</span>
     </div>
-    <div id="status" class="status">Connecting to neoncode-hub...</div>
+    <div id="status" class="status" data-testid="hub-status">Connecting to neoncode-hub...</div>
   </header>
-  <main id="terminal-grid" aria-label="xterm terminal region">
-    <section class="terminal-pane">
+  <main id="terminal-grid" aria-label="xterm terminal region" data-testid="terminal-grid">
+    <section class="terminal-pane" data-testid="terminal-pane-1">
       <div class="pane-title">Terminal 1</div>
-      <div id="terminal-1" class="terminal"></div>
+      <div id="terminal-1" class="terminal" data-testid="terminal-1"></div>
     </section>
-    <section class="terminal-pane">
+    <section class="terminal-pane" data-testid="terminal-pane-2">
       <div class="pane-title">Terminal 2</div>
-      <div id="terminal-2" class="terminal"></div>
+      <div id="terminal-2" class="terminal" data-testid="terminal-2"></div>
     </section>
   </main>
   <script src="renderer.js"></script>
