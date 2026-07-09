@@ -13,28 +13,36 @@ This spike intentionally does **not** test polished UI, tabs, settings, packagin
 ```text
 Electron BrowserWindow
   ├─ web header / shell UI
-  └─ one or more child native WPF windows, reparented with SetParent
+  └─ one or more child native coordinator windows, reparented with SetParent
+       └─ Microsoft.Terminal.Control.dll HwndTerminal
+            ⇄ neoncode-hub WebSocket
+                ⇄ WSL/Linux PTY
+
+Fallback/reference path:
+
+Electron BrowserWindow
+  └─ child native WPF windows, reparented with SetParent
        └─ Windows Terminal WPF wrapper
             └─ Microsoft.Terminal.Control.dll
                  ⇄ neoncode-hub WebSocket
                      ⇄ WSL/Linux PTY
 ```
 
-The default native terminal host is a tiny WPF executable:
+The default native terminal host is now the direct-native coordinator:
+
+```text
+spikes/electron-native-terminal/native/NeonCode.NativeTerminalCoordinator
+```
+
+It bypasses WPF and calls the `HwndTerminal` exports from `Microsoft.Terminal.Control.dll` directly. It now connects to `neoncode-hub` for start/input/output/resize.
+
+The WPF fallback/reference host remains available:
 
 ```text
 spikes/electron-native-terminal/native/NeonCode.ElectronTerminalHost
 ```
 
 It reuses the existing NeonCode terminal/config code and vendors the same Windows Terminal runtime files as the main WPF prototype.
-
-There is also a direct-native coordinator POC:
-
-```text
-spikes/electron-native-terminal/native/NeonCode.NativeTerminalCoordinator
-```
-
-It bypasses WPF and calls the `HwndTerminal` exports from `Microsoft.Terminal.Control.dll` directly. This mode currently proves direct child-HWND creation/rendering/input plumbing only; it intentionally echoes keyboard input locally and does not yet connect to `neoncode-hub`/PTY.
 
 The Electron shell lives in:
 
@@ -50,7 +58,7 @@ Observed so far:
 - Native Windows Terminal renderer appears inside the Electron window.
 - The spike now defaults to two side-by-side native terminal hosts to validate multi-region HWND layout. Set `NEONCODE_TERMINAL_COUNT=1` to return to the original single-terminal mode.
 - Two WPF terminal hosts work independently in current testing, including separate shell input and clean native-host shutdown when Electron exits.
-- A minimal direct-native `HwndTerminal` coordinator POC now builds/publishes and can be launched under Electron with `NEONCODE_TERMINAL_HOST_KIND=coordinator`. It renders through `Microsoft.Terminal.Control.dll` without WPF; hub/PTY integration is not wired yet.
+- The direct-native `HwndTerminal` coordinator now builds/publishes and is the default `./dev app` host. It renders through `Microsoft.Terminal.Control.dll` without WPF and connects to `neoncode-hub` for basic start/input/output/resize.
 - Direct-native coordinator visual validation succeeded: terminal regions appear under Electron. However, focus flicker and taskbar minimize/restore stress can still lose terminal focus, which suggests the remaining issue is a general Electron + child HWND activation/focus coordination problem rather than a WPF-specific problem.
 - Electron now sends explicit native-host line commands for `bounds`, `focus`, and `blur`; the direct coordinator applies those instead of relying solely on parent polling/split startup geometry. This needs stress validation.
 - Resize and Windows snap/unsnap keep both terminal regions aligned in current testing.
@@ -71,13 +79,13 @@ Observed so far:
 
 The Electron spike is successful enough to continue treating Electron as the likely polished product shell, with a native Windows Terminal host/coordinator subsystem on Windows.
 
-The remaining known issues are deferred validation or polish items rather than current blockers:
+The direct-native coordinator path has now crossed the basic hub/PTTY threshold. The remaining known issues are deferred validation or polish items rather than current blockers:
 
 - occasional terminal/focus flicker during activation/focus changes;
 - rare/stress-induced taskbar-return refocus race; direct-native testing suggests this is not WPF-specific;
 - longer 30–60 minute session stability test;
 - multi-monitor/mixed-DPI test when hardware is available;
-- replacing split-column command-line geometry and ad hoc focus nudges with explicit Electron-to-native-host bounds/focus IPC.
+- hardening the explicit Electron-to-native-host bounds/focus IPC into a more product-shaped native coordinator protocol.
 
 ## Current important limitation
 
@@ -150,11 +158,11 @@ Default output:
 
 The publish step:
 
-- publishes the native WPF terminal host to `native-host`;
+- publishes the native WPF terminal host fallback to `native-host`;
 - builds and copies the direct-native `HwndTerminal` coordinator to `native-host`;
 - copies the Electron shell to `electron`;
 - runs `npm.cmd install` in the Windows-local Electron folder;
-- verifies Electron and the native host exist.
+- verifies Electron and both native hosts exist.
 
 ## Run
 
@@ -167,18 +175,24 @@ Terminal 1, from WSL repo root:
 Terminal 2, from WSL repo root:
 
 ```bash
+./dev app
+```
+
+Equivalent direct coordinator command:
+
+```bash
 ./dev electron-spike
 ```
 
-Direct-native coordinator mode, from WSL repo root:
+WPF fallback/reference host:
 
 ```bash
-./dev electron-spike-direct
+./dev electron-spike-wpf
 ```
 
-The helper passes `-HostKind coordinator` to `scripts/electron-spike.ps1`, which sets `NEONCODE_TERMINAL_HOST_KIND=coordinator` for the Electron process. The startup console and Electron log should show `kind: "coordinator"`.
+The default helper passes `-HostKind coordinator` to `scripts/electron-spike.ps1`, which sets `NEONCODE_TERMINAL_HOST_KIND=coordinator` for the Electron process. The startup console and Electron log should show `kind: "coordinator"`.
 
-The direct-native mode should show the `HwndTerminal` renderer and locally echo typed input. It is not expected to start bash yet.
+The direct-native mode should show the `HwndTerminal` renderer, start bash through `neoncode-hub`, display shell output, and send typed input back through the hub.
 
 The direct-native coordinator currently accepts these simple line commands from Electron:
 

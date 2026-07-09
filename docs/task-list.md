@@ -12,7 +12,7 @@ poc/windows-terminal-embedded
 
 ```text
 Stage: Phase 1/3 — shared session/protocol foundation
-Next task: add automatic Electron/hub reconnect flow using list_sessions + attach
+Next task: add automatic Electron/direct-coordinator reconnect flow using list_sessions + attach
 ```
 
 ## Phase 0 — preserve the spike
@@ -50,6 +50,8 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Add a first app config file for local frontend settings.
 - [x] Document UI toolkit decision and Electron spike criteria.
 - [x] Make `./dev app` target the Electron app path; keep WPF as explicit reference/fallback commands.
+- [x] Wire direct native `HwndTerminal` coordinator to `neoncode-hub` for start/input/output/resize.
+- [x] Make `./dev app` use Electron + direct native coordinator by default.
 - [ ] Add app-level error reporting for native terminal load failure.
 - [ ] Add app-level error reporting for backend disconnect.
 - [ ] Add app-level error reporting for session exit and protocol errors.
@@ -179,7 +181,7 @@ Goal: make a product GUI decision using real data, not speculation.
 - [x] Add basic automated Electron focus/minimize/restore stress harness.
 - [x] Validate direct-native coordinator explicit bounds/focus/blur IPC under automated Electron minimize/restore stress test for pane 1.
 - [ ] Extend direct-native automated stress coverage for pane 2 active-focus restoration.
-- [ ] Add hub/WebSocket/PTTY bridge to direct-native coordinator if direct-native focus/layout remains acceptable.
+- [x] Add hub/WebSocket/PTTY bridge to direct-native coordinator for basic start/input/output/resize.
 - [x] Reassess WPF after Electron spike; keep as reference/fallback while Electron becomes default app path.
 - [ ] Evaluate WinUI 3 only if a Windows-native product direction becomes likely.
 - [ ] Verify native terminal hosting feasibility for the chosen product shell.

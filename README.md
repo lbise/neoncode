@@ -11,7 +11,7 @@ docs/hub.md                  hub run/lifecycle/development documentation
 docs/protocol.md             temporary WebSocket PTY protocol
 ```
 
-The current daily app path is the Electron shell with a native Windows terminal host. The WPF frontend remains a validated reference/fallback because it proved the Windows Terminal renderer + hub protocol path first.
+The current daily app path is the Electron shell with the direct native `HwndTerminal` coordinator. The WPF frontend/native host remains a validated reference/fallback because it proved the Windows Terminal renderer + hub protocol path first.
 
 ## Daily development commands
 
@@ -30,14 +30,14 @@ Typical loop from WSL:
 Common commands:
 
 ```bash
-./dev app          # publish/start Electron app with hub-connected WPF terminal host
+./dev app          # publish/start Electron app with direct HwndTerminal coordinator
 ./dev publish      # publish Electron app to a Windows-local folder
 ./dev hub          # run the Rust NeonCode hub (see docs/hub.md)
 ./dev check        # Electron/WPF frontend checks + Rust fmt/check/clippy
 ./dev wt-build     # bootstrap/build Microsoft.Terminal.Control.dll
 ./dev full         # build Windows Terminal control, then publish Electron app
 ./dev wpf-app      # publish/start the validated WPF reference app
-./dev electron-spike-direct # start Electron with direct HwndTerminal coordinator, not hub-wired yet
+./dev electron-spike-wpf # start Electron with the WPF terminal host fallback
 ./dev status       # show useful paths/status
 ```
 
@@ -141,7 +141,7 @@ native-host\NeonCode.ElectronTerminalHost.exe
 native-host\NeonCode.NativeTerminalCoordinator.exe
 ```
 
-The default app command uses the WPF native terminal host because it is hub/PTTY-connected today. The direct native coordinator remains available for focused HWND/focus testing but is not the default app until hub/PTTY integration is wired.
+The default app command uses the direct native `HwndTerminal` coordinator, which now connects to `neoncode-hub`. The WPF native terminal host remains staged and available as a fallback/reference path.
 
 Optional clean publish:
 

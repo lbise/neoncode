@@ -2,17 +2,23 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <objbase.h>
+#include <winhttp.h>
+#include <process.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdint>
 #include <cstdlib>
 #include <cstdarg>
 #include <cwchar>
 #include <cstdio>
+#include <atomic>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace wt
 {
@@ -54,6 +60,9 @@ struct HostOptions
     int columnIndex{};
     int columnCount{ 1 };
     int columnGap{};
+    std::wstring endpoint{ L"ws://127.0.0.1:44777/ws" };
+    std::wstring command{ L"bash" };
+    std::wstring sessionId{ L"electron-spike-shell" };
 };
 
 struct TerminalExports
@@ -85,6 +94,10 @@ static bool g_hasAppliedBounds{};
 static RECT g_explicitBounds{};
 static RECT g_appliedBounds{};
 static int g_explicitDpi{};
+static std::mutex g_webSocketMutex{};
+static HINTERNET g_webSocket{};
+static std::atomic_bool g_hubConnected{};
+static std::atomic_bool g_hubStopRequested{};
 
 struct BoundsCommand
 {
@@ -95,8 +108,11 @@ struct BoundsCommand
 static constexpr UINT WM_NEONCODE_FOCUS_TERMINAL = WM_APP + 1;
 static constexpr UINT WM_NEONCODE_BLUR_TERMINAL = WM_APP + 2;
 static constexpr UINT WM_NEONCODE_SET_BOUNDS = WM_APP + 3;
+static constexpr UINT WM_NEONCODE_TERMINAL_OUTPUT = WM_APP + 4;
 
 static std::wstring g_logPath{};
+
+static void SendHubResize(wt::Size cellSize);
 
 static std::wstring HwndToString(HWND hwnd)
 {
@@ -174,6 +190,208 @@ static void WriteCoordinatorEvent(const std::string& line)
     WriteFile(output, payload.data(), static_cast<DWORD>(payload.size()), &written, nullptr);
 }
 
+static std::string WideToUtf8(const std::wstring_view value)
+{
+    if (value.empty())
+    {
+        return {};
+    }
+
+    const auto size = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0, nullptr, nullptr);
+    if (size <= 0)
+    {
+        return {};
+    }
+
+    std::string result(static_cast<std::size_t>(size), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), size, nullptr, nullptr);
+    return result;
+}
+
+static std::wstring Utf8ToWide(const std::string_view value)
+{
+    if (value.empty())
+    {
+        return {};
+    }
+
+    auto size = MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0);
+    if (size <= 0)
+    {
+        std::wstring fallback;
+        fallback.reserve(value.size());
+        for (const auto ch : value)
+        {
+            fallback.push_back(static_cast<unsigned char>(ch));
+        }
+        return fallback;
+    }
+
+    std::wstring result(static_cast<std::size_t>(size), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), size);
+    return result;
+}
+
+static std::string JsonEscape(const std::string_view value)
+{
+    std::string escaped;
+    escaped.reserve(value.size() + 8);
+    for (const auto ch : value)
+    {
+        switch (ch)
+        {
+        case '"': escaped += "\\\""; break;
+        case '\\': escaped += "\\\\"; break;
+        case '\b': escaped += "\\b"; break;
+        case '\f': escaped += "\\f"; break;
+        case '\n': escaped += "\\n"; break;
+        case '\r': escaped += "\\r"; break;
+        case '\t': escaped += "\\t"; break;
+        default:
+            if (static_cast<unsigned char>(ch) < 0x20)
+            {
+                char buffer[7]{};
+                sprintf_s(buffer, "\\u%04x", static_cast<unsigned char>(ch));
+                escaped += buffer;
+            }
+            else
+            {
+                escaped.push_back(ch);
+            }
+            break;
+        }
+    }
+    return escaped;
+}
+
+static std::string JsonStringValue(const std::string& json, const std::string& name)
+{
+    const auto key = "\"" + name + "\"";
+    auto pos = json.find(key);
+    if (pos == std::string::npos)
+    {
+        return {};
+    }
+
+    pos = json.find(':', pos + key.size());
+    if (pos == std::string::npos)
+    {
+        return {};
+    }
+
+    pos = json.find('"', pos + 1);
+    if (pos == std::string::npos)
+    {
+        return {};
+    }
+
+    std::string value;
+    for (std::size_t i = pos + 1; i < json.size(); ++i)
+    {
+        const auto ch = json[i];
+        if (ch == '"')
+        {
+            return value;
+        }
+        if (ch == '\\' && i + 1 < json.size())
+        {
+            const auto escaped = json[++i];
+            switch (escaped)
+            {
+            case '"': value.push_back('"'); break;
+            case '\\': value.push_back('\\'); break;
+            case '/': value.push_back('/'); break;
+            case 'b': value.push_back('\b'); break;
+            case 'f': value.push_back('\f'); break;
+            case 'n': value.push_back('\n'); break;
+            case 'r': value.push_back('\r'); break;
+            case 't': value.push_back('\t'); break;
+            default: value.push_back(escaped); break;
+            }
+        }
+        else
+        {
+            value.push_back(ch);
+        }
+    }
+
+    return {};
+}
+
+static std::string Base64Encode(const std::string_view bytes)
+{
+    static constexpr char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string encoded;
+    encoded.reserve(((bytes.size() + 2) / 3) * 4);
+
+    for (std::size_t i = 0; i < bytes.size(); i += 3)
+    {
+        const auto b0 = static_cast<unsigned char>(bytes[i]);
+        const auto b1 = i + 1 < bytes.size() ? static_cast<unsigned char>(bytes[i + 1]) : 0;
+        const auto b2 = i + 2 < bytes.size() ? static_cast<unsigned char>(bytes[i + 2]) : 0;
+
+        encoded.push_back(alphabet[b0 >> 2]);
+        encoded.push_back(alphabet[((b0 & 0x03) << 4) | (b1 >> 4)]);
+        encoded.push_back(i + 1 < bytes.size() ? alphabet[((b1 & 0x0f) << 2) | (b2 >> 6)] : '=');
+        encoded.push_back(i + 2 < bytes.size() ? alphabet[b2 & 0x3f] : '=');
+    }
+
+    return encoded;
+}
+
+static int Base64Value(char ch)
+{
+    if (ch >= 'A' && ch <= 'Z') return ch - 'A';
+    if (ch >= 'a' && ch <= 'z') return ch - 'a' + 26;
+    if (ch >= '0' && ch <= '9') return ch - '0' + 52;
+    if (ch == '+') return 62;
+    if (ch == '/') return 63;
+    return -1;
+}
+
+static std::string Base64Decode(const std::string& encoded)
+{
+    std::string decoded;
+    int value = 0;
+    int bits = -8;
+    for (const auto ch : encoded)
+    {
+        if (ch == '=')
+        {
+            break;
+        }
+
+        const auto digit = Base64Value(ch);
+        if (digit < 0)
+        {
+            continue;
+        }
+
+        value = (value << 6) | digit;
+        bits += 6;
+        if (bits >= 0)
+        {
+            decoded.push_back(static_cast<char>((value >> bits) & 0xff));
+            bits -= 8;
+        }
+    }
+    return decoded;
+}
+
+static void PostTerminalOutput(const std::wstring& text)
+{
+    if (!g_terminalHwnd)
+    {
+        return;
+    }
+
+    auto payload = new std::wstring(text);
+    if (!PostMessageW(g_terminalHwnd, WM_NEONCODE_TERMINAL_OUTPUT, 0, reinterpret_cast<LPARAM>(payload)))
+    {
+        delete payload;
+    }
+}
+
 static std::wstring GetArgValue(std::wstring_view arg, std::wstring_view name)
 {
     const auto prefix = std::wstring(name) + L"=";
@@ -247,6 +465,27 @@ static HostOptions ParseOptions()
         if (!value.empty())
         {
             options.columnGap = std::max(0, ParseIntOrDefault(value, options.columnGap));
+            continue;
+        }
+
+        value = GetArgValue(arg, L"--endpoint");
+        if (!value.empty())
+        {
+            options.endpoint = value;
+            continue;
+        }
+
+        value = GetArgValue(arg, L"--command");
+        if (!value.empty())
+        {
+            options.command = value;
+            continue;
+        }
+
+        value = GetArgValue(arg, L"--session-id");
+        if (!value.empty())
+        {
+            options.sessionId = value;
             continue;
         }
     }
@@ -417,6 +656,7 @@ static void ApplyBounds(const RECT& bounds, int dpi)
         {
             LogFormat(L"ApplyBounds.resize cells=%ldx%ld", cellSize.width, cellSize.height);
             g_lastCellSize = cellSize;
+            SendHubResize(cellSize);
         }
         else
         {
@@ -581,13 +821,310 @@ static DWORD WINAPI ControlPipeThread(void*)
     return 0;
 }
 
+static bool SendHubText(const std::string& text)
+{
+    std::lock_guard lock{ g_webSocketMutex };
+    if (!g_webSocket || !g_hubConnected.load())
+    {
+        Log(L"SendHubText.skipped not connected");
+        return false;
+    }
+
+    const auto status = WinHttpWebSocketSend(
+        g_webSocket,
+        WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
+        const_cast<char*>(text.data()),
+        static_cast<DWORD>(text.size()));
+    if (status != NO_ERROR)
+    {
+        LogFormat(L"SendHubText.failed status=%lu", status);
+        return false;
+    }
+
+    return true;
+}
+
+static void SendHubInput(const std::wstring_view text)
+{
+    const auto bytes = WideToUtf8(text);
+    if (bytes.empty())
+    {
+        return;
+    }
+
+    const auto sessionId = WideToUtf8(g_options.sessionId);
+    const auto json = std::string{"{\"type\":\"input\",\"session_id\":\""} +
+        JsonEscape(sessionId) +
+        "\",\"data_b64\":\"" +
+        Base64Encode(bytes) +
+        "\"}";
+    SendHubText(json);
+}
+
+static void SendHubResize(wt::Size cellSize)
+{
+    if (cellSize.width <= 0 || cellSize.height <= 0)
+    {
+        return;
+    }
+
+    const auto sessionId = WideToUtf8(g_options.sessionId);
+    std::ostringstream json;
+    json << "{\"type\":\"resize\",\"session_id\":\""
+         << JsonEscape(sessionId)
+         << "\",\"rows\":" << cellSize.height
+         << ",\"cols\":" << cellSize.width
+         << "}";
+    SendHubText(json.str());
+}
+
+static void ProcessHubMessage(const std::string& json)
+{
+    const auto type = JsonStringValue(json, "type");
+    if (type == "output")
+    {
+        const auto data = Base64Decode(JsonStringValue(json, "data_b64"));
+        WriteCoordinatorEvent("hub_output " + std::to_string(g_options.columnIndex) + " " + std::to_string(data.size()));
+        PostTerminalOutput(Utf8ToWide(data));
+    }
+    else if (type == "started")
+    {
+        WriteCoordinatorEvent("hub_started " + std::to_string(g_options.columnIndex));
+        LogFormat(L"Hub.started session=%s", g_options.sessionId.c_str());
+    }
+    else if (type == "error")
+    {
+        const auto message = Utf8ToWide(JsonStringValue(json, "message"));
+        PostTerminalOutput(L"\x1b[31mHub error: " + message + L"\x1b[0m\r\n");
+    }
+    else if (type == "exit")
+    {
+        PostTerminalOutput(L"\r\n\x1b[33mHub session exited\x1b[0m\r\n");
+    }
+    else if (!type.empty())
+    {
+        LogFormat(L"Hub.message ignored type=%S", type.c_str());
+    }
+}
+
+static bool ConnectHubWebSocket(HINTERNET& internet, HINTERNET& connect, HINTERNET& request, HINTERNET& webSocket)
+{
+    URL_COMPONENTS components{};
+    components.dwStructSize = sizeof(components);
+    components.dwSchemeLength = static_cast<DWORD>(-1);
+    components.dwHostNameLength = static_cast<DWORD>(-1);
+    components.dwUrlPathLength = static_cast<DWORD>(-1);
+    components.dwExtraInfoLength = static_cast<DWORD>(-1);
+
+    auto endpoint = g_options.endpoint;
+    const auto requestedSecure = endpoint.rfind(L"wss://", 0) == 0;
+    std::wstring winHttpEndpoint = endpoint;
+    if (winHttpEndpoint.rfind(L"ws://", 0) == 0)
+    {
+        winHttpEndpoint.replace(0, 5, L"http://");
+    }
+    else if (winHttpEndpoint.rfind(L"wss://", 0) == 0)
+    {
+        winHttpEndpoint.replace(0, 6, L"https://");
+    }
+
+    if (!WinHttpCrackUrl(winHttpEndpoint.data(), static_cast<DWORD>(winHttpEndpoint.size()), 0, &components))
+    {
+        const auto error = GetLastError();
+        WriteCoordinatorEvent("hub_crack_url_failed " + std::to_string(g_options.columnIndex) + " " + std::to_string(error));
+        LogFormat(L"ConnectHubWebSocket.WinHttpCrackUrl.failed error=%lu endpoint=%s", error, endpoint.c_str());
+        return false;
+    }
+
+    const std::wstring host{ components.lpszHostName, components.dwHostNameLength };
+    std::wstring path{ components.lpszUrlPath, components.dwUrlPathLength };
+    if (components.dwExtraInfoLength > 0)
+    {
+        path.append(components.lpszExtraInfo, components.dwExtraInfoLength);
+    }
+    if (path.empty())
+    {
+        path = L"/";
+    }
+
+    const auto secure = requestedSecure || components.nScheme == INTERNET_SCHEME_HTTPS;
+    internet = WinHttpOpen(L"NeonCode.NativeTerminalCoordinator/0.1", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!internet)
+    {
+        LogFormat(L"ConnectHubWebSocket.WinHttpOpen.failed error=%lu", GetLastError());
+        return false;
+    }
+
+    connect = WinHttpConnect(internet, host.c_str(), components.nPort, 0);
+    if (!connect)
+    {
+        LogFormat(L"ConnectHubWebSocket.WinHttpConnect.failed error=%lu host=%s port=%u", GetLastError(), host.c_str(), components.nPort);
+        return false;
+    }
+
+    request = WinHttpOpenRequest(connect, L"GET", path.c_str(), nullptr, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, secure ? WINHTTP_FLAG_SECURE : 0);
+    if (!request)
+    {
+        LogFormat(L"ConnectHubWebSocket.WinHttpOpenRequest.failed error=%lu path=%s", GetLastError(), path.c_str());
+        return false;
+    }
+
+    if (!WinHttpSetOption(request, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0))
+    {
+        LogFormat(L"ConnectHubWebSocket.WinHttpSetOption.failed error=%lu", GetLastError());
+        return false;
+    }
+
+    if (!WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0))
+    {
+        LogFormat(L"ConnectHubWebSocket.WinHttpSendRequest.failed error=%lu", GetLastError());
+        return false;
+    }
+
+    if (!WinHttpReceiveResponse(request, nullptr))
+    {
+        LogFormat(L"ConnectHubWebSocket.WinHttpReceiveResponse.failed error=%lu", GetLastError());
+        return false;
+    }
+
+    webSocket = WinHttpWebSocketCompleteUpgrade(request, 0);
+    if (!webSocket)
+    {
+        LogFormat(L"ConnectHubWebSocket.WinHttpWebSocketCompleteUpgrade.failed error=%lu", GetLastError());
+        return false;
+    }
+
+    WinHttpCloseHandle(request);
+    request = nullptr;
+    return true;
+}
+
+static std::string BuildStartMessage()
+{
+    const auto sessionId = WideToUtf8(g_options.sessionId);
+    const auto command = WideToUtf8(g_options.command);
+    const auto rows = g_lastCellSize.height > 0 ? g_lastCellSize.height : 30;
+    const auto cols = g_lastCellSize.width > 0 ? g_lastCellSize.width : 120;
+
+    std::ostringstream json;
+    json << "{\"type\":\"start\",\"session_id\":\""
+         << JsonEscape(sessionId)
+         << "\",\"command\":\""
+         << JsonEscape(command)
+         << "\",\"rows\":" << rows
+         << ",\"cols\":" << cols
+         << "}";
+    return json.str();
+}
+
+static unsigned __stdcall HubThread(void*)
+{
+    WriteCoordinatorEvent("hub_thread_enter " + std::to_string(g_options.columnIndex));
+    PostTerminalOutput(L"\x1b[36mConnecting direct coordinator to neoncode-hub...\x1b[0m\r\n");
+
+    HINTERNET internet{};
+    HINTERNET connect{};
+    HINTERNET request{};
+    HINTERNET webSocket{};
+
+    if (!ConnectHubWebSocket(internet, connect, request, webSocket))
+    {
+        WriteCoordinatorEvent("hub_connect_failed " + std::to_string(g_options.columnIndex));
+        PostTerminalOutput(L"\x1b[31mFailed to connect to neoncode-hub. Is ./dev hub running?\x1b[0m\r\n");
+        if (request) WinHttpCloseHandle(request);
+        if (connect) WinHttpCloseHandle(connect);
+        if (internet) WinHttpCloseHandle(internet);
+        return 1;
+    }
+
+    {
+        std::lock_guard lock{ g_webSocketMutex };
+        g_webSocket = webSocket;
+        g_hubConnected = true;
+    }
+
+    WriteCoordinatorEvent("hub_connected " + std::to_string(g_options.columnIndex));
+    SendHubText(BuildStartMessage());
+
+    std::string pending;
+    std::vector<char> buffer(16 * 1024);
+    while (!g_hubStopRequested.load())
+    {
+        DWORD bytesRead = 0;
+        WINHTTP_WEB_SOCKET_BUFFER_TYPE bufferType{};
+        const auto status = WinHttpWebSocketReceive(webSocket, buffer.data(), static_cast<DWORD>(buffer.size()), &bytesRead, &bufferType);
+        if (status != NO_ERROR)
+        {
+            LogFormat(L"HubThread.receive.failed status=%lu", status);
+            break;
+        }
+
+        if (bufferType == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE)
+        {
+            Log(L"HubThread.receive.close");
+            break;
+        }
+
+        if (bufferType == WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE || bufferType == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE)
+        {
+            pending.append(buffer.data(), buffer.data() + bytesRead);
+            if (bufferType == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE)
+            {
+                ProcessHubMessage(pending);
+                pending.clear();
+            }
+        }
+    }
+
+    {
+        std::lock_guard lock{ g_webSocketMutex };
+        g_hubConnected = false;
+        g_webSocket = nullptr;
+    }
+
+    if (webSocket)
+    {
+        WinHttpWebSocketClose(webSocket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
+        WinHttpCloseHandle(webSocket);
+    }
+    if (connect) WinHttpCloseHandle(connect);
+    if (internet) WinHttpCloseHandle(internet);
+
+    WriteCoordinatorEvent("hub_thread_end " + std::to_string(g_options.columnIndex));
+    return 0;
+}
+
+static void StartHubBridge()
+{
+    Log(L"StartHubBridge.begin");
+    g_hubStopRequested = false;
+    const auto thread = reinterpret_cast<HANDLE>(_beginthreadex(nullptr, 0, HubThread, nullptr, 0, nullptr));
+    if (thread)
+    {
+        Log(L"StartHubBridge.created");
+        CloseHandle(thread);
+    }
+    else
+    {
+        LogFormat(L"StartHubBridge._beginthreadex.failed errno=%d", errno);
+    }
+}
+
+static void StopHubBridge()
+{
+    g_hubStopRequested = true;
+    std::lock_guard lock{ g_webSocketMutex };
+    if (g_webSocket)
+    {
+        WinHttpWebSocketClose(g_webSocket, WINHTTP_WEB_SOCKET_SUCCESS_CLOSE_STATUS, nullptr, 0);
+    }
+}
+
 static void SendIntroText()
 {
     g_exports.TerminalSendOutput(
         g_terminal,
-        L"\x1b[36mNeonCode direct HwndTerminal coordinator POC\x1b[0m\r\n"
-        L"This bypasses WPF and calls Microsoft.Terminal.Control.dll HwndTerminal exports directly.\r\n"
-        L"Hub/PTTY integration is intentionally not wired yet; keyboard input is echoed locally.\r\n\r\n");
+        L"\x1b[36mNeonCode direct HwndTerminal coordinator\x1b[0m\r\n");
 }
 
 static void __stdcall TerminalWriteCallback(wchar_t* text)
@@ -597,11 +1134,7 @@ static void __stdcall TerminalWriteCallback(wchar_t* text)
         return;
     }
 
-    if (g_terminal && g_exports.TerminalSendOutput)
-    {
-        g_exports.TerminalSendOutput(g_terminal, text);
-    }
-
+    SendHubInput(text);
     CoTaskMemFree(text);
 }
 
@@ -630,6 +1163,14 @@ static LRESULT CALLBACK TerminalSubclassProc(HWND hwnd, UINT message, WPARAM wPa
             g_hasExplicitBounds = true;
             LogFormat(L"WM_NEONCODE_SET_BOUNDS parsed x=%ld y=%ld width=%ld height=%ld dpi=%d", g_explicitBounds.left, g_explicitBounds.top, g_explicitBounds.right - g_explicitBounds.left, g_explicitBounds.bottom - g_explicitBounds.top, g_explicitDpi);
             ApplyBounds(g_explicitBounds, g_explicitDpi);
+        }
+        return 0;
+
+    case WM_NEONCODE_TERMINAL_OUTPUT:
+        if (lParam && g_terminal && g_exports.TerminalSendOutput)
+        {
+            const std::unique_ptr<std::wstring> text{ reinterpret_cast<std::wstring*>(lParam) };
+            g_exports.TerminalSendOutput(g_terminal, text->c_str());
         }
         return 0;
 
@@ -722,6 +1263,7 @@ static bool CreateDirectTerminal()
     RefreshBounds();
     SendIntroText();
     SetTimer(g_terminalHwnd, 1, 33, nullptr);
+    StartHubBridge();
     if (const auto controlThread = CreateThread(nullptr, 0, ControlPipeThread, nullptr, 0, nullptr))
     {
         CloseHandle(controlThread);
@@ -734,6 +1276,8 @@ static bool CreateDirectTerminal()
 static void DestroyDirectTerminal()
 {
     Log(L"DestroyDirectTerminal.begin");
+    StopHubBridge();
+
     if (g_terminalHwnd)
     {
         KillTimer(g_terminalHwnd, 1);
@@ -761,13 +1305,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int)
     g_options = ParseOptions();
     InitializeLogPath();
     LogFormat(
-        L"wWinMain.start pid=%lu parent=%s topOffset=%d columnIndex=%d columnCount=%d columnGap=%d",
+        L"wWinMain.start pid=%lu parent=%s topOffset=%d columnIndex=%d columnCount=%d columnGap=%d endpoint=%s session=%s command=%s",
         GetCurrentProcessId(),
         HwndToString(g_options.parentHwnd).c_str(),
         g_options.topOffset,
         g_options.columnIndex,
         g_options.columnCount,
-        g_options.columnGap);
+        g_options.columnGap,
+        g_options.endpoint.c_str(),
+        g_options.sessionId.c_str(),
+        g_options.command.c_str());
 
     if (!LoadTerminalExports() || !CreateDirectTerminal())
     {

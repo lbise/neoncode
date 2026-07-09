@@ -22,6 +22,7 @@ let pendingFocusTimers = [];
 let activeTerminalIndex = 0;
 let logFilePath;
 let pendingBoundsTimer;
+let terminalHostsSpawned = false;
 
 function ensureLogFile() {
   if (logFilePath) {
@@ -317,14 +318,27 @@ function focusTerminalHost(reason, options = {}) {
   }
 }
 
+function showAndSpawnTerminalHosts(reason) {
+  if (!mainWindow || mainWindow.isDestroyed() || terminalHostsSpawned) {
+    return;
+  }
+
+  terminalHostsSpawned = true;
+  log('window.show-and-spawn', { reason });
+  mainWindow.show();
+  spawnTerminalHosts();
+}
+
 function createWindow() {
   Menu.setApplicationMenu(null);
+  terminalHostsSpawned = false;
 
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     backgroundColor: '#111827',
     title: 'NeonCode Electron Native Terminal Spike',
+    show: false,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -337,9 +351,16 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     log('window.ready-to-show');
-    mainWindow.show();
-    spawnTerminalHosts();
+    showAndSpawnTerminalHosts('ready-to-show');
   });
+  mainWindow.webContents.once('did-finish-load', () => {
+    log('window.did-finish-load');
+    showAndSpawnTerminalHosts('did-finish-load');
+  });
+  mainWindow.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
+    log('window.did-fail-load', { errorCode, errorDescription });
+  });
+  setTimeout(() => showAndSpawnTerminalHosts('fallback-timer'), 2000);
 
   mainWindow.on('focus', () => {
     log('window.focus', { isFocused: mainWindow.isFocused(), isMinimized: mainWindow.isMinimized() });
@@ -395,6 +416,7 @@ function createWindow() {
       pendingBoundsTimer = undefined;
     }
     killTerminalHosts();
+    terminalHostsSpawned = false;
     mainWindow = undefined;
   });
 }

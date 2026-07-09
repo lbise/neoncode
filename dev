@@ -12,7 +12,7 @@ Usage:
   ./dev <command>
 
 Daily commands:
-  ./dev app          Publish/start Electron app with hub-connected WPF terminal host
+  ./dev app          Publish/start Electron app with direct HwndTerminal coordinator
   ./dev publish      Publish Electron app to %USERPROFILE%\neoncode-electron-spike
   ./dev hub          Run the Rust NeonCode hub
   ./dev check        Run Electron/WPF frontend checks + Rust fmt/check/clippy
@@ -30,8 +30,8 @@ WPF reference app commands:
 
 Electron/direct-native commands:
   ./dev electron-spike-publish Publish Electron app/spike to %USERPROFILE%\neoncode-electron-spike
-  ./dev electron-spike         Start Electron with the WPF terminal host
-  ./dev electron-spike-direct  Start Electron with direct HwndTerminal coordinator (not hub-wired yet)
+  ./dev electron-spike         Start Electron with direct HwndTerminal coordinator
+  ./dev electron-spike-wpf     Start Electron with the WPF terminal host fallback
   ./dev electron-spike-install Install Electron npm dependencies in-place
   ./dev electron-spike-native  Build the Electron native WPF host and direct native coordinator
   ./dev electron-spike-coordinator Build only the direct native HwndTerminal coordinator
@@ -75,6 +75,10 @@ publish_electron_app() {
 }
 
 run_electron_app() {
+  ps_file 'scripts\electron-spike.ps1' -Command start -HostKind coordinator
+}
+
+run_electron_wpf_app() {
   ps_file 'scripts\electron-spike.ps1' -Command start -HostKind wpf
 }
 
@@ -166,8 +170,12 @@ case "$command" in
     run_electron_app
     ;;
 
+  electron-spike-wpf)
+    run_electron_wpf_app
+    ;;
+
   electron-spike-direct)
-    ps_file 'scripts\electron-spike.ps1' -Command start -HostKind coordinator
+    run_electron_app
     ;;
 
   status)
