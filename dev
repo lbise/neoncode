@@ -12,28 +12,32 @@ Usage:
   ./dev <command>
 
 Daily commands:
-  ./dev app          Stop running Windows app, publish frontend, start published app
-  ./dev publish      Stop running Windows app, then publish frontend
+  ./dev app          Publish/start Electron app with hub-connected WPF terminal host
+  ./dev publish      Publish Electron app to %USERPROFILE%\neoncode-electron-spike
   ./dev hub          Run the Rust NeonCode hub
-  ./dev check        Run frontend build + Rust fmt/check/clippy
+  ./dev check        Run Electron/WPF frontend checks + Rust fmt/check/clippy
 
 Windows Terminal dependency commands:
   ./dev wt-bootstrap Bootstrap pinned Windows Terminal dependency
   ./dev wt-build     Bootstrap/build Microsoft.Terminal.Control.dll
-  ./dev full         Build Windows Terminal control, then publish Windows app
+  ./dev full         Build Windows Terminal control, then publish Electron app
 
-Spike commands:
-  ./dev electron-spike-publish Publish Electron spike to %USERPROFILE%\neoncode-electron-spike
-  ./dev electron-spike         Start the published Electron spike with the WPF terminal host
-  ./dev electron-spike-direct  Start the published Electron spike with direct HwndTerminal coordinator
-  ./dev electron-spike-install Install Electron spike npm dependencies in-place
-  ./dev electron-spike-native  Build the Electron spike native WPF host and direct native coordinator
+WPF reference app commands:
+  ./dev wpf-app      Stop running WPF reference app, publish it, start it
+  ./dev wpf-publish  Stop running WPF reference app, then publish it
+  ./dev wpf-run      Start the already-published WPF reference app
+  ./dev wpf-stop     Stop running NeonCode.Windows processes
+
+Electron/direct-native commands:
+  ./dev electron-spike-publish Publish Electron app/spike to %USERPROFILE%\neoncode-electron-spike
+  ./dev electron-spike         Start Electron with the WPF terminal host
+  ./dev electron-spike-direct  Start Electron with direct HwndTerminal coordinator (not hub-wired yet)
+  ./dev electron-spike-install Install Electron npm dependencies in-place
+  ./dev electron-spike-native  Build the Electron native WPF host and direct native coordinator
   ./dev electron-spike-coordinator Build only the direct native HwndTerminal coordinator
-  ./dev electron-spike-focus-test Stress an already-running Electron spike window
+  ./dev electron-spike-focus-test Stress an already-running Electron window
 
 Utility commands:
-  ./dev run-app      Start the already-published Windows app
-  ./dev stop-app     Stop running NeonCode.Windows processes
   ./dev status       Show git status and important output paths
   ./dev help         Show this help
 
@@ -54,16 +58,24 @@ ps_command() {
   powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$1"
 }
 
-stop_app() {
+stop_wpf_app() {
   ps_command '$p = Get-Process NeonCode.Windows -ErrorAction SilentlyContinue; if ($p) { $p | Stop-Process -Force }; exit 0'
 }
 
-publish_app() {
+publish_wpf_app() {
   ps_file 'scripts\publish-windows-frontend.ps1' "$@"
 }
 
-run_app() {
+run_wpf_app() {
   ps_command 'Start-Process "$env:USERPROFILE\neoncode-publish\NeonCode.Windows.exe"'
+}
+
+publish_electron_app() {
+  ps_file 'scripts\electron-spike.ps1' -Command publish "$@"
+}
+
+run_electron_app() {
+  ps_file 'scripts\electron-spike.ps1' -Command start -HostKind wpf
 }
 
 command="${1:-help}"
@@ -77,22 +89,12 @@ case "$command" in
     ;;
 
   app)
-    stop_app
-    publish_app "$@"
-    run_app
+    publish_electron_app "$@"
+    run_electron_app
     ;;
 
   publish)
-    stop_app
-    publish_app "$@"
-    ;;
-
-  run-app)
-    run_app
-    ;;
-
-  stop-app)
-    stop_app
+    publish_electron_app "$@"
     ;;
 
   hub)
@@ -100,6 +102,8 @@ case "$command" in
     ;;
 
   check)
+    node --check spikes/electron-native-terminal/electron/main.js
+    ps_command 'dotnet build spikes\electron-native-terminal\native\NeonCode.ElectronTerminalHost\NeonCode.ElectronTerminalHost.csproj -v:minimal'
     ps_command 'dotnet build frontends\windows\NeonCode.Windows\NeonCode.Windows.csproj -v:minimal'
     cargo fmt --check
     cargo check
@@ -116,11 +120,30 @@ case "$command" in
 
   full)
     ps_file 'scripts\build-windows-terminal-control.ps1'
-    publish_app
+    publish_electron_app
+    ;;
+
+  wpf-app)
+    stop_wpf_app
+    publish_wpf_app "$@"
+    run_wpf_app
+    ;;
+
+  wpf-publish)
+    stop_wpf_app
+    publish_wpf_app "$@"
+    ;;
+
+  wpf-run)
+    run_wpf_app
+    ;;
+
+  wpf-stop)
+    stop_wpf_app
     ;;
 
   electron-spike-publish)
-    ps_file 'scripts\electron-spike.ps1' -Command publish "$@"
+    publish_electron_app "$@"
     ;;
 
   electron-spike-install)
@@ -140,7 +163,7 @@ case "$command" in
     ;;
 
   electron-spike)
-    ps_file 'scripts\electron-spike.ps1' -Command start -HostKind wpf
+    run_electron_app
     ;;
 
   electron-spike-direct)
@@ -152,7 +175,8 @@ case "$command" in
     cat <<'EOF'
 
 Important paths:
-  Windows publish: %USERPROFILE%\neoncode-publish
+  Electron app:    %USERPROFILE%\neoncode-electron-spike
+  WPF reference:   %USERPROFILE%\neoncode-publish
   App config:      %APPDATA%\NeonCode\config.json
   WT checkout:     %USERPROFILE%\gitrepo\microsoft-terminal
   vcpkg:           %USERPROFILE%\gitrepo\vcpkg
@@ -160,6 +184,7 @@ Important paths:
 Useful commands:
   ./dev hub
   ./dev app
+  ./dev wpf-app
   ./dev check
 EOF
     ;;

@@ -11,7 +11,7 @@ docs/hub.md                  hub run/lifecycle/development documentation
 docs/protocol.md             temporary WebSocket PTY protocol
 ```
 
-The Windows frontend now attempts to host the Windows Terminal renderer through a WPF wrapper and adapts it to the hub protocol. The old textbox renderer remains as a fallback if the native control fails to load.
+The current daily app path is the Electron shell with a native Windows terminal host. The WPF frontend remains a validated reference/fallback because it proved the Windows Terminal renderer + hub protocol path first.
 
 ## Daily development commands
 
@@ -30,30 +30,31 @@ Typical loop from WSL:
 Common commands:
 
 ```bash
-./dev app          # stop running Windows app, publish frontend, start published app
-./dev publish      # stop running Windows app, then publish frontend
+./dev app          # publish/start Electron app with hub-connected WPF terminal host
+./dev publish      # publish Electron app to a Windows-local folder
 ./dev hub          # run the Rust NeonCode hub (see docs/hub.md)
-./dev check        # dotnet build + cargo fmt/check/clippy
-./dev wt-build              # bootstrap/build Microsoft.Terminal.Control.dll
-./dev full                  # build Windows Terminal control, then publish app
-./dev electron-spike-publish # publish Electron spike to a Windows-local folder
-./dev electron-spike         # start the published Electron spike
-./dev electron-spike-native  # build the Electron spike native WPF terminal host
-./dev status                # show useful paths/status
+./dev check        # Electron/WPF frontend checks + Rust fmt/check/clippy
+./dev wt-build     # bootstrap/build Microsoft.Terminal.Control.dll
+./dev full         # build Windows Terminal control, then publish Electron app
+./dev wpf-app      # publish/start the validated WPF reference app
+./dev electron-spike-direct # start Electron with direct HwndTerminal coordinator, not hub-wired yet
+./dev status       # show useful paths/status
 ```
 
 The detailed manual workflow is below for troubleshooting and fresh-machine setup.
 
-## Build and publish the Windows app manually
+## Build and publish the app manually
 
 The full manual workflow is:
 
 1. check the Rust hub from WSL/Linux;
 2. bootstrap the pinned Windows Terminal dependency with Windows tooling;
 3. build the native Windows Terminal control;
-4. publish the WPF frontend to a Windows-local folder;
+4. publish the Electron app to a Windows-local folder;
 5. run the hub from WSL;
-6. run the published Windows app.
+6. run the published Electron app.
+
+The validated WPF app remains available through `./dev wpf-app` and `scripts/publish-windows-frontend.ps1` for fallback/reference testing.
 
 ### Prerequisites
 
@@ -112,33 +113,46 @@ C:\Users\13lbise\gitrepo\microsoft-terminal\bin\x64\Debug\Microsoft.Terminal.Con
 
 This step is required before publishing/running the real terminal frontend because the WPF app copies these native files into its output.
 
-### 4. Publish the Windows frontend
+### 4. Publish the Electron app
 
 From the repo root in WSL:
 
 ```bash
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows-frontend.ps1
+./dev publish
+```
+
+Equivalent direct command:
+
+```bash
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\electron-spike.ps1 -Command publish
 ```
 
 Default publish output:
 
 ```text
-C:\Users\13lbise\neoncode-publish
+C:\Users\13lbise\neoncode-electron-spike
 ```
 
-The publish script verifies that the output contains:
+The publish script builds/stages:
 
 ```text
-NeonCode.Windows.exe
-Microsoft.Terminal.Control.dll
-Microsoft.Terminal.Control.pri
-Microsoft.Terminal.Control\
+electron\                                  Electron shell
+native-host\NeonCode.ElectronTerminalHost.exe
+native-host\NeonCode.NativeTerminalCoordinator.exe
 ```
+
+The default app command uses the WPF native terminal host because it is hub/PTTY-connected today. The direct native coordinator remains available for focused HWND/focus testing but is not the default app until hub/PTTY integration is wired.
 
 Optional clean publish:
 
 ```bash
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\\publish-windows-frontend.ps1 -Clean
+./dev publish -Clean
+```
+
+WPF reference publish remains available:
+
+```bash
+./dev wpf-publish
 ```
 
 ### 5. Run the hub
@@ -155,20 +169,31 @@ The frontend expects the hub WebSocket endpoint:
 ws://127.0.0.1:44777/ws
 ```
 
-### 6. Run the published Windows app
+### 6. Run the published Electron app
 
-From Windows PowerShell:
+From WSL:
 
-```powershell
-& "$env:USERPROFILE\neoncode-publish\NeonCode.Windows.exe"
+```bash
+./dev app
 ```
 
-In the app:
+Or start an already-published Electron app:
 
-1. keep endpoint `ws://127.0.0.1:44777/ws`;
-2. click `Connect`;
-3. click `Start bash`;
-4. type directly into the terminal.
+```bash
+./dev electron-spike
+```
+
+The Electron app passes the hub endpoint to its native terminal hosts:
+
+```text
+ws://127.0.0.1:44777/ws
+```
+
+WPF reference app, if needed:
+
+```bash
+./dev wpf-app
+```
 
 On first run, the app creates a local config file at:
 
