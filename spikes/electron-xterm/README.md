@@ -126,6 +126,8 @@ Automated smoke helpers:
 ./dev electron-xterm-resize-smoke -PaneIndex 1
 ./dev electron-xterm-resize-smoke -PaneIndex 2
 ./dev electron-xterm-playwright-smoke
+./dev electron-xterm-behavior-smoke -PaneIndex 1
+./dev electron-xterm-behavior-smoke -PaneIndex 2
 ```
 
 Also test:
@@ -133,7 +135,8 @@ Also test:
 - resize Electron window and confirm `stty size` changes; automated by `./dev electron-xterm-resize-smoke`;
 - two independent panes;
 - copy/paste;
-- Ctrl+C / Ctrl+D / Ctrl+Z;
+- Ctrl+C; automated by `./dev electron-xterm-behavior-smoke`;
+- Ctrl+D / Ctrl+Z;
 - Ctrl+Space;
 - Alt+Backspace and other Alt key combinations;
 - mouse mode in Neovim/tmux;

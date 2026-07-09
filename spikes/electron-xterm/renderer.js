@@ -5,6 +5,7 @@ const { FitAddon } = require('@xterm/addon-fit');
 const DEFAULT_ENDPOINT = 'ws://127.0.0.1:44777/ws';
 const ENDPOINT = process.env.NEONCODE_HUB_ENDPOINT || DEFAULT_ENDPOINT;
 const TERMINAL_COUNT = Number.parseInt(process.env.NEONCODE_TERMINAL_COUNT || '2', 10) || 2;
+const SESSION_PREFIX = process.env.NEONCODE_SESSION_PREFIX || 'electron-xterm-shell';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -66,6 +67,20 @@ function sendTerminalText(state, text, reason = 'text') {
   sendTerminalBytes(state, encoder.encode(text), reason);
 }
 
+function shouldSuppressDuplicatePaste(state, data) {
+  if (!state.suppressedPasteText) {
+    return false;
+  }
+
+  if (data.includes(state.suppressedPasteText)) {
+    console.log(`terminal_input_suppressed ${state.index} duplicate_paste`);
+    state.suppressedPasteText = '';
+    return true;
+  }
+
+  return false;
+}
+
 function pasteText(state, text, reason = 'paste') {
   const normalized = normalizeTerminalText(text || '');
   if (!normalized) {
@@ -73,6 +88,7 @@ function pasteText(state, text, reason = 'paste') {
   }
 
   console.log(`terminal_paste ${state.index} ${normalized.length} ${reason}`);
+  state.suppressedPasteText = normalized;
   sendTerminalText(state, normalized, reason);
 }
 
@@ -106,7 +122,7 @@ function buildTerminalTheme() {
 }
 
 function createPane(index) {
-  const sessionId = `electron-xterm-shell-${index + 1}`;
+  const sessionId = `${SESSION_PREFIX}-${index + 1}`;
   const container = document.getElementById(`terminal-${index + 1}`);
   if (!container) {
     return;
@@ -141,6 +157,8 @@ function createPane(index) {
     lastCols: terminal.cols,
     outputScanBuffer: '',
     lastResizeMarker: '',
+    lastCheckMarker: '',
+    suppressedPasteText: '',
   };
   terminals.push(state);
   window.neoncodeXtermState.panes[index] = {
@@ -158,6 +176,9 @@ function createPane(index) {
   terminal.writeln(`Connecting ${sessionId} to ${ENDPOINT}`);
 
   terminal.onData((data) => {
+    if (shouldSuppressDuplicatePaste(state, data)) {
+      return;
+    }
     sendTerminalText(state, data, 'xterm');
   });
 
@@ -279,6 +300,15 @@ function connectPane(state) {
         if (marker !== state.lastResizeMarker) {
           state.lastResizeMarker = marker;
           console.log(`hub_output_resize ${state.index} ${latest[1]} ${latest[2]} ${latest[3]}`);
+        }
+      }
+      const checkMatches = [...state.outputScanBuffer.matchAll(/xtermcheck:([A-Za-z0-9_-]+):([A-Za-z0-9_-]+):([A-Za-z0-9_.-]+)/g)];
+      if (checkMatches.length > 0) {
+        const latest = checkMatches[checkMatches.length - 1];
+        const marker = `${latest[1]} ${latest[2]} ${latest[3]}`;
+        if (marker !== state.lastCheckMarker) {
+          state.lastCheckMarker = marker;
+          console.log(`hub_output_check ${state.index} ${latest[1]} ${latest[2]} ${latest[3]}`);
         }
       }
       state.terminal.write(bytes);

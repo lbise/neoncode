@@ -90,6 +90,7 @@ Typical manual loop:
 ./dev electron-xterm-smoke          # validate running xterm app hub input/output
 ./dev electron-xterm-resize-smoke       # validate xterm resize propagation with stty size
 ./dev electron-xterm-playwright-smoke   # validate xterm DOM/state/input with Playwright
+./dev electron-xterm-behavior-smoke     # validate basic command/Ctrl+C/tool availability
 ```
 
 This is now the default app path used by `./dev app` and `./dev publish`.
@@ -335,6 +336,8 @@ If the task affects xterm hub/input behavior, also run against a live app/hub:
 ./dev electron-xterm-resize-smoke -PaneIndex 1
 ./dev electron-xterm-resize-smoke -PaneIndex 2
 ./dev electron-xterm-playwright-smoke
+./dev electron-xterm-behavior-smoke -PaneIndex 1
+./dev electron-xterm-behavior-smoke -PaneIndex 2
 ```
 
 If the task affects direct coordinator hub behavior, also run against a live app/hub:

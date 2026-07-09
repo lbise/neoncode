@@ -73,7 +73,8 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Add xterm.js paste and special-key handling for Ctrl+Shift+V, Shift+Insert, Ctrl+Space, and Alt+Backspace.
 - [x] Add xterm.js resize propagation smoke validation with `stty size`.
 - [x] Add Playwright smoke validation for xterm app DOM/state/input.
-- [ ] Harden xterm.js renderer path for copy behavior, broader special keys, and nvim/tmux before deeper reconnect work.
+- [x] Add xterm behavior smoke for basic command round-trip, Ctrl+C, and tmux/nvim availability.
+- [ ] Harden xterm.js renderer path for copy behavior, broader special keys, and deeper nvim/tmux behavior before reconnect work.
 - [ ] Define automatic reconnect flow on top of list/attach/detach.
 - [ ] Add structured tracing/logging refinements to the hub.
 
@@ -82,7 +83,7 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 Goal: make the terminal experience trustworthy for daily terminal/TUI use.
 
 - [x] Confirm resize propagation with `stty size` for xterm.js path.
-- [ ] Verify Ctrl+C.
+- [x] Verify Ctrl+C for xterm.js path.
 - [ ] Verify Ctrl+D.
 - [ ] Verify Ctrl+Z.
 - [ ] Verify Alt key combinations.

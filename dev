@@ -35,6 +35,7 @@ Electron/xterm.js commands:
   ./dev electron-xterm-smoke   Validate running xterm app hub input/output
   ./dev electron-xterm-resize-smoke Validate xterm resize propagation with stty size
   ./dev electron-xterm-playwright-smoke Validate xterm app DOM/state with Playwright
+  ./dev electron-xterm-behavior-smoke Validate xterm basic command/Ctrl+C/tool availability
 
 Electron/native Windows Terminal fallback commands:
   ./dev electron-native-publish Publish Electron native HwndTerminal fallback
@@ -221,6 +222,10 @@ case "$command" in
 
   electron-xterm-playwright-smoke)
     ps_file 'scripts\electron-xterm-playwright-smoke.ps1' "$@"
+    ;;
+
+  electron-xterm-behavior-smoke)
+    ps_file 'scripts\electron-xterm-behavior-smoke.ps1' "$@"
     ;;
 
   electron-native)

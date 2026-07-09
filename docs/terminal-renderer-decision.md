@@ -113,7 +113,8 @@ Initial xterm.js validation:
 - xterm smoke helper verifies scripted input produces hub output;
 - xterm path handles normalized paste, Ctrl+Shift+V, Shift+Insert, Ctrl+Space → NUL, and Alt+Backspace → ESC DEL;
 - xterm resize smoke verifies latest xterm rows/cols match `stty size` from the PTY;
-- Playwright smoke launches Electron, asserts DOM/test state, and verifies xterm input produces hub output.
+- Playwright smoke launches Electron, asserts DOM/test state, and verifies xterm input produces hub output;
+- behavior smoke verifies basic command round-trip, Ctrl+C signal handling, and tmux/nvim availability reporting.
 
 Validation command:
 
@@ -124,6 +125,8 @@ Validation command:
 ./dev electron-xterm-resize-smoke -PaneIndex 1
 ./dev electron-xterm-resize-smoke -PaneIndex 2
 ./dev electron-xterm-playwright-smoke
+./dev electron-xterm-behavior-smoke -PaneIndex 1
+./dev electron-xterm-behavior-smoke -PaneIndex 2
 ```
 
 ## Current commands

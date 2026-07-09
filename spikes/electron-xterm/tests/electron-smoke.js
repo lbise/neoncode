@@ -12,6 +12,7 @@ function log(message, details) {
 
 async function main() {
   log('launch', { appRoot, endpoint });
+  const sessionPrefix = `electron-xterm-playwright-${Date.now()}`;
   const electronApp = await electron.launch({
     args: [appRoot],
     cwd: appRoot,
@@ -19,6 +20,7 @@ async function main() {
       ...process.env,
       NEONCODE_HUB_ENDPOINT: endpoint,
       NEONCODE_TERMINAL_COUNT: process.env.NEONCODE_TERMINAL_COUNT || '2',
+      NEONCODE_SESSION_PREFIX: sessionPrefix,
     },
   });
 
