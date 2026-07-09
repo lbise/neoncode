@@ -11,6 +11,13 @@ pub enum ClientMessage {
         rows: Option<u16>,
         cols: Option<u16>,
     },
+    ListSessions,
+    Attach {
+        session_id: String,
+    },
+    Detach {
+        session_id: String,
+    },
     Input {
         session_id: String,
         data_b64: String,
@@ -31,6 +38,15 @@ pub enum ServerMessage {
     Started {
         session_id: String,
     },
+    SessionList {
+        sessions: Vec<SessionSummary>,
+    },
+    Attached {
+        session_id: String,
+    },
+    Detached {
+        session_id: String,
+    },
     Output {
         session_id: String,
         data_b64: String,
@@ -46,4 +62,9 @@ pub enum ServerMessage {
         session_id: Option<String>,
         message: String,
     },
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SessionSummary {
+    pub session_id: String,
 }

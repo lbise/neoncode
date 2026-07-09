@@ -61,6 +61,40 @@ Fields:
 - `cwd`: optional working directory.
 - `rows`, `cols`: optional terminal size. Defaults to `24x80`.
 
+### List active sessions
+
+```json
+{
+  "type": "list_sessions"
+}
+```
+
+Returns `session_list` with active session IDs.
+
+### Attach to an existing session
+
+```json
+{
+  "type": "attach",
+  "session_id": "shell-1"
+}
+```
+
+Subscribes this WebSocket to future output/exit/error events for the session.
+Output is not replayed; attach only receives future events.
+
+### Detach from a session
+
+```json
+{
+  "type": "detach",
+  "session_id": "shell-1"
+}
+```
+
+Stops forwarding session events to this WebSocket.
+If the detaching WebSocket created the session, the session is released from that WebSocket lifetime and can survive that WebSocket closing.
+
 ### Send terminal input
 
 ```json
@@ -98,6 +132,37 @@ Fields:
 ```json
 {
   "type": "started",
+  "session_id": "shell-1"
+}
+```
+
+### Session list
+
+```json
+{
+  "type": "session_list",
+  "sessions": [
+    {
+      "session_id": "shell-1"
+    }
+  ]
+}
+```
+
+### Session attached
+
+```json
+{
+  "type": "attached",
+  "session_id": "shell-1"
+}
+```
+
+### Session detached
+
+```json
+{
+  "type": "detached",
   "session_id": "shell-1"
 }
 ```
@@ -175,4 +240,22 @@ Send `echo hi` followed by enter:
 
 ```json
 {"type":"input","session_id":"shell","data_b64":"ZWNobyBoaQo="}
+```
+
+List sessions:
+
+```json
+{"type":"list_sessions"}
+```
+
+Detach the session so it can survive this WebSocket closing:
+
+```json
+{"type":"detach","session_id":"shell"}
+```
+
+On a new WebSocket, attach it again:
+
+```json
+{"type":"attach","session_id":"shell"}
 ```

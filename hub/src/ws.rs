@@ -1,4 +1,6 @@
-use anyhow::{Context, Result};
+use std::collections::HashMap;
+
+use anyhow::{Context, Result, anyhow};
 use axum::{
     extract::{
         State,
@@ -48,21 +50,23 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     });
 
-    let mut session_forwarders = Vec::new();
+    let mut session_forwarders = HashMap::new();
 
     while let Some(message) = ws_receiver.next().await {
         match message {
             Ok(Message::Text(text)) => {
-                match handle_client_text(&peer_id, &text, &outgoing_tx, &state) {
-                    Ok(Some(forwarder)) => session_forwarders.push(forwarder),
-                    Ok(None) => {}
-                    Err(err) => {
-                        warn!(%err, "client message failed");
-                        let _ = outgoing_tx.send(ServerMessage::Error {
-                            session_id: None,
-                            message: err.to_string(),
-                        });
-                    }
+                if let Err(err) = handle_client_text(
+                    &peer_id,
+                    &text,
+                    &outgoing_tx,
+                    &state,
+                    &mut session_forwarders,
+                ) {
+                    warn!(%err, "client message failed");
+                    let _ = outgoing_tx.send(ServerMessage::Error {
+                        session_id: None,
+                        message: err.to_string(),
+                    });
                 }
             }
             Ok(Message::Binary(bytes)) => {
@@ -95,7 +99,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     };
     info!(%peer_id, killed_count, "websocket disconnected; killed owned sessions");
 
-    for forwarder in session_forwarders {
+    for (_, forwarder) in session_forwarders {
         forwarder.abort();
     }
     drop(outgoing_tx);
@@ -107,7 +111,8 @@ fn handle_client_text(
     text: &str,
     outgoing: &mpsc::UnboundedSender<ServerMessage>,
     state: &AppState,
-) -> Result<Option<JoinHandle<()>>> {
+    session_forwarders: &mut HashMap<String, JoinHandle<()>>,
+) -> Result<()> {
     let message: ClientMessage = serde_json::from_str(text).context("invalid client JSON")?;
 
     match message {
@@ -133,8 +138,32 @@ fn handle_client_text(
             outgoing.send(ServerMessage::Started {
                 session_id: session_id.clone(),
             })?;
-            let forwarder = spawn_session_event_forwarder(session_id, events, outgoing.clone());
-            Ok(Some(forwarder))
+            attach_forwarder(session_id, events, outgoing, session_forwarders)?;
+        }
+        ClientMessage::ListSessions => {
+            let sessions = state.registry().list_sessions()?;
+            outgoing.send(ServerMessage::SessionList { sessions })?;
+        }
+        ClientMessage::Attach { session_id } => {
+            if session_forwarders.contains_key(&session_id) {
+                return Err(anyhow!(
+                    "session already attached on this websocket: {session_id}"
+                ));
+            }
+
+            let events = state.registry().subscribe_session(&session_id)?;
+            attach_forwarder(session_id.clone(), events, outgoing, session_forwarders)?;
+            outgoing.send(ServerMessage::Attached { session_id })?;
+        }
+        ClientMessage::Detach { session_id } => {
+            let forwarder = session_forwarders.remove(&session_id).ok_or_else(|| {
+                anyhow!("session is not attached on this websocket: {session_id}")
+            })?;
+            forwarder.abort();
+            state
+                .registry()
+                .release_owner_if_matches(&session_id, connection_id)?;
+            outgoing.send(ServerMessage::Detached { session_id })?;
         }
         ClientMessage::Input {
             session_id,
@@ -144,7 +173,6 @@ fn handle_client_text(
                 .decode(data_b64.as_bytes())
                 .context("invalid input data_b64")?;
             state.registry().write_input(&session_id, &bytes)?;
-            Ok(None)
         }
         ClientMessage::Resize {
             session_id,
@@ -152,14 +180,34 @@ fn handle_client_text(
             cols,
         } => {
             state.registry().resize(&session_id, rows, cols)?;
-            Ok(None)
         }
         ClientMessage::Kill { session_id } => {
+            if let Some(forwarder) = session_forwarders.remove(&session_id) {
+                forwarder.abort();
+            }
             state.registry().kill_session(&session_id)?;
             outgoing.send(ServerMessage::Killed { session_id })?;
-            Ok(None)
         }
     }
+
+    Ok(())
+}
+
+fn attach_forwarder(
+    session_id: String,
+    events: broadcast::Receiver<SessionEvent>,
+    outgoing: &mpsc::UnboundedSender<ServerMessage>,
+    session_forwarders: &mut HashMap<String, JoinHandle<()>>,
+) -> Result<()> {
+    if session_forwarders.contains_key(&session_id) {
+        return Err(anyhow!(
+            "session already attached on this websocket: {session_id}"
+        ));
+    }
+
+    let forwarder = spawn_session_event_forwarder(session_id.clone(), events, outgoing.clone());
+    session_forwarders.insert(session_id, forwarder);
+    Ok(())
 }
 
 fn spawn_session_event_forwarder(

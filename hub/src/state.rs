@@ -4,7 +4,10 @@ use anyhow::{Result, anyhow};
 use tokio::sync::broadcast;
 use tracing::debug;
 
-use crate::session::{Session, SessionEvent};
+use crate::{
+    protocol::SessionSummary,
+    session::{Session, SessionEvent},
+};
 
 const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_COLS: u16 = 80;
@@ -53,12 +56,59 @@ impl SessionRegistry {
         sessions.insert(
             request.session_id,
             SessionEntry {
-                owner_connection_id: owner_connection_id.to_string(),
+                owner_connection_id: Some(owner_connection_id.to_string()),
                 session,
             },
         );
 
         Ok(events)
+    }
+
+    pub fn list_sessions(&self) -> Result<Vec<SessionSummary>> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+        let mut summaries = sessions
+            .keys()
+            .map(|session_id| SessionSummary {
+                session_id: session_id.clone(),
+            })
+            .collect::<Vec<_>>();
+        summaries.sort_by(|a, b| a.session_id.cmp(&b.session_id));
+        Ok(summaries)
+    }
+
+    pub fn subscribe_session(&self, session_id: &str) -> Result<broadcast::Receiver<SessionEvent>> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+        let entry = sessions
+            .get(session_id)
+            .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
+        Ok(entry.session.subscribe())
+    }
+
+    pub fn release_owner_if_matches(
+        &self,
+        session_id: &str,
+        owner_connection_id: &str,
+    ) -> Result<()> {
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+        let entry = sessions
+            .get_mut(session_id)
+            .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
+
+        if entry.owner_connection_id.as_deref() == Some(owner_connection_id) {
+            debug!(%session_id, %owner_connection_id, "detaching session from owning websocket");
+            entry.owner_connection_id = None;
+        }
+
+        Ok(())
     }
 
     pub fn write_input(&self, session_id: &str, bytes: &[u8]) -> Result<()> {
@@ -101,7 +151,7 @@ impl SessionRegistry {
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
         let session_ids = sessions
             .iter()
-            .filter(|(_, entry)| entry.owner_connection_id == owner_connection_id)
+            .filter(|(_, entry)| entry.owner_connection_id.as_deref() == Some(owner_connection_id))
             .map(|(session_id, _)| session_id.clone())
             .collect::<Vec<_>>();
 
@@ -127,6 +177,6 @@ pub struct StartSessionRequest {
 }
 
 struct SessionEntry {
-    owner_connection_id: String,
+    owner_connection_id: Option<String>,
     session: Session,
 }

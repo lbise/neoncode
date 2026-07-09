@@ -30,14 +30,18 @@ Current capabilities:
 - resize PTY;
 - kill PTY session;
 - maintain sessions in a shared in-process session registry;
-- kill all sessions owned by a WebSocket when that WebSocket disconnects;
+- list active sessions;
+- attach a WebSocket to an existing session's future event stream;
+- detach a WebSocket from a session;
+- allow explicitly detached sessions to survive the creating WebSocket closing;
+- kill still-owned sessions when their owning WebSocket disconnects;
 - structured logging via `tracing` / `RUST_LOG`.
 
 Current limitations:
 
-- sessions are still owned by a single WebSocket connection at the protocol/lifetime level;
-- no attach/detach/reconnect yet;
-- the session registry is in-process only and does not yet expose list/attach semantics;
+- reconnect is not automatic yet; clients must explicitly `list_sessions` and `attach`;
+- detached session output is not replayed on attach; clients receive future events only;
+- the session registry is in-process only and does not persist across hub restarts;
 - session IDs are currently frontend-provided;
 - exit status is currently usually `null`;
 - terminal input/output is JSON text with base64 payloads, not binary frames;
@@ -132,6 +136,9 @@ Client messages:
 
 ```text
 start
+list_sessions
+attach
+detach
 input
 resize
 kill
@@ -141,6 +148,9 @@ Server messages:
 
 ```text
 started
+session_list
+attached
+detached
 output
 exit
 killed
@@ -179,6 +189,22 @@ Default size:
 24 rows x 80 columns
 ```
 
+### List
+
+Frontend sends `list_sessions` to get active session IDs from the in-process registry.
+
+### Attach
+
+Frontend sends `attach` with a `session_id` to subscribe the current WebSocket to that session's future event stream.
+
+Attach does not replay earlier terminal output. A product implementation will need scrollback/snapshot semantics if reconnect should reconstruct terminal state without relying only on the terminal renderer's local buffer.
+
+### Detach
+
+Frontend sends `detach` with a `session_id` to stop forwarding that session's events to the current WebSocket.
+
+If the detaching WebSocket originally created the session, the hub releases that session from the WebSocket lifetime. Closing the WebSocket after detach will not kill that session.
+
 ### Input
 
 Frontend sends base64-encoded bytes with `input`.
@@ -211,13 +237,13 @@ PTY reader thread
   → ServerMessage::{output, exit, error}
 ```
 
-Only the creating WebSocket subscribes today, but this shape prepares the hub for future `attach` and reconnect behavior where another WebSocket can subscribe to an already-running session.
+The creating WebSocket subscribes automatically on `start`. Additional/new WebSockets can subscribe with `attach`.
 
 ### WebSocket disconnect
 
-All sessions owned by that WebSocket are removed from the shared registry and killed when the WebSocket disconnects.
+Sessions still owned by that WebSocket are removed from the shared registry and killed when the WebSocket disconnects.
 
-This preserves current POC behavior while preparing the code for attach/detach/reconnect. The next protocol iteration should make disconnect detach sessions instead of killing them.
+Sessions explicitly detached before disconnect are left running in the registry and can be discovered with `list_sessions` and reattached with `attach`.
 
 ## Manual smoke test
 
@@ -257,6 +283,19 @@ Resize:
 {"type":"resize","session_id":"shell","rows":40,"cols":120}
 ```
 
+Detach so the session can survive closing this WebSocket:
+
+```json
+{"type":"detach","session_id":"shell"}
+```
+
+On a new WebSocket, list and attach:
+
+```json
+{"type":"list_sessions"}
+{"type":"attach","session_id":"shell"}
+```
+
 Kill:
 
 ```json
@@ -293,10 +332,8 @@ Or run the broader project check:
 
 Next hub work should focus on UI-independent session semantics:
 
-- replace per-WebSocket-only sessions with a real session registry;
 - decide whether session IDs are backend-generated or frontend-provided;
-- add list sessions;
-- add attach/detach/reconnect;
+- add automatic reconnect semantics around the current explicit list/attach flow;
 - report session exit status/reason;
 - define launch profiles for local WSL shell, project shell, SSH, tmux attach/create, and custom commands;
 - consider binary WebSocket frames for terminal data after semantics stabilize.

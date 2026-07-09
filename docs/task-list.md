@@ -12,7 +12,7 @@ poc/windows-terminal-embedded
 
 ```text
 Stage: Phase 1/3 — shared session/protocol foundation
-Next task: define list/attach/detach/reconnect protocol shape on top of the hub session registry
+Next task: add automatic frontend/hub reconnect flow using list_sessions + attach
 ```
 
 ## Phase 0 — preserve the spike
@@ -58,7 +58,8 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Document `neoncode-hub` run/lifecycle/source layout in `docs/hub.md`.
 - [x] Add shared in-process hub session registry skeleton.
 - [x] Decouple PTY output from the creating WebSocket sender with session event broadcasting.
-- [ ] Define list/attach/detach/reconnect protocol messages.
+- [x] Define list/attach/detach protocol messages.
+- [ ] Define automatic reconnect flow on top of list/attach/detach.
 - [ ] Add structured tracing/logging refinements to the hub.
 
 ## Phase 2 — terminal correctness and usability
@@ -102,10 +103,10 @@ Goal: evolve from one hardcoded shell session to real session orchestration.
 - [x] Support multiple backend sessions in the hub registry.
 - [ ] Replace hardcoded frontend session ID.
 - [ ] Decide whether session IDs are frontend-provided or backend-generated.
-- [ ] Add protocol message to list active sessions.
-- [ ] Add attach behavior using the session event broadcaster.
-- [ ] Add detach behavior.
-- [ ] Add reconnect without killing PTY.
+- [x] Add protocol message to list active sessions.
+- [x] Add attach behavior using the session event broadcaster.
+- [x] Add detach behavior.
+- [ ] Add automatic reconnect without killing PTY.
 - [ ] Report session exit status/reason.
 - [ ] Add local WSL shell launch profile.
 - [ ] Add project-directory shell launch profile.
