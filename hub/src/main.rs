@@ -8,6 +8,7 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 mod protocol;
 mod session;
+mod state;
 mod ws;
 
 const DEFAULT_BIND: &str = "127.0.0.1:44777";
@@ -23,11 +24,14 @@ async fn main() -> Result<()> {
         .parse()
         .with_context(|| format!("invalid NEONCODE_HUB_BIND address: {bind}"))?;
 
+    let app_state = state::AppState::default();
+
     let app = Router::new()
         .route("/health", get(health))
         .route("/ws", get(ws::ws_handler))
         .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http())
+        .with_state(app_state);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!(%addr, "neoncode-hub listening");

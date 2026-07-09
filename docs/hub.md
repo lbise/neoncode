@@ -27,14 +27,15 @@ Current capabilities:
 - stream terminal output;
 - resize PTY;
 - kill PTY session;
+- maintain sessions in a shared in-process session registry;
 - kill all sessions owned by a WebSocket when that WebSocket disconnects;
 - structured logging via `tracing` / `RUST_LOG`.
 
 Current limitations:
 
-- sessions are owned by a single WebSocket connection;
+- sessions are still owned by a single WebSocket connection at the protocol level;
 - no attach/detach/reconnect yet;
-- no global session registry yet;
+- the session registry is in-process only and does not yet expose list/attach semantics;
 - session IDs are currently frontend-provided;
 - exit status is currently usually `null`;
 - terminal input/output is JSON text with base64 payloads, not binary frames;
@@ -155,11 +156,12 @@ Frontend sends `start` with a frontend-owned `session_id`.
 
 The hub:
 
-1. opens a PTY with requested/default rows and columns;
-2. spawns the requested command or default shell;
-3. starts a reader thread for PTY output;
-4. emits `started`;
-5. streams `output` messages.
+1. registers the new session in the shared in-process registry;
+2. opens a PTY with requested/default rows and columns;
+3. spawns the requested command or default shell;
+4. starts a reader thread for PTY output;
+5. emits `started`;
+6. streams `output` messages.
 
 Default shell resolution:
 
@@ -192,9 +194,9 @@ The hub removes the session, kills the child process, and emits `killed`.
 
 ### WebSocket disconnect
 
-All sessions owned by that WebSocket are killed when the WebSocket disconnects.
+All sessions owned by that WebSocket are removed from the shared registry and killed when the WebSocket disconnects.
 
-This is intentional for the POC but will change when attach/detach/reconnect is implemented.
+This preserves current POC behavior while preparing the code for attach/detach/reconnect. The next protocol iteration should make disconnect detach sessions instead of killing them.
 
 ## Manual smoke test
 
@@ -246,7 +248,8 @@ Kill:
 hub/src/main.rs       process setup, routing, logging, shutdown
 hub/src/protocol.rs   JSON protocol structs/enums
 hub/src/session.rs    PTY session lifecycle and IO
-hub/src/ws.rs         WebSocket handling and per-connection session map
+hub/src/state.rs      shared app state and in-process session registry
+hub/src/ws.rs         WebSocket handling and protocol dispatch
 ```
 
 ## Development checks

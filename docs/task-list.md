@@ -12,7 +12,7 @@ poc/windows-terminal-embedded
 
 ```text
 Stage: Phase 1/3 — shared session/protocol foundation
-Next task: continue Rust hub session model work: session registry, list/attach/detach/reconnect shape
+Next task: define list/attach/detach/reconnect protocol shape on top of the hub session registry
 ```
 
 ## Phase 0 — preserve the spike
@@ -56,6 +56,8 @@ Goal: convert the spike into a maintainable prototype without changing the valid
 - [x] Define protocol message structs/enums cleanly in Rust.
 - [x] Keep `docs/protocol.md` synchronized with protocol types.
 - [x] Document `neoncode-hub` run/lifecycle/source layout in `docs/hub.md`.
+- [x] Add shared in-process hub session registry skeleton.
+- [ ] Define list/attach/detach/reconnect protocol messages.
 - [ ] Add structured tracing/logging refinements to the hub.
 
 ## Phase 2 — terminal correctness and usability
@@ -96,7 +98,7 @@ stty size
 
 Goal: evolve from one hardcoded shell session to real session orchestration.
 
-- [ ] Support multiple backend sessions.
+- [x] Support multiple backend sessions in the hub registry.
 - [ ] Replace hardcoded frontend session ID.
 - [ ] Decide whether session IDs are frontend-provided or backend-generated.
 - [ ] Add protocol message to list active sessions.

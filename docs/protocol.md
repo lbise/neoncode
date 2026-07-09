@@ -55,7 +55,7 @@ hub/src/protocol.rs
 
 Fields:
 
-- `session_id`: frontend-owned ID, unique per WebSocket connection for the current POC.
+- `session_id`: frontend-owned ID, unique among active hub sessions for the current POC.
 - `command`: executable to spawn. Defaults to `$SHELL`, then `bash`.
 - `args`: optional argument list.
 - `cwd`: optional working directory.

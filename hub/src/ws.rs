@@ -1,8 +1,9 @@
-use std::collections::HashMap;
-
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use axum::{
-    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    extract::{
+        State,
+        ws::{Message, WebSocket, WebSocketUpgrade},
+    },
     response::IntoResponse,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -12,17 +13,14 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     protocol::{ClientMessage, ServerMessage},
-    session::Session,
+    state::{AppState, StartSessionRequest},
 };
 
-const DEFAULT_ROWS: u16 = 24;
-const DEFAULT_COLS: u16 = 80;
-
-pub async fn ws_handler(ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(handle_socket)
+pub async fn ws_handler(State(state): State<AppState>, ws: WebSocketUpgrade) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
-async fn handle_socket(socket: WebSocket) {
+async fn handle_socket(socket: WebSocket, state: AppState) {
     let peer_id = format!("{:p}", &socket);
     info!(%peer_id, "websocket connected");
 
@@ -46,12 +44,10 @@ async fn handle_socket(socket: WebSocket) {
         }
     });
 
-    let mut sessions: HashMap<String, Session> = HashMap::new();
-
     while let Some(message) = ws_receiver.next().await {
         match message {
             Ok(Message::Text(text)) => {
-                if let Err(err) = handle_client_text(&text, &outgoing_tx, &mut sessions) {
+                if let Err(err) = handle_client_text(&peer_id, &text, &outgoing_tx, &state) {
                     warn!(%err, "client message failed");
                     let _ = outgoing_tx.send(ServerMessage::Error {
                         session_id: None,
@@ -80,19 +76,24 @@ async fn handle_socket(socket: WebSocket) {
         }
     }
 
-    info!(%peer_id, session_count = sessions.len(), "websocket disconnected; killing owned sessions");
-    for (_, session) in sessions.drain() {
-        session.kill();
-    }
+    let killed_count = match state.registry().kill_sessions_for_connection(&peer_id) {
+        Ok(count) => count,
+        Err(err) => {
+            warn!(%err, %peer_id, "failed to clean up websocket sessions");
+            0
+        }
+    };
+    info!(%peer_id, killed_count, "websocket disconnected; killed owned sessions");
 
     drop(outgoing_tx);
     writer.abort();
 }
 
 fn handle_client_text(
+    connection_id: &str,
     text: &str,
     outgoing: &mpsc::UnboundedSender<ServerMessage>,
-    sessions: &mut HashMap<String, Session>,
+    state: &AppState,
 ) -> Result<()> {
     let message: ClientMessage = serde_json::from_str(text).context("invalid client JSON")?;
 
@@ -105,50 +106,38 @@ fn handle_client_text(
             rows,
             cols,
         } => {
-            if sessions.contains_key(&session_id) {
-                return Err(anyhow!("session already exists: {session_id}"));
-            }
-
-            let session = Session::spawn(
-                session_id.clone(),
-                command,
-                args.unwrap_or_default(),
-                cwd,
-                rows.unwrap_or(DEFAULT_ROWS),
-                cols.unwrap_or(DEFAULT_COLS),
+            state.registry().start_session(
+                connection_id,
+                StartSessionRequest {
+                    session_id: session_id.clone(),
+                    command,
+                    args,
+                    cwd,
+                    rows,
+                    cols,
+                },
                 outgoing.clone(),
             )?;
-
-            sessions.insert(session_id.clone(), session);
             outgoing.send(ServerMessage::Started { session_id })?;
         }
         ClientMessage::Input {
             session_id,
             data_b64,
         } => {
-            let session = sessions
-                .get(&session_id)
-                .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
             let bytes = BASE64
                 .decode(data_b64.as_bytes())
                 .context("invalid input data_b64")?;
-            session.write_input(&bytes)?;
+            state.registry().write_input(&session_id, &bytes)?;
         }
         ClientMessage::Resize {
             session_id,
             rows,
             cols,
         } => {
-            let session = sessions
-                .get(&session_id)
-                .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
-            session.resize(rows, cols)?;
+            state.registry().resize(&session_id, rows, cols)?;
         }
         ClientMessage::Kill { session_id } => {
-            let session = sessions
-                .remove(&session_id)
-                .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
-            session.kill();
+            state.registry().kill_session(&session_id)?;
             outgoing.send(ServerMessage::Killed { session_id })?;
         }
     }
