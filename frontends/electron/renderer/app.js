@@ -5,16 +5,45 @@ const DEFAULT_ENDPOINT = 'ws://127.0.0.1:44777/ws';
 const DEFAULT_TERMINAL_COUNT = 2;
 const DEFAULT_SESSION_PREFIX = 'electron-xterm-shell';
 const MAX_STATIC_TERMINAL_PANES = 2;
+const DEFAULT_PANE_DEFINITIONS = Object.freeze([
+  Object.freeze({ paneId: 'shell', sessionKey: 'shell', terminalElementId: 'terminal-1' }),
+  Object.freeze({ paneId: 'tasks', sessionKey: 'tasks', terminalElementId: 'terminal-2' }),
+]);
 
 function parseTerminalCount(value) {
   return Number.parseInt(value || String(DEFAULT_TERMINAL_COUNT), 10) || DEFAULT_TERMINAL_COUNT;
 }
 
+function normalizeSessionKey(value, fallback) {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || fallback;
+}
+
+function createSessionId(sessionPrefix, sessionKey) {
+  return `${sessionPrefix}-${normalizeSessionKey(sessionKey, 'session')}`;
+}
+
+function createPaneDescriptors({ terminalCount, sessionPrefix }) {
+  const count = Math.min(MAX_STATIC_TERMINAL_PANES, Math.max(1, terminalCount));
+  return DEFAULT_PANE_DEFINITIONS.slice(0, count).map((definition, index) => ({
+    ...definition,
+    index,
+    sessionId: createSessionId(sessionPrefix, definition.sessionKey),
+  }));
+}
+
 function createAppConfig(env = process.env) {
+  const terminalCount = parseTerminalCount(env.NEONCODE_TERMINAL_COUNT);
+  const sessionPrefix = env.NEONCODE_SESSION_PREFIX || DEFAULT_SESSION_PREFIX;
   return {
     endpoint: env.NEONCODE_HUB_ENDPOINT || DEFAULT_ENDPOINT,
-    terminalCount: parseTerminalCount(env.NEONCODE_TERMINAL_COUNT),
-    sessionPrefix: env.NEONCODE_SESSION_PREFIX || DEFAULT_SESSION_PREFIX,
+    terminalCount,
+    sessionPrefix,
+    panes: createPaneDescriptors({ terminalCount, sessionPrefix }),
   };
 }
 
@@ -34,7 +63,7 @@ class NeonCodeApp {
   }
 
   configureGrid() {
-    const count = Math.max(1, this.config.terminalCount);
+    const count = Math.max(1, this.config.panes.length);
     this.terminalGrid.style.gridTemplateColumns = `repeat(${count}, minmax(0, 1fr))`;
 
     for (let index = 0; index < MAX_STATIC_TERMINAL_PANES; index += 1) {
@@ -47,22 +76,22 @@ class NeonCodeApp {
 
   start() {
     this.configureGrid();
-    const count = Math.min(MAX_STATIC_TERMINAL_PANES, Math.max(1, this.config.terminalCount));
-    for (let index = 0; index < count; index += 1) {
-      this.createPane(index);
+    for (const descriptor of this.config.panes) {
+      this.createPane(descriptor);
     }
   }
 
-  createPane(index) {
-    const sessionId = `${this.config.sessionPrefix}-${index + 1}`;
-    const container = this.document.getElementById(`terminal-${index + 1}`);
+  createPane(descriptor) {
+    const container = this.document.getElementById(descriptor.terminalElementId);
     if (!container) {
       return;
     }
 
     const pane = new TerminalPane({
-      index,
-      sessionId,
+      index: descriptor.index,
+      paneId: descriptor.paneId,
+      sessionKey: descriptor.sessionKey,
+      sessionId: descriptor.sessionId,
       endpoint: this.config.endpoint,
       container,
       sessionModel: this.sessionModel,
@@ -92,10 +121,14 @@ function startRendererApp() {
 
 module.exports = {
   DEFAULT_ENDPOINT,
+  DEFAULT_PANE_DEFINITIONS,
   DEFAULT_SESSION_PREFIX,
   DEFAULT_TERMINAL_COUNT,
   NeonCodeApp,
   createAppConfig,
+  createPaneDescriptors,
+  createSessionId,
+  normalizeSessionKey,
   parseTerminalCount,
   startRendererApp,
 };

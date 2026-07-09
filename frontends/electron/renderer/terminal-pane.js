@@ -34,8 +34,10 @@ function buildTerminalTheme() {
 }
 
 class TerminalPane {
-  constructor({ index, sessionId, endpoint, container, sessionModel, setStatus }) {
+  constructor({ index, paneId, sessionKey, sessionId, endpoint, container, sessionModel, setStatus }) {
     this.index = index;
+    this.paneId = paneId;
+    this.sessionKey = sessionKey;
     this.sessionId = sessionId;
     this.endpoint = endpoint;
     this.container = container;
@@ -62,6 +64,8 @@ class TerminalPane {
 
     this.state = this.sessionModel.createPaneState({
       index: this.index,
+      paneId: this.paneId,
+      sessionKey: this.sessionKey,
       sessionId: this.sessionId,
       terminal,
       fitAddon,

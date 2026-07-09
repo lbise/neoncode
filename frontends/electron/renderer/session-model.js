@@ -5,9 +5,11 @@ class SessionModel {
     this.windowRef.neoncodeXtermState = this.publicState;
   }
 
-  createPaneState({ index, sessionId, terminal, fitAddon }) {
+  createPaneState({ index, paneId, sessionKey, sessionId, terminal, fitAddon }) {
     const state = {
       index,
+      paneId,
+      sessionKey,
       sessionId,
       terminal,
       fitAddon,
@@ -26,6 +28,8 @@ class SessionModel {
     };
 
     this.publicState.panes[index] = {
+      paneId,
+      sessionKey,
       sessionId,
       started: false,
       outputEvents: 0,

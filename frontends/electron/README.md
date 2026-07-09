@@ -44,6 +44,13 @@ renderer/terminal-pane.js
 tests/               Playwright smoke tests
 ```
 
+Default panes use stable frontend session keys instead of deriving session identity from UI indexes:
+
+```text
+Pane key: shell  -> session id: <NEONCODE_SESSION_PREFIX>-shell
+Pane key: tasks  -> session id: <NEONCODE_SESSION_PREFIX>-tasks
+```
+
 ## Validation
 
 With hub and app running:

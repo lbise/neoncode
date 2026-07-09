@@ -167,6 +167,7 @@ Still needs validation/hardening:
 Current prototype has working but incomplete session lifecycle:
 
 - session IDs are frontend-provided;
+- the Electron app uses stable default frontend session keys (`shell`, `tasks`) instead of deriving session identity from pane indexes;
 - sessions live in an in-process hub registry;
 - detached sessions can survive a WebSocket closing;
 - attach receives future output only, not replayed scrollback;

@@ -46,6 +46,19 @@ async function main() {
     const state = await page.evaluate(() => JSON.parse(JSON.stringify(window.neoncodeXtermState)));
     log('state.ready', state);
 
+    const expectedPanes = [
+      { paneId: 'shell', sessionKey: 'shell', sessionId: `${sessionPrefix}-shell` },
+      { paneId: 'tasks', sessionKey: 'tasks', sessionId: `${sessionPrefix}-tasks` },
+    ];
+    for (const [index, expected] of expectedPanes.entries()) {
+      const actual = state.panes[index];
+      for (const key of ['paneId', 'sessionKey', 'sessionId']) {
+        if (actual?.[key] !== expected[key]) {
+          throw new Error(`pane ${index} expected ${key}=${expected[key]}, got ${actual?.[key]}`);
+        }
+      }
+    }
+
     const beforeInputEvents = await page.evaluate(() => window.neoncodeXtermState.panes[0].inputEvents);
     await page.locator('[data-testid="terminal-1"]').click();
     await page.keyboard.type('echo xtermsmokeplaywright');

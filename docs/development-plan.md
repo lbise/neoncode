@@ -84,7 +84,7 @@ Tasks:
   - terminal pane;
   - session model;
   - app/bootstrap.
-- [ ] Introduce stable frontend session IDs independent of pane indexes.
+- [x] Introduce stable frontend session IDs independent of pane indexes.
 - [ ] On startup, call `list_sessions`.
 - [ ] Attach to known sessions when present.
 - [ ] Start missing sessions when not present.
