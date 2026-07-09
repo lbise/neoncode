@@ -176,6 +176,8 @@ Direct-native coordinator mode, from WSL repo root:
 ./dev electron-spike-direct
 ```
 
+The helper passes `-HostKind coordinator` to `scripts/electron-spike.ps1`, which sets `NEONCODE_TERMINAL_HOST_KIND=coordinator` for the Electron process. The startup console and Electron log should show `kind: "coordinator"`.
+
 The direct-native mode should show the `HwndTerminal` renderer and locally echo typed input. It is not expected to start bash yet.
 
 The direct-native coordinator currently accepts these simple line commands from Electron:

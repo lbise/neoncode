@@ -135,11 +135,11 @@ case "$command" in
     ;;
 
   electron-spike)
-    ps_file 'scripts\electron-spike.ps1' -Command start
+    ps_file 'scripts\electron-spike.ps1' -Command start -HostKind wpf
     ;;
 
   electron-spike-direct)
-    NEONCODE_TERMINAL_HOST_KIND=coordinator ps_file 'scripts\electron-spike.ps1' -Command start
+    ps_file 'scripts\electron-spike.ps1' -Command start -HostKind coordinator
     ;;
 
   status)

@@ -2,6 +2,8 @@ param(
     [ValidateSet("install", "start", "build-native", "build-coordinator", "publish")]
     [string]$Command = "start",
     [string]$OutputPath = "$env:USERPROFILE\neoncode-electron-spike",
+    [ValidateSet("wpf", "coordinator")]
+    [string]$HostKind = "wpf",
     [switch]$Clean
 )
 
@@ -183,6 +185,8 @@ switch ($Command) {
             throw "Published Electron spike not found at $OutputPath. Run './dev electron-spike-publish' first."
         }
 
+        $env:NEONCODE_TERMINAL_HOST_KIND = $HostKind
+        Write-Host "Terminal host kind: $env:NEONCODE_TERMINAL_HOST_KIND"
         Invoke-Npm -WorkingDirectory $publishedElectronDir -Arguments "start"
     }
 }
