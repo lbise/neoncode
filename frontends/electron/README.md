@@ -32,6 +32,8 @@ sandbox: true
 
 The preload exposes only validated bootstrap configuration, clipboard reads, and graceful-close coordination. CSP, navigation, new-window, webview, and permission restrictions are enforced by the Electron main process.
 
+The WSL wrapper launches the visible app through Windows Explorer so Electron runs at medium integrity rather than inheriting an elevated WSL PowerShell token. Electron reads the mode-0600 hub token through `wsl.exe`; the token is not placed on the launch command line.
+
 Hub WebSockets require `Origin: file://` plus a per-user mutual HMAC challenge-response. `./dev` creates the 256-bit token in a mode-0600 WSL state file and propagates it to both processes without copying it into publish output or sending the raw token over the socket.
 
 ## Run

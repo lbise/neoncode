@@ -206,7 +206,7 @@ Release-blocking baseline:
 - [x] Add bounded WebSocket/session event queues plus frame, input, session, attachment, process, ID, and terminal-size limits.
 - [x] Add security integration tests for unauthorized origins/capabilities and invalid/oversized inputs.
 - [x] Re-run the Electron functional suite with capability authentication after restoring the official Electron runtime.
-- [ ] Launch the Windows app at medium integrity even when the invoking WSL development shell is elevated.
+- [x] Launch the Windows app through Explorer at medium integrity even when the invoking WSL development shell is elevated.
 
 Before treating hostile native local accounts/processes as in-scope or enabling remote access:
 
@@ -238,14 +238,15 @@ Already validated:
 
 Still needed:
 
-- [ ] Ctrl+D;
-- [ ] Ctrl+Z;
+- [x] Ctrl+D;
+- [x] Ctrl+Z;
 - [ ] arrow/function/Home/End/PageUp/PageDown keys;
 - [ ] copy/selection behavior;
 - [ ] Neovim interactive behavior;
 - [ ] tmux interactive behavior;
 - [ ] mouse mode in Neovim/tmux;
-- [ ] heavy output/performance soak;
+- [x] Initial 2,000-line heavy-output continuity test;
+- [ ] Extended heavy-output/performance soak;
 - [ ] long-session stability.
 
 ### 4. Workspace model

@@ -1,9 +1,11 @@
 const { app, BrowserWindow, Menu, clipboard, ipcMain, screen, session } = require('electron');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const fs = require('node:fs');
 
 const { ConfigStore, defaultState } = require('./config-store');
+const { loadHubToken } = require('./token-loader');
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu');
@@ -11,10 +13,8 @@ app.commandLine.appendSwitch('disable-gpu-compositing');
 app.setName('NeonCode');
 
 const testMode = process.env.NEONCODE_TEST_MODE === '1';
-const hubCapabilityToken = process.env.NEONCODE_HUB_TOKEN;
-if (!/^[0-9a-fA-F]{64}$/.test(hubCapabilityToken || '')) {
-  throw new Error('NEONCODE_HUB_TOKEN must contain exactly 64 hexadecimal characters');
-}
+const hubTokenResult = loadHubToken();
+const hubCapabilityToken = hubTokenResult.token;
 
 function resolveConfigDirectory() {
   const testDirectory = process.env.NEONCODE_TEST_CONFIG_DIR;
@@ -72,6 +72,12 @@ let allowWindowClose = false;
 let closeRequestInFlight = false;
 let closeTimeout;
 let stateSaveTimeout;
+
+function processIntegrityLevel() {
+  const result = spawnSync('whoami.exe', ['/groups'], { encoding: 'utf8', windowsHide: true });
+  const match = (result.stdout || '').match(/Mandatory Label\\(Low|Medium|High|System) Mandatory Level/i);
+  return match ? match[1].toLowerCase() : 'unknown';
+}
 
 function rendererConfig() {
   const config = bootstrapResult.config;
@@ -229,6 +235,8 @@ function createWindow() {
     stateStatus: bootstrapResult.diagnostics.stateStatus,
     warnings: bootstrapResult.diagnostics.warnings,
     errors: bootstrapResult.diagnostics.errors,
+    hubTokenSource: hubTokenResult.source,
+    integrityLevel: processIntegrityLevel(),
   });
 
   mainWindow.webContents.once('did-finish-load', () => {

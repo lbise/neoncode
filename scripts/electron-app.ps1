@@ -65,7 +65,7 @@ function Copy-ElectronAppFiles {
     )
 
     New-Item -ItemType Directory -Force -Path $DestinationDirectory | Out-Null
-    foreach ($file in @("package.json", "package-lock.json", "main.js", "preload.js", "config-store.js", "index.html", "styles.css", "renderer.js")) {
+    foreach ($file in @("package.json", "package-lock.json", "main.js", "preload.js", "config-store.js", "token-loader.js", "index.html", "styles.css", "renderer.js")) {
         $source = Join-Path $SourceDirectory $file
         if (Test-Path -LiteralPath $source -PathType Leaf) {
             Copy-Item -LiteralPath $source -Destination (Join-Path $DestinationDirectory $file) -Force
@@ -136,10 +136,17 @@ switch ($Command) {
         }
 
         if ($PSBoundParameters.ContainsKey("TerminalCount")) {
-            $env:NEONCODE_TERMINAL_COUNT = [string]$TerminalCount
-            Write-Host "Terminal count override: $env:NEONCODE_TERMINAL_COUNT"
+            Write-Warning "TerminalCount is ignored by the detached medium-integrity launcher; edit config.json instead."
         }
-        Invoke-Npm -WorkingDirectory $publishedDir -Arguments "start"
+        $electronBin = Join-Path $publishedDir "node_modules\electron\dist\electron.exe"
+        $shortcutPath = Join-Path $OutputPath "NeonCode Dev.lnk"
+        $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($shortcutPath)
+        $shortcut.TargetPath = $electronBin
+        $shortcut.Arguments = "`"$publishedDir`""
+        $shortcut.WorkingDirectory = $publishedDir
+        $shortcut.Save()
+        & explorer.exe $shortcutPath
+        Write-Host "Started NeonCode through the Windows desktop shell."
     }
 
     "stop" {

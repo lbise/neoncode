@@ -131,6 +131,13 @@ async function disconnectPaneSocket(page, paneId) {
   await page.evaluate((targetPaneId) => window.neoncodeTest.disconnectPaneSocket(targetPaneId), paneId);
 }
 
+async function pressTerminalKey(page, paneId, key) {
+  const paneIndex = paneIds.indexOf(paneId) + 1;
+  const textarea = page.locator(`#terminal-${paneIndex} .xterm-helper-textarea`);
+  await textarea.focus();
+  await page.keyboard.press(key);
+}
+
 async function waitForOutput(page, paneId, expected) {
   await page.waitForFunction(
     ({ targetPaneId, output }) => {
@@ -353,6 +360,34 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   await waitForOutput(page, 'shell', armedExpected);
   await sendText(page, 'shell', '\x03');
   await waitForOutput(page, 'shell', signalExpected);
+
+  const ctrlDExpected = `ctrl-d-${runToken}`;
+  const ctrlDCommand = `cat >/dev/null; printf 'ctrl-d-%s\\n' '${runToken}'\n`;
+  assertMarkerIsNotEchoed(ctrlDCommand, ctrlDExpected);
+  await sendText(page, 'shell', ctrlDCommand);
+  await pressTerminalKey(page, 'shell', 'Control+d');
+  await waitForOutput(page, 'shell', ctrlDExpected);
+
+  const ctrlZExpected = `ctrl-z-${runToken}`;
+  const ctrlZCommand = `sleep 30; printf 'ctrl-z-%s\\n' '${runToken}'\n`;
+  assertMarkerIsNotEchoed(ctrlZCommand, ctrlZExpected);
+  await sendText(page, 'shell', ctrlZCommand);
+  await pressTerminalKey(page, 'shell', 'Control+z');
+  await waitForOutput(page, 'shell', ctrlZExpected);
+  await sendText(page, 'shell', "kill %1 2>/dev/null || true\n");
+
+  const unicodeExpected = `unicode-λ-界-${runToken}`;
+  const unicodePayload = Buffer.from(unicodeExpected).toString('base64');
+  const unicodeCommand = `printf '%s' '${unicodePayload}' | base64 -d; printf '\\n'\n`;
+  assertMarkerIsNotEchoed(unicodeCommand, unicodeExpected);
+  await sendText(page, 'tasks', unicodeCommand);
+  await waitForOutput(page, 'tasks', unicodeExpected);
+
+  const heavyExpected = `heavy-done-${runToken}`;
+  const heavyCommand = `i=0; while [ $i -lt 2000 ]; do printf 'load-%04d\\n' "$i"; i=$((i+1)); done; printf 'heavy-done-%s\\n' '${runToken}'\n`;
+  assertMarkerIsNotEchoed(heavyCommand, heavyExpected);
+  await sendText(page, 'tasks', heavyCommand);
+  await waitForOutput(page, 'tasks', heavyExpected);
 
   const tmuxValues = [`tool-tmux-present-${runToken}`, `tool-tmux-missing-${runToken}`];
   const tmuxCommand = `if command -v tmux >/dev/null 2>&1; then v=present; else v=missing; fi; printf 'tool-tmux-%s-%s\\n' "$v" '${runToken}'\n`;

@@ -162,6 +162,7 @@ case "$command" in
       -path 'frontends/electron/node_modules' -prune -o \
       -name '*.js' -print0)
     node frontends/electron/tests/config-store.js
+    node frontends/electron/tests/token-loader.js
     node frontends/electron/tests/hub-client-auth.js
     cargo fmt --check
     cargo check
