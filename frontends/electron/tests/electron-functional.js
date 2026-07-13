@@ -4,6 +4,7 @@ const electronExecutable = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { defaultConfig } = require('../config-store');
 
 const appRoot = path.resolve(__dirname, '..');
 const endpoint = process.env.NEONCODE_HUB_ENDPOINT || 'ws://127.0.0.1:44777/ws';
@@ -11,31 +12,22 @@ const timeout = Number.parseInt(process.env.NEONCODE_PLAYWRIGHT_TIMEOUT || '2000
 const paneIds = ['shell', 'tasks'];
 
 function writeTestConfig(directory, { persistencePolicy = 'detach' } = {}) {
+  const config = defaultConfig();
+  config.sessionPrefix = 'config-file-prefix';
+  config.persistence.onWindowClose = persistencePolicy;
+  config.terminal.fontFamily = 'Consolas, monospace';
+  config.terminal.fontSize = 16;
+  config.terminal.cursorBlink = false;
+  config.terminal.theme.background = '#101820';
+  config.launchProfiles['tasks-in-tmp'] = {
+    type: 'process', command: 'bash', args: [], cwd: '/tmp',
+  };
+  config.sessions = [
+    { id: 'shell', title: 'Configured Shell', launchProfile: 'default-shell' },
+    { id: 'tasks', title: 'Configured Tasks', launchProfile: 'tasks-in-tmp' },
+  ];
   fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, 'config.json'), `${JSON.stringify({
-    schemaVersion: 1,
-    hub: { endpoint: 'ws://127.0.0.1:44777/ws' },
-    sessionPrefix: 'config-file-prefix',
-    persistence: { onWindowClose: persistencePolicy },
-    launchProfiles: {
-      'default-shell': {
-        type: 'process',
-        command: 'bash',
-        args: [],
-        cwd: null,
-      },
-      'tasks-in-tmp': {
-        type: 'process',
-        command: 'bash',
-        args: [],
-        cwd: '/tmp',
-      },
-    },
-    sessions: [
-      { id: 'shell', title: 'Configured Shell', launchProfile: 'default-shell' },
-      { id: 'tasks', title: 'Configured Tasks', launchProfile: 'tasks-in-tmp' },
-    ],
-  }, null, 2)}\n`);
+  fs.writeFileSync(path.join(directory, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
 }
 
 function log(message, details) {
@@ -372,6 +364,13 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   assert(initialState.configuration.valid === true, 'persisted configuration was not valid');
   assert(initialState.configuration.configStatus === 'loaded', `unexpected config status ${initialState.configuration.configStatus}`);
   assert(initialState.configuration.persistencePolicy === 'detach', 'configured close policy was not applied');
+  assert(initialState.configuration.terminal.fontSize === 16, 'configured terminal appearance was not exposed');
+  for (const pane of initialState.panes) {
+    assert(pane.fontFamily === 'Consolas, monospace', `${pane.paneId} font family was not applied`);
+    assert(pane.fontSize === 16, `${pane.paneId} font size was not applied`);
+    assert(pane.cursorBlink === false, `${pane.paneId} cursor blink was not applied`);
+    assert(pane.background === '#101820', `${pane.paneId} background was not applied`);
+  }
   assert(initialState.sessionDiscovery.sessionListEvents >= 1, 'startup did not list hub sessions');
   assert(
     !initialState.sessionDiscovery.sessions.some((sessionId) => sessionId.startsWith(`${sessionPrefix}-`)),

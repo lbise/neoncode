@@ -177,7 +177,7 @@ Limitations:
 
 - configuration is user-edited JSON with restart-to-apply; no settings UI/live reload yet;
 - version 1 exposes at most two static panes;
-- font/theme and workspace/layout persistence remain future schema work;
+- live appearance reload, font discovery, and workspace/layout persistence remain future work;
 - changing a configured ID does not automatically kill an old detached hub session.
 
 ## Near-term product foundation
@@ -188,7 +188,7 @@ Limitations:
 - [ ] Introduce a small state model for panes/sessions/workspaces.
 - [x] Add app-level error display for hub disconnect/session exit/protocol errors.
 - [x] Add config storage under `%APPDATA%\NeonCode`.
-- [ ] Load terminal font/theme from app config.
+- [x] Load validated font, cursor, and 16-color terminal appearance from schema-version-2 app config.
 
 ### 2. Security hardening
 

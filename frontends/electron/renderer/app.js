@@ -30,6 +30,7 @@ function createAppConfig(bootstrap = {}) {
     capabilityToken: bootstrap.capabilityToken,
     sessionPrefix: bootstrap.sessionPrefix || '',
     persistencePolicy: bootstrap.persistencePolicy || 'detach',
+    terminal: bootstrap.terminal ? JSON.parse(JSON.stringify(bootstrap.terminal)) : null,
     testMode: bootstrap.testMode === true,
     diagnostics: {
       configStatus: bootstrap.diagnostics?.configStatus || 'error',
@@ -57,6 +58,7 @@ class NeonCodeApp {
       warnings: this.config.diagnostics.warnings,
       errors: this.config.diagnostics.errors,
       persistencePolicy: this.config.persistencePolicy,
+      terminal: this.config.terminal,
       sessions: this.config.panes.map(({ paneId, title, sessionId, launchProfile }) => ({
         id: paneId,
         title,
@@ -218,6 +220,7 @@ class NeonCodeApp {
       endpoint: this.config.endpoint,
       capabilityToken: this.config.capabilityToken,
       launchProfile: descriptor.launchProfile,
+      terminalAppearance: this.config.terminal,
       container,
       statusElement: this.document.getElementById(`pane-status-${descriptor.index + 1}`),
       sessionModel: this.sessionModel,

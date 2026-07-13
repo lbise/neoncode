@@ -75,7 +75,7 @@ tests/               Node config/auth tests and hidden-window Playwright functio
 
 On startup, Electron main loads `%APPDATA%\\NeonCode\\config.json`, validates configured sessions/process profiles, and sends a deeply frozen bootstrap object to the renderer. The renderer calls `list_sessions`, attaches matching stable sessions, and starts missing sessions with configured command/args/cwd. The close policy waits for `detached` or `killed` acknowledgements. Attach replays up to 2 MiB of recent ordered terminal output before live output continues, so normal shell history and prompts reappear.
 
-Window content size is stored atomically in `%APPDATA%\\NeonCode\\state.json`. Valid backups and visible recovery diagnostics protect malformed configuration. See [`docs/configuration.md`](../../docs/configuration.md) for the schema, launch-profile examples, and manual preview workflow.
+Schema version 2 applies validated font family/size, cursor blink, core theme colors, and a 16-color ANSI table to every xterm pane. Window content size is stored atomically in `%APPDATA%\\NeonCode\\state.json`. Valid backups and visible recovery diagnostics protect malformed configuration. See [`docs/configuration.md`](../../docs/configuration.md) for the schema, launch-profile examples, and manual preview workflow.
 
 After authenticated protocol-version/boot-ID negotiation, panes start persistent hub sessions. Unexpected socket loss shows `Reconnecting` with capped exponential backoff, then attaches the same PTY and replay stream. If the hub rebooted, attach falls back once to a fresh persistent session. Graceful window close still follows the configured detach/kill policy.
 

@@ -82,12 +82,13 @@ function processIntegrityLevel() {
 function rendererConfig() {
   const config = bootstrapResult.config;
   return {
-    schemaVersion: 1,
+    schemaVersion: config?.schemaVersion || 2,
     configurationValid: Boolean(config),
     endpoint: config?.hub.endpoint || '',
     capabilityToken: hubCapabilityToken,
     sessionPrefix: config?.sessionPrefix || '',
     persistencePolicy: config?.persistence.onWindowClose || 'detach',
+    terminal: config ? JSON.parse(JSON.stringify(config.terminal)) : null,
     sessions: config
       ? config.sessions.map((configuredSession) => ({
         id: configuredSession.id,

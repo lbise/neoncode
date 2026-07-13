@@ -71,13 +71,35 @@ function testUnversionedTerminalConfigMigration() {
 
     const result = store.load({});
     assert.equal(result.diagnostics.configStatus, 'migrated');
-    assert.deepEqual(result.config, defaultConfig());
-    assert.equal(readJson(store.configPath).schemaVersion, 1);
-    assert(result.diagnostics.warnings.some((warning) => warning.includes('not applied yet')));
+    assert.equal(result.config.terminal.fontFamily, 'FiraCode Nerd Font Mono');
+    assert.equal(result.config.terminal.theme.background, '#0c0c0c');
+    assert.equal(readJson(store.configPath).schemaVersion, 2);
+    assert(result.diagnostics.warnings.some((warning) => warning.includes('were imported')));
     const preserved = fs.readdirSync(directory)
       .find((name) => name.startsWith('config.json.pre-migration-'));
     assert(preserved, 'legacy terminal config was not preserved');
     assert.deepEqual(readJson(path.join(directory, preserved)), legacy);
+  });
+}
+
+function testSchemaOneImportsPreservedLegacyAppearance() {
+  withStore((store) => {
+    fs.mkdirSync(store.directory, { recursive: true });
+    const schemaOne = defaultConfig();
+    schemaOne.schemaVersion = 1;
+    schemaOne.sessions[0].title = 'Keep Me';
+    delete schemaOne.terminal;
+    fs.writeFileSync(store.configPath, `${JSON.stringify(schemaOne)}\n`);
+    fs.writeFileSync(`${store.configPath}.pre-migration-100`, JSON.stringify({
+      terminal: { fontFace: 'Legacy Font', fontSize: 17, background: '#112233' },
+    }));
+
+    const result = store.load({});
+    assert.equal(result.config.schemaVersion, 2);
+    assert.equal(result.config.sessions[0].title, 'Keep Me');
+    assert.equal(result.config.terminal.fontFamily, 'Legacy Font');
+    assert.equal(result.config.terminal.fontSize, 17);
+    assert.equal(result.config.terminal.theme.background, '#112233');
   });
 }
 
@@ -93,11 +115,11 @@ function testLegacyMigration() {
     }));
     const result = store.load({});
     assert.equal(result.diagnostics.configStatus, 'migrated');
-    assert.equal(result.config.schemaVersion, 1);
+    assert.equal(result.config.schemaVersion, 2);
     assert.equal(result.config.hub.endpoint, 'ws://127.0.0.1:45000/ws');
     assert.equal(result.config.persistence.onWindowClose, 'kill');
     assert.equal(result.config.sessions.length, 1);
-    assert.equal(readJson(store.configPath).schemaVersion, 1);
+    assert.equal(readJson(store.configPath).schemaVersion, 2);
   });
 }
 
@@ -219,6 +241,7 @@ for (const test of [
   testFirstRunCreation,
   testEnvironmentOverridesAreNotPersisted,
   testUnversionedTerminalConfigMigration,
+  testSchemaOneImportsPreservedLegacyAppearance,
   testLegacyMigration,
   testInvalidPrimaryRecoversBackup,
   testMissingPrimaryWithUnusableBackupIsFatal,

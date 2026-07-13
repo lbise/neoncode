@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const CONFIG_SCHEMA_VERSION = 1;
+const CONFIG_SCHEMA_VERSION = 2;
 const STATE_SCHEMA_VERSION = 1;
 const MAX_CONFIG_BYTES = 64 * 1024;
 const MAX_STATE_BYTES = 16 * 1024;
@@ -24,6 +24,26 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function defaultTerminalAppearance() {
+  return {
+    fontFamily: 'Cascadia Mono, FiraCode Nerd Font Mono, Consolas, monospace',
+    fontSize: 14,
+    cursorBlink: true,
+    theme: {
+      background: '#0c0c0c',
+      foreground: '#cccccc',
+      cursor: '#ffffff',
+      selectionBackground: '#264f78',
+      ansi: [
+        '#0c0c0c', '#c50f1f', '#13a10e', '#c19c00',
+        '#0037da', '#881798', '#3a96dd', '#cccccc',
+        '#767676', '#e74856', '#16c60c', '#f9f1a5',
+        '#3b78ff', '#b4009e', '#61d6d6', '#f2f2f2',
+      ],
+    },
+  };
+}
+
 function defaultConfig() {
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
@@ -34,6 +54,7 @@ function defaultConfig() {
     persistence: {
       onWindowClose: 'detach',
     },
+    terminal: defaultTerminalAppearance(),
     launchProfiles: {
       'default-shell': {
         type: 'process',
@@ -103,6 +124,13 @@ function requireIdentifier(value, label, max = 128) {
   return value;
 }
 
+function requireColor(value, label) {
+  if (typeof value !== 'string' || !/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value)) {
+    throw new ConfigurationError(`${label} must be a 6- or 8-digit CSS hex color`);
+  }
+  return value.toLowerCase();
+}
+
 function validateEndpoint(value) {
   requireBoundedString(value, 'hub.endpoint', { max: 256 });
   let endpoint;
@@ -128,7 +156,19 @@ function validateEndpoint(value) {
   return value;
 }
 
-function migrateConfig(raw) {
+function migrateLegacyTerminal(rawTerminal) {
+  const appearance = defaultTerminalAppearance();
+  if (typeof rawTerminal.fontFace === 'string') appearance.fontFamily = rawTerminal.fontFace;
+  if (Number.isInteger(rawTerminal.fontSize)) appearance.fontSize = rawTerminal.fontSize;
+  if (typeof rawTerminal.cursorStyle === 'string') appearance.cursorBlink = rawTerminal.cursorStyle.toLowerCase().includes('blinking');
+  for (const key of ['background', 'foreground', 'selectionBackground']) {
+    if (typeof rawTerminal[key] === 'string') appearance.theme[key] = rawTerminal[key];
+  }
+  if (Array.isArray(rawTerminal.colorTable)) appearance.theme.ansi = [...rawTerminal.colorTable];
+  return appearance;
+}
+
+function migrateConfig(raw, legacyTerminal) {
   requireObject(raw, 'config');
   if (raw.schemaVersion === CONFIG_SCHEMA_VERSION) {
     return { document: raw, migrated: false, migrationSource: null };
@@ -136,10 +176,23 @@ function migrateConfig(raw) {
   if (raw.schemaVersion === undefined
       && Object.keys(raw).length === 1
       && isPlainObject(raw.terminal)) {
+    const migrated = defaultConfig();
+    migrated.terminal = migrateLegacyTerminal(raw.terminal);
     return {
-      document: defaultConfig(),
+      document: migrated,
       migrated: true,
       migrationSource: 'legacy_terminal',
+    };
+  }
+  if (raw.schemaVersion === 1) {
+    return {
+      document: {
+        ...raw,
+        schemaVersion: CONFIG_SCHEMA_VERSION,
+        terminal: legacyTerminal ? migrateLegacyTerminal(legacyTerminal) : defaultTerminalAppearance(),
+      },
+      migrated: true,
+      migrationSource: legacyTerminal ? 'schema_1_legacy_terminal' : 'schema_1',
     };
   }
   if (Number.isInteger(raw.schemaVersion) && raw.schemaVersion > CONFIG_SCHEMA_VERSION) {
@@ -149,7 +202,7 @@ function migrateConfig(raw) {
     );
   }
   if (raw.schemaVersion !== 0) {
-    throw new ConfigurationError('config.schemaVersion must be 0 or 1');
+    throw new ConfigurationError('config.schemaVersion must be 0, 1, or 2');
   }
 
   requireExactKeys(
@@ -172,11 +225,11 @@ function migrateConfig(raw) {
   return { document: migrated, migrated: true, migrationSource: 'schema_0' };
 }
 
-function validateConfig(raw) {
-  const { document, migrated, migrationSource } = migrateConfig(raw);
+function validateConfig(raw, { legacyTerminal } = {}) {
+  const { document, migrated, migrationSource } = migrateConfig(raw, legacyTerminal);
   requireExactKeys(
     document,
-    ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'launchProfiles', 'sessions'],
+    ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'terminal', 'launchProfiles', 'sessions'],
     'config',
   );
   if (document.schemaVersion !== CONFIG_SCHEMA_VERSION) {
@@ -191,6 +244,35 @@ function validateConfig(raw) {
   if (!['detach', 'kill'].includes(document.persistence.onWindowClose)) {
     throw new ConfigurationError('config.persistence.onWindowClose must be detach or kill');
   }
+
+  requireExactKeys(document.terminal, ['fontFamily', 'fontSize', 'cursorBlink', 'theme'], 'config.terminal');
+  const fontFamily = requireBoundedString(document.terminal.fontFamily, 'config.terminal.fontFamily', { max: 256 });
+  if (!Number.isInteger(document.terminal.fontSize) || document.terminal.fontSize < 8 || document.terminal.fontSize > 32) {
+    throw new ConfigurationError('config.terminal.fontSize must be an integer between 8 and 32');
+  }
+  if (typeof document.terminal.cursorBlink !== 'boolean') {
+    throw new ConfigurationError('config.terminal.cursorBlink must be boolean');
+  }
+  requireExactKeys(
+    document.terminal.theme,
+    ['background', 'foreground', 'cursor', 'selectionBackground', 'ansi'],
+    'config.terminal.theme',
+  );
+  if (!Array.isArray(document.terminal.theme.ansi) || document.terminal.theme.ansi.length !== 16) {
+    throw new ConfigurationError('config.terminal.theme.ansi must contain exactly 16 colors');
+  }
+  const terminal = {
+    fontFamily,
+    fontSize: document.terminal.fontSize,
+    cursorBlink: document.terminal.cursorBlink,
+    theme: {
+      background: requireColor(document.terminal.theme.background, 'config.terminal.theme.background'),
+      foreground: requireColor(document.terminal.theme.foreground, 'config.terminal.theme.foreground'),
+      cursor: requireColor(document.terminal.theme.cursor, 'config.terminal.theme.cursor'),
+      selectionBackground: requireColor(document.terminal.theme.selectionBackground, 'config.terminal.theme.selectionBackground'),
+      ansi: document.terminal.theme.ansi.map((color, index) => requireColor(color, `config.terminal.theme.ansi[${index}]`)),
+    },
+  };
 
   const rawProfiles = requireObject(document.launchProfiles, 'config.launchProfiles');
   const profileEntries = Object.entries(rawProfiles);
@@ -253,6 +335,7 @@ function validateConfig(raw) {
       hub: { endpoint },
       sessionPrefix,
       persistence: { onWindowClose: document.persistence.onWindowClose },
+      terminal,
       launchProfiles,
       sessions,
     },
@@ -383,6 +466,29 @@ class ConfigStore {
     return preserved;
   }
 
+  loadPreservedLegacyTerminal() {
+    if (!fs.existsSync(this.directory)) return undefined;
+    const candidates = fs.readdirSync(this.directory)
+      .filter((name) => name.startsWith('config.json.pre-migration-'))
+      .sort()
+      .reverse();
+    for (const name of candidates) {
+      try {
+        const document = readJsonFile(path.join(this.directory, name), MAX_CONFIG_BYTES);
+        if (isPlainObject(document) && isPlainObject(document.terminal)) return document.terminal;
+      } catch {
+        // Try an older preserved file.
+      }
+    }
+    return undefined;
+  }
+
+  validateStoredConfig(filePath) {
+    return validateConfig(readJsonFile(filePath, MAX_CONFIG_BYTES), {
+      legacyTerminal: this.loadPreservedLegacyTerminal(),
+    });
+  }
+
   preserveForMigration(warnings) {
     const preserved = `${this.configPath}.pre-migration-${Date.now()}`;
     try {
@@ -422,7 +528,7 @@ class ConfigStore {
 
       let recovered;
       try {
-        recovered = validateConfig(readJsonFile(this.configBackupPath, MAX_CONFIG_BYTES)).value;
+        recovered = this.validateStoredConfig(this.configBackupPath).value;
       } catch (backupError) {
         this.preserveInvalidSafely(this.configBackupPath, warnings, 'unusable config.json.bak');
         return {
@@ -443,7 +549,7 @@ class ConfigStore {
 
     let primaryResult;
     try {
-      primaryResult = validateConfig(readJsonFile(this.configPath, MAX_CONFIG_BYTES));
+      primaryResult = this.validateStoredConfig(this.configPath);
     } catch (primaryError) {
       if (primaryError instanceof ConfigurationError && primaryError.code === 'future_schema') {
         return { config: null, status: 'error', warnings, errors: [primaryError.message] };
@@ -461,7 +567,7 @@ class ConfigStore {
 
       let recovered;
       try {
-        recovered = validateConfig(readJsonFile(this.configBackupPath, MAX_CONFIG_BYTES)).value;
+        recovered = this.validateStoredConfig(this.configBackupPath).value;
       } catch (backupError) {
         return {
           config: null,
@@ -486,8 +592,8 @@ class ConfigStore {
       this.preserveForMigration(warnings);
       try {
         writeJsonAtomic(this.configPath, primaryResult.value);
-        const migrationDetail = primaryResult.migrationSource === 'legacy_terminal'
-          ? '; legacy terminal theme settings remain in the preserved file and are not applied yet'
+        const migrationDetail = ['legacy_terminal', 'schema_1_legacy_terminal'].includes(primaryResult.migrationSource)
+          ? '; compatible legacy terminal appearance settings were imported'
           : '';
         warnings.push(`config.json was migrated to schema ${CONFIG_SCHEMA_VERSION}${migrationDetail}`);
       } catch (error) {
@@ -603,6 +709,7 @@ module.exports = {
   applyEnvironmentOverrides,
   defaultConfig,
   defaultState,
+  defaultTerminalAppearance,
   validateConfig,
   validateEndpoint,
   validateState,

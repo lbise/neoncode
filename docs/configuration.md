@@ -13,19 +13,36 @@ Electron main owns all filesystem access. The sandboxed renderer receives only a
 
 Configuration is read at startup. There is no settings UI or live reload yet; close and reopen NeonCode after editing `config.json`.
 
-## Version 1 schema
+## Version 2 schema
 
 The first launch creates:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "hub": {
     "endpoint": "ws://127.0.0.1:44777/ws"
   },
   "sessionPrefix": "electron-xterm-shell",
   "persistence": {
     "onWindowClose": "detach"
+  },
+  "terminal": {
+    "fontFamily": "Cascadia Mono, FiraCode Nerd Font Mono, Consolas, monospace",
+    "fontSize": 14,
+    "cursorBlink": true,
+    "theme": {
+      "background": "#0c0c0c",
+      "foreground": "#cccccc",
+      "cursor": "#ffffff",
+      "selectionBackground": "#264f78",
+      "ansi": [
+        "#0c0c0c", "#c50f1f", "#13a10e", "#c19c00",
+        "#0037da", "#881798", "#3a96dd", "#cccccc",
+        "#767676", "#e74856", "#16c60c", "#f9f1a5",
+        "#3b78ff", "#b4009e", "#61d6d6", "#f2f2f2"
+      ]
+    }
   },
   "launchProfiles": {
     "default-shell": {
@@ -50,7 +67,7 @@ The first launch creates:
 }
 ```
 
-Version 1 intentionally supports one or two sessions because the current Electron layout has two static pane surfaces.
+Version 2 intentionally supports one or two sessions because the current Electron layout has two static pane surfaces.
 
 A hub session ID is:
 
@@ -153,7 +170,7 @@ On every valid load, NeonCode updates `config.json.bak`. If `config.json` later 
 
 An unsupported future schema is preserved and is not downgraded automatically. If neither the primary nor backup is usable, NeonCode opens with a visible configuration error and launches no terminal sessions.
 
-Known pre-schema NeonCode files containing only a `terminal` object are preserved as `config.json.pre-migration-<timestamp>` and migrated to version 1 defaults. Their old font/color settings are not applied yet because terminal appearance is deferred to a later schema. Schema version 0 prototype fields are also migrated to version 1.
+Known pre-schema NeonCode files containing only a `terminal` object are preserved as `config.json.pre-migration-<timestamp>` and their compatible font, cursor, and color-table settings are imported into version 2. Schema versions 0 and 1 are migrated automatically. When a preserved terminal-only file is available, schema 1 imports its appearance while retaining current pane/profile edits; otherwise it receives the default appearance.
 
 App-owned `state.json` currently stores only content width and height. Invalid state is preserved and reset safely. Window position is deliberately not persisted yet to avoid reopening off-screen.
 
@@ -183,4 +200,4 @@ NEONCODE_PERSIST_SESSIONS
 7. Reopen again and confirm window size, session reattachment, and output replay.
 8. Optionally switch `onWindowClose` to `kill`; after closing/reopening, the panes should start new sessions rather than attach.
 
-Font/theme configuration, dynamic pane counts/layouts, workspace files, and a settings UI are later milestones.
+Dynamic pane counts/layouts, workspace files, live appearance reload, font discovery, and a settings UI are later milestones.

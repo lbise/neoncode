@@ -26,28 +26,20 @@ function normalizeTerminalText(text) {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
-function buildTerminalTheme() {
+function buildTerminalTheme(appearance) {
+  const [
+    black, red, green, yellow, blue, magenta, cyan, white,
+    brightBlack, brightRed, brightGreen, brightYellow,
+    brightBlue, brightMagenta, brightCyan, brightWhite,
+  ] = appearance.theme.ansi;
   return {
-    background: '#0c0c0c',
-    foreground: '#cccccc',
-    cursor: '#ffffff',
-    selectionBackground: '#264f78',
-    black: '#0c0c0c',
-    red: '#c50f1f',
-    green: '#13a10e',
-    yellow: '#c19c00',
-    blue: '#0037da',
-    magenta: '#881798',
-    cyan: '#3a96dd',
-    white: '#cccccc',
-    brightBlack: '#767676',
-    brightRed: '#e74856',
-    brightGreen: '#16c60c',
-    brightYellow: '#f9f1a5',
-    brightBlue: '#3b78ff',
-    brightMagenta: '#b4009e',
-    brightCyan: '#61d6d6',
-    brightWhite: '#f2f2f2',
+    background: appearance.theme.background,
+    foreground: appearance.theme.foreground,
+    cursor: appearance.theme.cursor,
+    selectionBackground: appearance.theme.selectionBackground,
+    black, red, green, yellow, blue, magenta, cyan, white,
+    brightBlack, brightRed, brightGreen, brightYellow,
+    brightBlue, brightMagenta, brightCyan, brightWhite,
   };
 }
 
@@ -61,6 +53,7 @@ class TerminalPane {
     endpoint,
     capabilityToken,
     launchProfile,
+    terminalAppearance,
     container,
     statusElement,
     sessionModel,
@@ -74,6 +67,7 @@ class TerminalPane {
     this.endpoint = endpoint;
     this.capabilityToken = capabilityToken;
     this.launchProfile = launchProfile;
+    this.terminalAppearance = terminalAppearance;
     this.container = container;
     this.statusElement = statusElement;
     this.sessionModel = sessionModel;
@@ -94,12 +88,12 @@ class TerminalPane {
 
   start() {
     const terminal = new Terminal({
-      cursorBlink: true,
+      cursorBlink: this.terminalAppearance.cursorBlink,
       convertEol: false,
-      fontFamily: 'Cascadia Mono, FiraCode Nerd Font Mono, Consolas, monospace',
-      fontSize: 14,
+      fontFamily: this.terminalAppearance.fontFamily,
+      fontSize: this.terminalAppearance.fontSize,
       scrollback: 10000,
-      theme: buildTerminalTheme(),
+      theme: buildTerminalTheme(this.terminalAppearance),
       allowProposedApi: false,
     });
     const fitAddon = new FitAddon();

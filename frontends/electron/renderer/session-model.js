@@ -87,6 +87,10 @@ class SessionModel {
       reconnectAttempts: 0,
       reconnectEvents: 0,
       reconnectDelayMs: 0,
+      fontFamily: terminal.options.fontFamily,
+      fontSize: terminal.options.fontSize,
+      cursorBlink: terminal.options.cursorBlink,
+      background: terminal.options.theme.background,
     };
 
     return state;
