@@ -78,6 +78,7 @@ The test-only renderer API currently exposes:
 window.neoncodeTest.getState()
 window.neoncodeTest.sendText(paneId, text)
 window.neoncodeTest.pasteText(paneId, text)
+window.neoncodeTest.killPane(paneId)
 ```
 
 Production code should use the same underlying methods; the test API should not duplicate behavior.
@@ -122,6 +123,6 @@ Then assert `result-token`. Other options are base64-decoding a random token in 
 - [x] Replace literal echoed markers with markers constructed only by executed commands.
 - [x] Remove core functional dependencies on `%TEMP%\NeonCode\electron-app-main.log`, global clipboard state, and `SendKeys`.
 - [x] Remove the old focus-sensitive PowerShell functional smoke scripts.
-- [ ] Add close/reopen/reattach coverage using a stable session prefix and a real test hub.
+- [x] Add close/reopen/reattach coverage using a stable session prefix and a real test hub.
 - [ ] Add renderer tests with a fake hub for errors, timeouts, and reconnect state transitions.
 - [ ] Add a narrow PowerShell window-launch/desktop compatibility smoke when installer/DPI/multi-monitor work begins.

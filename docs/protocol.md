@@ -208,7 +208,7 @@ If the detaching WebSocket created the session, the session is released from tha
 }
 ```
 
-`session_id` may be `null` for connection-level/protocol errors.
+`session_id` identifies the requested session for session operations, including failed start/attach/detach/input/resize/kill requests. It is `null` for connection-level errors or messages without a session ID.
 
 ## Manual smoke test
 

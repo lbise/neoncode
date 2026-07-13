@@ -27,12 +27,15 @@ class SessionModel {
     this.publicState.sessionDiscovery.error = '';
   }
 
-  createPaneState({ index, paneId, sessionKey, sessionId, terminal, fitAddon }) {
+  createPaneState({ index, paneId, sessionKey, sessionId, activationMode, terminal, fitAddon }) {
     const state = {
       index,
       paneId,
       sessionKey,
       sessionId,
+      activationMode,
+      lifecycle: 'connecting',
+      error: '',
       terminal,
       fitAddon,
       started: false,
@@ -49,6 +52,9 @@ class SessionModel {
       paneId,
       sessionKey,
       sessionId,
+      activationMode,
+      lifecycle: 'connecting',
+      error: '',
       started: false,
       outputEvents: 0,
       inputEvents: 0,
@@ -67,6 +73,19 @@ class SessionModel {
 
   setPublicStarted(state, started) {
     this.pane(state).started = started;
+  }
+
+  setActivationMode(state, activationMode) {
+    state.activationMode = activationMode;
+    this.pane(state).activationMode = activationMode;
+  }
+
+  setLifecycle(state, lifecycle, error = '') {
+    state.lifecycle = lifecycle;
+    state.error = error;
+    const pane = this.pane(state);
+    pane.lifecycle = lifecycle;
+    pane.error = error;
   }
 
   updateSize(state, { rows, cols }) {

@@ -4,6 +4,22 @@ const { FitAddon } = require('@xterm/addon-fit');
 
 const { HubClient, base64ToBytes, decoder, encoder } = require('./hub-client');
 
+const CLOSE_ACK_TIMEOUT_MS = 1500;
+const LIFECYCLE_LABELS = {
+  attached: 'Attached',
+  attaching: 'Attaching',
+  connecting: 'Connecting',
+  detached: 'Detached',
+  detaching: 'Detaching',
+  disconnected: 'Disconnected',
+  error: 'Error',
+  exited: 'Exited',
+  killed: 'Killed',
+  killing: 'Killing',
+  started: 'Started',
+  starting: 'Starting',
+};
+
 function normalizeTerminalText(text) {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
@@ -34,18 +50,34 @@ function buildTerminalTheme() {
 }
 
 class TerminalPane {
-  constructor({ index, paneId, sessionKey, sessionId, endpoint, container, sessionModel, setStatus }) {
+  constructor({
+    index,
+    paneId,
+    sessionKey,
+    sessionId,
+    activationMode,
+    endpoint,
+    container,
+    statusElement,
+    sessionModel,
+    setStatus,
+  }) {
     this.index = index;
     this.paneId = paneId;
     this.sessionKey = sessionKey;
     this.sessionId = sessionId;
+    this.activationMode = activationMode;
     this.endpoint = endpoint;
     this.container = container;
+    this.statusElement = statusElement;
     this.sessionModel = sessionModel;
     this.setStatus = setStatus;
     this.state = undefined;
     this.hubClient = undefined;
     this.resizeObserver = undefined;
+    this.activationFallbackUsed = false;
+    this.pendingClose = undefined;
+    this.closed = false;
   }
 
   start() {
@@ -67,9 +99,11 @@ class TerminalPane {
       paneId: this.paneId,
       sessionKey: this.sessionKey,
       sessionId: this.sessionId,
+      activationMode: this.activationMode,
       terminal,
       fitAddon,
     });
+    this.setLifecycle('connecting');
 
     terminal.writeln('\x1b[36mNeonCode\x1b[0m');
     terminal.writeln(`Connecting ${this.sessionId} to ${this.endpoint}`);
@@ -82,9 +116,85 @@ class TerminalPane {
     this.scheduleFitAndResize();
   }
 
+  setLifecycle(lifecycle, error = '') {
+    this.sessionModel.setLifecycle(this.state, lifecycle, error);
+    if (this.statusElement) {
+      this.statusElement.dataset.state = lifecycle;
+      this.statusElement.textContent = LIFECYCLE_LABELS[lifecycle] || lifecycle;
+      this.statusElement.title = error;
+    }
+  }
+
   close() {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
     this.resizeObserver?.disconnect();
     this.hubClient?.close();
+    this.resolvePendingClose();
+  }
+
+  detachAndClose() {
+    return this.requestClose('detach');
+  }
+
+  killAndClose() {
+    return this.requestClose('kill');
+  }
+
+  requestClose(action) {
+    if (this.pendingClose) {
+      return this.pendingClose.promise;
+    }
+    if (this.closed) {
+      return Promise.resolve();
+    }
+    if (!this.hubClient?.isOpen() || ['detached', 'exited', 'killed'].includes(this.state.lifecycle)) {
+      this.close();
+      return Promise.resolve();
+    }
+
+    this.setLifecycle(action === 'detach' ? 'detaching' : 'killing');
+    let resolvePromise;
+    const promise = new Promise((resolve) => {
+      resolvePromise = resolve;
+    });
+    const timer = setTimeout(() => {
+      this.finishClose('error', `${action} acknowledgement timed out`);
+    }, CLOSE_ACK_TIMEOUT_MS);
+    this.pendingClose = {
+      action,
+      promise,
+      resolve: resolvePromise,
+      timer,
+    };
+
+    const sent = action === 'detach' ? this.hubClient.detach() : this.hubClient.kill();
+    if (!sent) {
+      this.finishClose('error', `failed to send ${action}`);
+    }
+    return promise;
+  }
+
+  finishClose(lifecycle, error = '') {
+    this.state.started = false;
+    this.sessionModel.setPublicStarted(this.state, false);
+    this.setLifecycle(lifecycle, error);
+    this.closed = true;
+    this.resizeObserver?.disconnect();
+    this.hubClient?.close();
+    this.resolvePendingClose();
+  }
+
+  resolvePendingClose() {
+    if (!this.pendingClose) {
+      return;
+    }
+    clearTimeout(this.pendingClose.timer);
+    const { resolve } = this.pendingClose;
+    this.pendingClose = undefined;
+    resolve();
   }
 
   configureInputHandlers() {
@@ -130,8 +240,8 @@ class TerminalPane {
     });
   }
 
-  sendTerminalBytes(bytes, reason = 'data') {
-    if (!bytes || bytes.length === 0) {
+  sendTerminalBytes(bytes, _reason = 'data') {
+    if (!bytes || bytes.length === 0 || !this.state.started) {
       return false;
     }
 
@@ -168,7 +278,6 @@ class TerminalPane {
       return false;
     }
 
-    console.log(`terminal_paste ${this.index} ${normalized.length} ${reason}`);
     const sent = this.sendTerminalText(normalized, reason);
     if (sent) {
       this.state.suppressedPasteText = normalized;
@@ -177,7 +286,7 @@ class TerminalPane {
   }
 
   pasteClipboardText(reason = 'clipboard') {
-    this.pasteText(clipboard.readText(), reason);
+    return this.pasteText(clipboard.readText(), reason);
   }
 
   scheduleFitAndResize() {
@@ -223,17 +332,44 @@ class TerminalPane {
 
   handleHubOpen() {
     console.log(`hub_connected ${this.index}`);
-    this.state.started = true;
     this.setStatus(`Connected to ${this.endpoint}`);
-    this.hubClient.start({
-      command: 'bash',
-      rows: this.state.terminal.rows || 30,
-      cols: this.state.terminal.cols || 120,
-    });
-    this.scheduleFitAndResize();
+    this.activate(this.activationMode);
+  }
+
+  activate(mode) {
+    this.activationMode = mode;
+    this.sessionModel.setActivationMode(this.state, mode);
+    this.setLifecycle(mode === 'attach' ? 'attaching' : 'starting');
+    const sent = mode === 'attach'
+      ? this.hubClient.attach()
+      : this.hubClient.start({
+        command: 'bash',
+        rows: this.state.terminal.rows || 30,
+        cols: this.state.terminal.cols || 120,
+      });
+    if (!sent) {
+      this.handleActivationFailure(`failed to send ${mode}`);
+    }
+  }
+
+  handleActivationFailure(message) {
+    if (!this.activationFallbackUsed) {
+      if (this.activationMode === 'attach' && message.includes('unknown session')) {
+        this.activationFallbackUsed = true;
+        this.activate('start');
+        return true;
+      }
+      if (this.activationMode === 'start' && message.includes('session already exists')) {
+        this.activationFallbackUsed = true;
+        this.activate('attach');
+        return true;
+      }
+    }
+    return false;
   }
 
   handleInvalidHubMessage(error) {
+    this.setLifecycle('error', error.message);
     this.state.terminal.writeln(`\r\n\x1b[31mInvalid hub JSON: ${error.message}\x1b[0m`);
   }
 
@@ -241,11 +377,45 @@ class TerminalPane {
     if (message.type === 'output' && message.session_id === this.sessionId) {
       this.handleHubOutput(message);
     } else if (message.type === 'started' && message.session_id === this.sessionId) {
-      this.handleHubStarted();
+      this.handleHubActive('started');
+    } else if (message.type === 'attached' && message.session_id === this.sessionId) {
+      this.handleHubActive('attached');
+    } else if (message.type === 'detached' && message.session_id === this.sessionId) {
+      this.finishClose('detached');
+    } else if (message.type === 'killed' && message.session_id === this.sessionId) {
+      this.finishClose('killed');
     } else if (message.type === 'exit' && message.session_id === this.sessionId) {
-      this.state.terminal.writeln('\r\n\x1b[33mHub session exited\x1b[0m');
-    } else if (message.type === 'error') {
-      this.state.terminal.writeln(`\r\n\x1b[31mHub error: ${message.message}\x1b[0m`);
+      this.state.started = false;
+      this.sessionModel.setPublicStarted(this.state, false);
+      this.setLifecycle('exited');
+      this.state.terminal.writeln(`\r\n\x1b[33mHub session exited (${message.status ?? 'unknown'})\x1b[0m`);
+      this.resolvePendingClose();
+    } else if (message.type === 'error'
+        && (!message.session_id || message.session_id === this.sessionId)) {
+      this.handleHubProtocolError(message.message || 'Hub protocol error');
+    }
+  }
+
+  handleHubActive(lifecycle) {
+    this.state.started = true;
+    this.sessionModel.setPublicStarted(this.state, true);
+    this.setLifecycle(lifecycle);
+    console.log(`hub_${lifecycle} ${this.index}`);
+    this.state.terminal.writeln(`\r\n\x1b[32mHub session ${lifecycle}\x1b[0m`);
+    this.scheduleFitAndResize();
+  }
+
+  handleHubProtocolError(message) {
+    if (['attaching', 'starting'].includes(this.state.lifecycle)
+        && this.handleActivationFailure(message)) {
+      return;
+    }
+
+    this.setLifecycle('error', message);
+    this.state.terminal.writeln(`\r\n\x1b[31mHub error: ${message}\x1b[0m`);
+    this.setStatus(`Hub error: ${message}`);
+    if (this.pendingClose) {
+      this.finishClose('error', message);
     }
   }
 
@@ -256,28 +426,38 @@ class TerminalPane {
     this.state.terminal.write(bytes);
   }
 
-  handleHubStarted() {
-    console.log(`hub_started ${this.index}`);
-    this.sessionModel.setPublicStarted(this.state, true);
-    this.state.terminal.writeln('\r\n\x1b[32mHub session started\x1b[0m');
-  }
-
   handleHubClose() {
-    console.log(`hub_closed ${this.index}`);
     this.state.started = false;
     this.sessionModel.setPublicStarted(this.state, false);
+    if (this.pendingClose) {
+      this.closed = true;
+      this.setLifecycle('error', 'WebSocket closed before session acknowledgement');
+      this.resolvePendingClose();
+      return;
+    }
+    if (this.closed || ['detached', 'killed'].includes(this.state.lifecycle)) {
+      return;
+    }
+
+    console.log(`hub_closed ${this.index}`);
+    this.setLifecycle('disconnected');
     this.state.terminal.writeln('\r\n\x1b[33mDisconnected from neoncode-hub\x1b[0m');
     this.setStatus('Disconnected from neoncode-hub');
   }
 
   handleHubError() {
+    if (this.closed) {
+      return;
+    }
     console.log(`hub_error ${this.index}`);
+    this.setLifecycle('error', 'WebSocket error');
     this.state.terminal.writeln('\r\n\x1b[31mWebSocket error. Is ./dev hub running?\x1b[0m');
     this.setStatus('WebSocket error');
   }
 }
 
 module.exports = {
+  CLOSE_ACK_TIMEOUT_MS,
   TerminalPane,
   buildTerminalTheme,
   normalizeTerminalText,

@@ -33,7 +33,8 @@ Current role:
 - renders terminals with xterm.js;
 - performs startup session discovery with `list_sessions`;
 - opens one WebSocket per pane/session for the current prototype;
-- sends `start`, `input`, `resize`, and later attach/detach messages;
+- attaches known sessions and starts missing sessions;
+- sends `input`, `resize`, and acknowledgement-based `detach` before normal app close;
 - provides smoke-test state for Playwright and PowerShell validation.
 
 Run:
@@ -170,9 +171,10 @@ Current prototype has working but incomplete session lifecycle:
 - session IDs are frontend-provided;
 - the Electron app uses stable default frontend session keys (`shell`, `tasks`) instead of deriving session identity from pane indexes;
 - sessions live in an in-process hub registry;
-- detached sessions can survive a WebSocket closing;
+- detached sessions survive normal Electron app close and can be reattached on the next launch;
 - attach receives future output only, not replayed scrollback;
-- reconnect is explicit, not automatic.
+- startup reattach is automatic for stable configured session IDs;
+- reconnect after an unexpected live connection loss is not automatic yet.
 
 Target direction:
 

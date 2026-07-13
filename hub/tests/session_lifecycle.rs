@@ -178,6 +178,43 @@ async fn send_input(socket: &mut TestSocket, session_id: &str, input: &str) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn session_operation_errors_include_the_session_id() {
+    let hub = TestHub::start().await;
+    let mut socket = hub.connect().await;
+
+    send_json(
+        &mut socket,
+        json!({ "type": "attach", "session_id": "missing-session" }),
+    )
+    .await;
+    let attach_error = wait_for_type(&mut socket, "error").await;
+    assert_eq!(attach_error["session_id"], "missing-session");
+
+    let session_id = "duplicate-start";
+    start_shell(&mut socket, session_id).await;
+    send_json(
+        &mut socket,
+        json!({
+            "type": "start",
+            "session_id": session_id,
+            "command": "sh",
+            "rows": 24,
+            "cols": 80
+        }),
+    )
+    .await;
+    let start_error = wait_for_type(&mut socket, "error").await;
+    assert_eq!(start_error["session_id"], session_id);
+
+    send_json(
+        &mut socket,
+        json!({ "type": "kill", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut socket, "killed", session_id).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fast_command_preserves_output_reports_exit_and_reuses_id() {
     let hub = TestHub::start().await;
     let mut socket = hub.connect().await;

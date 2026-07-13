@@ -55,12 +55,39 @@ main {
 .pane-title {
   box-sizing: border-box;
   height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 3px 8px;
   color: #9ca3af;
   font-size: 12px;
   background: #18181b;
   border-bottom: 1px solid #27272a;
   user-select: none;
+}
+
+.pane-status {
+  color: #a1a1aa;
+  font-size: 11px;
+  text-transform: capitalize;
+}
+
+.pane-status[data-state="started"],
+.pane-status[data-state="attached"] {
+  color: #4ade80;
+}
+
+.pane-status[data-state="attaching"],
+.pane-status[data-state="starting"],
+.pane-status[data-state="detaching"],
+.pane-status[data-state="killing"] {
+  color: #facc15;
+}
+
+.pane-status[data-state="error"],
+.pane-status[data-state="exited"] {
+  color: #f87171;
 }
 
 .terminal {

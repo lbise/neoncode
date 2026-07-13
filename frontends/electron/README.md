@@ -46,7 +46,7 @@ renderer/test-api.js
 tests/               hidden-window Playwright functional tests
 ```
 
-On startup, the renderer calls `list_sessions` to discover existing hub sessions before starting pane sessions.
+On startup, the renderer calls `list_sessions`, attaches matching stable sessions, and starts missing sessions. A normal Electron window close waits for `detached` acknowledgements so hub sessions survive and are reattached on the next launch.
 
 Default panes use stable frontend session keys instead of deriving session identity from UI indexes:
 
@@ -63,7 +63,7 @@ With the hub running:
 ./dev electron-test
 ```
 
-The test launches a hidden Electron window and uses structured renderer/Electron APIs, not foreground focus, global clipboard state, `SendKeys`, or log scraping.
+The test launches a hidden Electron window and uses structured renderer/Electron APIs, not foreground focus, global clipboard state, `SendKeys`, or log scraping. It closes/reopens the real Electron app and verifies the same shell state survives reattachment.
 
 Manual checks inside a terminal:
 

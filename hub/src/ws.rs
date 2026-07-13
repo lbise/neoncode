@@ -64,7 +64,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 ) {
                     warn!(%err, "client message failed");
                     let _ = outgoing_tx.send(ServerMessage::Error {
-                        session_id: None,
+                        session_id: session_id_from_client_text(&text),
                         message: err.to_string(),
                     });
                 }
@@ -104,6 +104,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     }
     drop(outgoing_tx);
     writer.abort();
+}
+
+fn session_id_from_client_text(text: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()?
+        .get("session_id")?
+        .as_str()
+        .map(str::to_string)
 }
 
 fn handle_client_text(

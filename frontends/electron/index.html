@@ -17,11 +17,17 @@
   </header>
   <main id="terminal-grid" aria-label="xterm terminal region" data-testid="terminal-grid">
     <section class="terminal-pane" data-testid="terminal-pane-1">
-      <div class="pane-title">Terminal 1</div>
+      <div class="pane-title">
+        <span>Shell</span>
+        <span id="pane-status-1" class="pane-status" data-state="connecting" data-testid="pane-status-shell">Connecting</span>
+      </div>
       <div id="terminal-1" class="terminal" data-testid="terminal-1"></div>
     </section>
     <section class="terminal-pane" data-testid="terminal-pane-2">
-      <div class="pane-title">Terminal 2</div>
+      <div class="pane-title">
+        <span>Tasks</span>
+        <span id="pane-status-2" class="pane-status" data-state="connecting" data-testid="pane-status-tasks">Connecting</span>
+      </div>
       <div id="terminal-2" class="terminal" data-testid="terminal-2"></div>
     </section>
   </main>

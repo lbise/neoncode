@@ -29,6 +29,10 @@ function installRendererTestApi(app) {
         throw new Error(`test paste was not sent for pane: ${paneId}`);
       }
     },
+
+    async killPane(paneId) {
+      await findPane(app, paneId).killAndClose();
+    },
   });
 
   app.window.neoncodeTest = api;

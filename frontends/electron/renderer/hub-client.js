@@ -78,6 +78,13 @@ class HubClient {
     });
   }
 
+  attach() {
+    return this.send({
+      type: 'attach',
+      session_id: this.sessionId,
+    });
+  }
+
   start({ command = 'bash', rows = 30, cols = 120 }) {
     return this.send({
       type: 'start',
@@ -108,6 +115,13 @@ class HubClient {
   detach() {
     return this.send({
       type: 'detach',
+      session_id: this.sessionId,
+    });
+  }
+
+  kill() {
+    return this.send({
+      type: 'kill',
       session_id: this.sessionId,
     });
   }

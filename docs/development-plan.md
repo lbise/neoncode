@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: product foundation after Windows stack decision
+Stage: session persistence baseline complete
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: app/session model and reconnect/attach behavior
+Next focus: preview persistence, then app state/config and security hardening
 ```
 
 The Windows tech stack is now:
@@ -71,6 +71,8 @@ Previous Windows Terminal/WPF embedding POCs are obsolete and are not a product 
 
 ### Milestone: session persistence baseline
 
+Status: complete and ready for manual preview.
+
 Goal:
 
 ```text
@@ -93,17 +95,17 @@ Tasks:
 - [x] Introduce stable frontend session IDs independent of pane indexes.
 - [x] On startup, call `list_sessions`.
 - [x] Add a structured Playwright renderer test API and remove echo/log/`SendKeys` assertions from core Electron functional tests.
-- [ ] Attach to known sessions when present.
-- [ ] Start missing sessions when not present.
-- [ ] Detach sessions before app close when persistence is desired.
-- [ ] Add UI/status for attached/started/error/exited states.
-- [ ] Add smoke test for close/reopen/reattach.
+- [x] Attach to known sessions when present.
+- [x] Start missing sessions when not present.
+- [x] Detach sessions before app close when persistence is desired.
+- [x] Add UI/status for attached/started/error/exited states.
+- [x] Add functional test for close/reopen/reattach.
 
 Acceptance criteria:
 
-- [ ] Start app, type in pane 1, close app, reopen app, same backend session responds.
-- [ ] `./dev electron-test` still passes.
-- [ ] protocol/docs updated if behavior changes.
+- [x] Start app, type in pane 1, close app, reopen app, same backend session responds.
+- [x] `./dev electron-test` passes.
+- [x] protocol/docs updated for session lifecycle behavior.
 
 ## Near-term product foundation
 
@@ -111,7 +113,7 @@ Acceptance criteria:
 
 - [x] Move Electron app to product path `frontends/electron`.
 - [ ] Introduce a small state model for panes/sessions/workspaces.
-- [ ] Add app-level error display for hub disconnect/session exit/protocol errors.
+- [x] Add app-level error display for hub disconnect/session exit/protocol errors.
 - [ ] Add config storage under `%APPDATA%\NeonCode`.
 - [ ] Load terminal font/theme from app config.
 

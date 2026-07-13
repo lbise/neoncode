@@ -46,6 +46,7 @@ function createAppConfig(env = process.env) {
     endpoint: env.NEONCODE_HUB_ENDPOINT || DEFAULT_ENDPOINT,
     terminalCount,
     sessionPrefix,
+    persistSessions: env.NEONCODE_PERSIST_SESSIONS !== '0',
     testMode: env.NEONCODE_TEST_MODE === '1',
     panes: createPaneDescriptors({ terminalCount, sessionPrefix }),
   };
@@ -60,9 +61,10 @@ class NeonCodeApp {
     this.terminalGrid = this.document.getElementById('terminal-grid');
     this.sessionModel = new SessionModel({ windowRef: this.window });
     this.sessionDiscoveryClient = undefined;
-    this.knownSessionIds = [];
+    this.knownSessionIds = new Set();
     this.panes = [];
     this.closed = false;
+    this.closePromise = undefined;
     if (this.config.testMode) {
       installRendererTestApi(this);
     }
@@ -86,7 +88,7 @@ class NeonCodeApp {
 
   async start() {
     this.configureGrid();
-    this.knownSessionIds = await this.discoverSessions();
+    this.knownSessionIds = new Set(await this.discoverSessions());
     if (this.closed) {
       return;
     }
@@ -174,13 +176,32 @@ class NeonCodeApp {
       paneId: descriptor.paneId,
       sessionKey: descriptor.sessionKey,
       sessionId: descriptor.sessionId,
+      activationMode: this.knownSessionIds.has(descriptor.sessionId) ? 'attach' : 'start',
       endpoint: this.config.endpoint,
       container,
+      statusElement: this.document.getElementById(`pane-status-${descriptor.index + 1}`),
       sessionModel: this.sessionModel,
       setStatus: (text) => this.setStatus(text),
     });
     this.panes.push(pane);
     pane.start();
+  }
+
+  prepareToClose() {
+    if (this.closePromise) {
+      return this.closePromise;
+    }
+
+    this.closed = true;
+    this.sessionDiscoveryClient?.close();
+    this.closePromise = this.config.persistSessions
+      ? Promise.all(this.panes.map((pane) => pane.detachAndClose())).then(() => undefined)
+      : Promise.resolve().then(() => {
+        for (const pane of this.panes) {
+          pane.close();
+        }
+      });
+    return this.closePromise;
   }
 
   close() {
