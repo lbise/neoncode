@@ -117,8 +117,8 @@ switch ($Command) {
         Write-Host ""
         Write-Host "Electron app publish succeeded."
         Write-Host "Output: $OutputPath"
-        Write-Host "Run:"
-        Write-Host "  powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\electron-app.ps1 -Command start"
+        Write-Host "Run from the WSL repository root:"
+        Write-Host "  ./dev electron"
     }
 
     "start" {
