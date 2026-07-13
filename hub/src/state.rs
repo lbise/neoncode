@@ -1,12 +1,11 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use anyhow::{Result, anyhow};
-use tokio::sync::broadcast;
 use tracing::debug;
 
 use crate::{
     protocol::SessionSummary,
-    session::{Session, SessionEvent},
+    session::{Session, SessionSubscription},
 };
 
 const DEFAULT_ROWS: u16 = 24;
@@ -33,7 +32,7 @@ impl SessionRegistry {
         &self,
         owner_connection_id: &str,
         request: StartSessionRequest,
-    ) -> Result<broadcast::Receiver<SessionEvent>> {
+    ) -> Result<SessionSubscription> {
         let mut sessions = self
             .sessions
             .lock()
@@ -81,7 +80,7 @@ impl SessionRegistry {
         Ok(summaries)
     }
 
-    pub fn subscribe_session(&self, session_id: &str) -> Result<broadcast::Receiver<SessionEvent>> {
+    pub fn subscribe_session(&self, session_id: &str) -> Result<SessionSubscription> {
         let mut sessions = self
             .sessions
             .lock()
@@ -91,7 +90,7 @@ impl SessionRegistry {
         let entry = sessions
             .get(session_id)
             .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
-        Ok(entry.session.subscribe())
+        entry.session.subscribe()
     }
 
     pub fn release_owner_if_matches(

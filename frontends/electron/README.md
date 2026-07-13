@@ -46,7 +46,7 @@ renderer/test-api.js
 tests/               hidden-window Playwright functional tests
 ```
 
-On startup, the renderer calls `list_sessions`, attaches matching stable sessions, and starts missing sessions. A normal Electron window close waits for `detached` acknowledgements so hub sessions survive and are reattached on the next launch.
+On startup, the renderer calls `list_sessions`, attaches matching stable sessions, and starts missing sessions. A normal Electron window close waits for `detached` acknowledgements so hub sessions survive and are reattached on the next launch. Attach replays up to 2 MiB of recent ordered terminal output before live output continues, so normal shell history and prompts reappear.
 
 Default panes use stable frontend session keys instead of deriving session identity from UI indexes:
 

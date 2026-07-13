@@ -18,7 +18,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     protocol::{ClientMessage, ServerMessage},
-    session::SessionEvent,
+    session::{SessionEvent, SessionSubscription},
     state::{AppState, StartSessionRequest},
 };
 
@@ -133,7 +133,7 @@ fn handle_client_text(
             rows,
             cols,
         } => {
-            let events = state.registry().start_session(
+            let subscription = state.registry().start_session(
                 connection_id,
                 StartSessionRequest {
                     session_id: session_id.clone(),
@@ -147,7 +147,7 @@ fn handle_client_text(
             outgoing.send(ServerMessage::Started {
                 session_id: session_id.clone(),
             })?;
-            attach_forwarder(session_id, events, outgoing, session_forwarders)?;
+            attach_subscription(session_id, subscription, outgoing, session_forwarders)?;
         }
         ClientMessage::ListSessions => {
             let sessions = state.registry().list_sessions()?;
@@ -160,9 +160,11 @@ fn handle_client_text(
                 ));
             }
 
-            let events = state.registry().subscribe_session(&session_id)?;
-            attach_forwarder(session_id.clone(), events, outgoing, session_forwarders)?;
-            outgoing.send(ServerMessage::Attached { session_id })?;
+            let subscription = state.registry().subscribe_session(&session_id)?;
+            outgoing.send(ServerMessage::Attached {
+                session_id: session_id.clone(),
+            })?;
+            attach_subscription(session_id, subscription, outgoing, session_forwarders)?;
         }
         ClientMessage::Detach { session_id } => {
             let forwarder = session_forwarders.remove(&session_id).ok_or_else(|| {
@@ -202,9 +204,9 @@ fn handle_client_text(
     Ok(())
 }
 
-fn attach_forwarder(
+fn attach_subscription(
     session_id: String,
-    events: broadcast::Receiver<SessionEvent>,
+    subscription: SessionSubscription,
     outgoing: &mpsc::UnboundedSender<ServerMessage>,
     session_forwarders: &mut HashMap<String, JoinHandle<()>>,
 ) -> Result<()> {
@@ -214,7 +216,12 @@ fn attach_forwarder(
         ));
     }
 
-    let forwarder = spawn_session_event_forwarder(session_id.clone(), events, outgoing.clone());
+    for event in subscription.replay {
+        outgoing.send(server_message_from_event(&session_id, event))?;
+    }
+
+    let forwarder =
+        spawn_session_event_forwarder(session_id.clone(), subscription.events, outgoing.clone());
     session_forwarders.insert(session_id, forwarder);
     Ok(())
 }
@@ -227,27 +234,10 @@ fn spawn_session_event_forwarder(
     tokio::spawn(async move {
         loop {
             let (message, terminal) = match events.recv().await {
-                Ok(SessionEvent::Output { data_b64 }) => (
-                    ServerMessage::Output {
-                        session_id: session_id.clone(),
-                        data_b64,
-                    },
-                    false,
-                ),
-                Ok(SessionEvent::Exit { status }) => (
-                    ServerMessage::Exit {
-                        session_id: session_id.clone(),
-                        status,
-                    },
-                    true,
-                ),
-                Ok(SessionEvent::Error { message }) => (
-                    ServerMessage::Error {
-                        session_id: Some(session_id.clone()),
-                        message,
-                    },
-                    false,
-                ),
+                Ok(event) => {
+                    let terminal = matches!(event, SessionEvent::Exit { .. });
+                    (server_message_from_event(&session_id, event), terminal)
+                }
                 Err(broadcast::error::RecvError::Lagged(count)) => (
                     ServerMessage::Error {
                         session_id: Some(session_id.clone()),
@@ -263,4 +253,22 @@ fn spawn_session_event_forwarder(
             }
         }
     })
+}
+
+fn server_message_from_event(session_id: &str, event: SessionEvent) -> ServerMessage {
+    match event {
+        SessionEvent::Output { seq, data_b64 } => ServerMessage::Output {
+            session_id: session_id.to_string(),
+            seq,
+            data_b64,
+        },
+        SessionEvent::Exit { status } => ServerMessage::Exit {
+            session_id: session_id.to_string(),
+            status,
+        },
+        SessionEvent::Error { message } => ServerMessage::Error {
+            session_id: Some(session_id.to_string()),
+            message,
+        },
+    }
 }

@@ -32,7 +32,8 @@ Current coverage:
 - exited sessions disappear from `list_sessions` and their IDs can be reused;
 - sessions still owned by a disconnected WebSocket are removed and killed;
 - detached sessions survive owner disconnect;
-- a new WebSocket can list, attach, resize, send input, receive output, and kill a detached session.
+- output produced while detached is replayed after attach;
+- a new WebSocket can list, attach, resize, send input, receive ordered output, and kill a detached session.
 
 Run:
 
@@ -124,5 +125,6 @@ Then assert `result-token`. Other options are base64-decoding a random token in 
 - [x] Remove core functional dependencies on `%TEMP%\NeonCode\electron-app-main.log`, global clipboard state, and `SendKeys`.
 - [x] Remove the old focus-sensitive PowerShell functional smoke scripts.
 - [x] Add close/reopen/reattach coverage using a stable session prefix and a real test hub.
+- [x] Verify pre-close output is replayed with contiguous output sequence numbers after reattach.
 - [ ] Add renderer tests with a fake hub for errors, timeouts, and reconnect state transitions.
 - [ ] Add a narrow PowerShell window-launch/desktop compatibility smoke when installer/DPI/multi-monitor work begins.

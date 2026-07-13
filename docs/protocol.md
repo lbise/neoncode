@@ -80,8 +80,7 @@ Returns `session_list` with active session IDs.
 }
 ```
 
-Subscribes this WebSocket to future output/exit/error events for the session.
-Output is not replayed; attach only receives future events.
+Subscribes this WebSocket to the session. The hub sends `attached`, replays its bounded recent terminal output in sequence order, and then forwards live output/exit/error events without a replay/live gap.
 
 ### Detach from a session
 
@@ -173,9 +172,12 @@ If the detaching WebSocket created the session, the session is released from tha
 {
   "type": "output",
   "session_id": "shell-1",
+  "seq": 42,
   "data_b64": "..."
 }
 ```
+
+`seq` is a monotonic per-session terminal-output sequence number. Replay may start above `1` when older output has been evicted from the bounded buffer. After replay, live output continues at the next sequence number.
 
 ### Session exited
 

@@ -31,7 +31,7 @@ Current capabilities:
 - kill PTY session;
 - maintain sessions in a shared in-process session registry;
 - list active sessions;
-- attach a WebSocket to an existing session's future event stream;
+- attach a WebSocket with bounded recent terminal-output replay followed by live events;
 - detach a WebSocket from a session;
 - allow explicitly detached sessions to survive the creating WebSocket closing;
 - kill still-owned sessions when their owning WebSocket disconnects;
@@ -40,7 +40,7 @@ Current capabilities:
 Current limitations:
 
 - reconnect is not automatic yet; clients must explicitly `list_sessions` and `attach`;
-- detached session output is not replayed on attach; clients receive future events only;
+- output replay is bounded to 2 MiB per session and is raw terminal bytes, not a canonical screen snapshot;
 - the session registry is in-process only and does not persist across hub restarts;
 - session IDs are currently frontend-provided;
 - natural process exits report an exit code when `portable-pty` provides one; `status` remains nullable for unavailable/error cases;
@@ -194,9 +194,11 @@ Frontend sends `list_sessions` to get active session IDs from the in-process reg
 
 ### Attach
 
-Frontend sends `attach` with a `session_id` to subscribe the current WebSocket to that session's future event stream.
+Frontend sends `attach` with a `session_id` to subscribe the current WebSocket to that session.
 
-Attach does not replay earlier terminal output. A product implementation will need scrollback/snapshot semantics if reconnect should reconstruct terminal state without relying only on the terminal renderer's local buffer.
+The hub atomically captures a live broadcast receiver and the session's bounded output history. It sends `attached`, queues replayed output in sequence order, and then forwards live events. Holding the same event-state lock while subscribing and snapshotting prevents gaps or duplicates at the replay/live boundary.
+
+The replay buffer retains up to 2 MiB of raw terminal output per session. This restores normal shell history and prompts but is not a canonical terminal-screen snapshot; output older than the bound is discarded.
 
 ### Detach
 
@@ -230,13 +232,13 @@ Instead, each session owns an internal broadcast channel:
 
 ```text
 PTY reader/waiter threads
-  → SessionEvent::{Output, Exit, Error}
-  → broadcast channel owned by Session
+  → ordered SessionEvent::{Output, Exit, Error}
+  → bounded per-session output replay + live broadcast
   → attached WebSocket forwarder task
   → ServerMessage::{output, exit, error}
 ```
 
-The creating WebSocket subscribes automatically on `start`. Additional/new WebSockets can subscribe with `attach`.
+The creating WebSocket subscribes automatically on `start`. Additional/new WebSockets can subscribe with `attach` and receive buffered output before live output continues.
 
 ### WebSocket disconnect
 

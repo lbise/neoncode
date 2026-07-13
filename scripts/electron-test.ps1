@@ -1,5 +1,6 @@
 param(
     [string]$OutputPath = "$env:USERPROFILE\neoncode-electron",
+    [string]$Endpoint = "ws://127.0.0.1:44777/ws",
     [int]$TimeoutSeconds = 15
 )
 
@@ -32,9 +33,11 @@ foreach ($required in @($packageJson, $testScript, $playwrightPackage)) {
 }
 
 $npm = Resolve-Npm
+$env:NEONCODE_HUB_ENDPOINT = $Endpoint
 $env:NEONCODE_PLAYWRIGHT_TIMEOUT = [string]($TimeoutSeconds * 1000)
 Write-Host "npm: $npm"
 Write-Host "Working directory: $publishedDir"
+Write-Host "Hub endpoint: $Endpoint"
 Write-Host "Command: npm.cmd test (hidden Electron test mode)"
 
 $cmd = "pushd `"$publishedDir`" && `"$npm`" test"

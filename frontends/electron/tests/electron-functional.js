@@ -183,7 +183,10 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   const initialState = await getState(page);
   log('state.first-launch', summarizeState(initialState));
   assert(initialState.sessionDiscovery.sessionListEvents >= 1, 'startup did not list hub sessions');
-  assert(initialState.sessionDiscovery.sessions.length === 0, 'fresh test prefix unexpectedly found sessions');
+  assert(
+    !initialState.sessionDiscovery.sessions.some((sessionId) => sessionId.startsWith(`${sessionPrefix}-`)),
+    'fresh test prefix unexpectedly found sessions',
+  );
 
   const expectedPanes = [
     { paneId: 'shell', sessionKey: 'shell', sessionId: `${sessionPrefix}-shell` },
@@ -265,6 +268,9 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
 }
 
 async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
+  const seedExpected = `seed-${runToken}`;
+  await waitForOutput(instance.page, 'shell', seedExpected);
+
   const state = await getState(instance.page);
   log('state.second-launch', summarizeState(state));
   const expectedSessionIds = [`${sessionPrefix}-shell`, `${sessionPrefix}-tasks`];
@@ -275,6 +281,15 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
     );
   }
   await assertPaneLifecycles(instance, 'attached');
+  for (const pane of state.panes) {
+    assert(pane.firstOutputSeq > 0, `${pane.paneId} did not receive replayed output sequence data`);
+    assert(pane.lastOutputSeq >= pane.firstOutputSeq, `${pane.paneId} output sequence regressed`);
+    assert(pane.outputGap === '', `${pane.paneId} output sequence gap: ${pane.outputGap}`);
+  }
+  assert(
+    state.panes.find((pane) => pane.paneId === 'shell').recentOutput.includes(seedExpected),
+    'pre-close shell output was not replayed after attach',
+  );
 
   const restoredExpected = `restored-${runToken}`;
   const restoredCommand = `printf 'restored-%s\\n' "$NEONCODE_TEST_PERSIST"\n`;

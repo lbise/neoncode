@@ -41,6 +41,8 @@ class SessionModel {
       started: false,
       resizePending: false,
       outputEvents: 0,
+      firstOutputSeq: 0,
+      lastOutputSeq: 0,
       inputEvents: 0,
       resizeEvents: 0,
       lastRows: terminal.rows,
@@ -57,6 +59,9 @@ class SessionModel {
       error: '',
       started: false,
       outputEvents: 0,
+      firstOutputSeq: 0,
+      lastOutputSeq: 0,
+      outputGap: '',
       inputEvents: 0,
       resizeEvents: 0,
       recentOutput: '',
@@ -99,11 +104,26 @@ class SessionModel {
     this.pane(state).inputEvents = state.inputEvents;
   }
 
-  recordOutput(state, text) {
-    state.outputEvents += 1;
+  recordOutput(state, text, seq) {
+    const outputSeq = Number.isSafeInteger(seq) ? seq : state.lastOutputSeq + 1;
+    if (outputSeq <= state.lastOutputSeq) {
+      return false;
+    }
+
     const pane = this.pane(state);
+    if (state.lastOutputSeq > 0 && outputSeq !== state.lastOutputSeq + 1) {
+      pane.outputGap = `${state.lastOutputSeq + 1}-${outputSeq - 1}`;
+    }
+    if (state.firstOutputSeq === 0) {
+      state.firstOutputSeq = outputSeq;
+      pane.firstOutputSeq = outputSeq;
+    }
+    state.lastOutputSeq = outputSeq;
+    pane.lastOutputSeq = outputSeq;
+    state.outputEvents += 1;
     pane.outputEvents = state.outputEvents;
     pane.recentOutput = (pane.recentOutput + text).slice(-MAX_RECENT_OUTPUT_CHARS);
+    return true;
   }
 
   recordResize(state) {

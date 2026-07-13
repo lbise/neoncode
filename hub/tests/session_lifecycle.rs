@@ -311,6 +311,8 @@ async fn detached_session_survives_disconnect_and_can_be_attached() {
     )
     .await;
     wait_for_session_type(&mut owner, "detached", session_id).await;
+    send_input(&mut owner, session_id, "printf 'buffered-%s\\n' 'output'\n").await;
+    sleep(Duration::from_millis(100)).await;
     owner.close(None).await.expect("close detached owner");
 
     let mut attached = hub.connect().await;
@@ -326,6 +328,7 @@ async fn detached_session_survives_disconnect_and_can_be_attached() {
     )
     .await;
     wait_for_session_type(&mut attached, "attached", session_id).await;
+    wait_for_output(&mut attached, session_id, "buffered-output").await;
 
     send_json(
         &mut attached,

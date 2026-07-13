@@ -172,8 +172,8 @@ Current prototype has working but incomplete session lifecycle:
 - the Electron app uses stable default frontend session keys (`shell`, `tasks`) instead of deriving session identity from pane indexes;
 - sessions live in an in-process hub registry;
 - detached sessions survive normal Electron app close and can be reattached on the next launch;
-- attach receives future output only, not replayed scrollback;
-- startup reattach is automatic for stable configured session IDs;
+- attach replays up to 2 MiB of ordered raw terminal output before live output continues;
+- startup reattach is automatic for stable configured session IDs and restores recent terminal output;
 - reconnect after an unexpected live connection loss is not automatic yet.
 
 Target direction:

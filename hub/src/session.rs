@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     env,
     io::{Read, Write},
     sync::{
@@ -15,12 +16,30 @@ use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
 const SESSION_EVENT_BUFFER: usize = 1024;
+const SESSION_REPLAY_BUFFER_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub enum SessionEvent {
-    Output { data_b64: String },
+    Output { seq: u64, data_b64: String },
     Exit { status: Option<i32> },
     Error { message: String },
+}
+
+pub struct SessionSubscription {
+    pub replay: Vec<SessionEvent>,
+    pub events: broadcast::Receiver<SessionEvent>,
+}
+
+#[derive(Default)]
+struct SessionEventState {
+    next_output_seq: u64,
+    replay: VecDeque<ReplayEntry>,
+    replay_bytes: usize,
+}
+
+struct ReplayEntry {
+    event: SessionEvent,
+    bytes: usize,
 }
 
 pub struct Session {
@@ -30,6 +49,7 @@ pub struct Session {
     child_killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     running: Arc<AtomicBool>,
     event_tx: broadcast::Sender<SessionEvent>,
+    event_state: Arc<Mutex<SessionEventState>>,
 }
 
 impl Session {
@@ -41,8 +61,12 @@ impl Session {
         cwd: Option<String>,
         rows: u16,
         cols: u16,
-    ) -> Result<(Self, broadcast::Receiver<SessionEvent>)> {
+    ) -> Result<(Self, SessionSubscription)> {
         let (event_tx, events) = broadcast::channel(SESSION_EVENT_BUFFER);
+        let event_state = Arc::new(Mutex::new(SessionEventState {
+            next_output_seq: 1,
+            ..SessionEventState::default()
+        }));
 
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -82,6 +106,7 @@ impl Session {
 
         let reader_session_id = id.clone();
         let reader_event_tx = event_tx.clone();
+        let reader_event_state = event_state.clone();
         let reader_thread = thread::Builder::new()
             .name(format!("pty-reader-{reader_session_id}"))
             .spawn(move || {
@@ -90,18 +115,22 @@ impl Session {
                     match reader.read(&mut buffer) {
                         Ok(0) => break,
                         Ok(n) => {
-                            let data_b64 = BASE64.encode(&buffer[..n]);
-                            if reader_event_tx
-                                .send(SessionEvent::Output { data_b64 })
-                                .is_err()
-                            {
-                                debug!(session_id = %reader_session_id, "PTY output had no subscribers");
-                            }
+                            publish_output(
+                                &reader_session_id,
+                                &reader_event_tx,
+                                &reader_event_state,
+                                &buffer[..n],
+                            );
                         }
                         Err(err) => {
-                            let _ = reader_event_tx.send(SessionEvent::Error {
-                                message: format!("PTY read failed: {err}"),
-                            });
+                            publish_event(
+                                &reader_session_id,
+                                &reader_event_tx,
+                                &reader_event_state,
+                                SessionEvent::Error {
+                                    message: format!("PTY read failed: {err}"),
+                                },
+                            );
                             break;
                         }
                     }
@@ -113,27 +142,48 @@ impl Session {
         let waiter_running = running.clone();
         let waiter_session_id = id.clone();
         let waiter_event_tx = event_tx.clone();
+        let waiter_event_state = event_state.clone();
         thread::Builder::new()
             .name(format!("pty-waiter-{waiter_session_id}"))
             .spawn(move || {
                 let wait_result = child.wait();
                 if reader_thread.join().is_err() {
-                    let _ = waiter_event_tx.send(SessionEvent::Error {
-                        message: "PTY reader thread panicked".to_string(),
-                    });
+                    publish_event(
+                        &waiter_session_id,
+                        &waiter_event_tx,
+                        &waiter_event_state,
+                        SessionEvent::Error {
+                            message: "PTY reader thread panicked".to_string(),
+                        },
+                    );
                 }
 
                 waiter_running.store(false, Ordering::Release);
                 match wait_result {
                     Ok(exit_status) => {
                         let status = i32::try_from(exit_status.exit_code()).ok();
-                        let _ = waiter_event_tx.send(SessionEvent::Exit { status });
+                        publish_event(
+                            &waiter_session_id,
+                            &waiter_event_tx,
+                            &waiter_event_state,
+                            SessionEvent::Exit { status },
+                        );
                     }
                     Err(err) => {
-                        let _ = waiter_event_tx.send(SessionEvent::Error {
-                            message: format!("failed to wait for PTY child: {err}"),
-                        });
-                        let _ = waiter_event_tx.send(SessionEvent::Exit { status: None });
+                        publish_event(
+                            &waiter_session_id,
+                            &waiter_event_tx,
+                            &waiter_event_state,
+                            SessionEvent::Error {
+                                message: format!("failed to wait for PTY child: {err}"),
+                            },
+                        );
+                        publish_event(
+                            &waiter_session_id,
+                            &waiter_event_tx,
+                            &waiter_event_state,
+                            SessionEvent::Exit { status: None },
+                        );
                     }
                 }
             })
@@ -147,13 +197,27 @@ impl Session {
                 child_killer: Mutex::new(child_killer),
                 running,
                 event_tx,
+                event_state,
             },
-            events,
+            SessionSubscription {
+                replay: Vec::new(),
+                events,
+            },
         ))
     }
 
-    pub fn subscribe(&self) -> broadcast::Receiver<SessionEvent> {
-        self.event_tx.subscribe()
+    pub fn subscribe(&self) -> Result<SessionSubscription> {
+        let state = self
+            .event_state
+            .lock()
+            .map_err(|_| anyhow!("session event state mutex poisoned"))?;
+        let events = self.event_tx.subscribe();
+        let replay = state
+            .replay
+            .iter()
+            .map(|entry| entry.event.clone())
+            .collect();
+        Ok(SessionSubscription { replay, events })
     }
 
     pub fn is_running(&self) -> bool {
@@ -198,6 +262,59 @@ impl Session {
             Err(_) => warn!(session_id = %self.id, "child mutex poisoned while killing session"),
         }
     }
+}
+
+fn publish_output(
+    session_id: &str,
+    event_tx: &broadcast::Sender<SessionEvent>,
+    event_state: &Mutex<SessionEventState>,
+    bytes: &[u8],
+) {
+    let mut state = match event_state.lock() {
+        Ok(state) => state,
+        Err(_) => {
+            warn!(%session_id, "session event state mutex poisoned while publishing output");
+            return;
+        }
+    };
+
+    let event = SessionEvent::Output {
+        seq: state.next_output_seq,
+        data_b64: BASE64.encode(bytes),
+    };
+    state.next_output_seq += 1;
+    state.replay_bytes += bytes.len();
+    state.replay.push_back(ReplayEntry {
+        event: event.clone(),
+        bytes: bytes.len(),
+    });
+    while state.replay_bytes > SESSION_REPLAY_BUFFER_BYTES {
+        if let Some(entry) = state.replay.pop_front() {
+            state.replay_bytes -= entry.bytes;
+        } else {
+            break;
+        }
+    }
+
+    if event_tx.send(event).is_err() {
+        debug!(%session_id, "PTY output had no live subscribers; retained for replay");
+    }
+}
+
+fn publish_event(
+    session_id: &str,
+    event_tx: &broadcast::Sender<SessionEvent>,
+    event_state: &Mutex<SessionEventState>,
+    event: SessionEvent,
+) {
+    let _state = match event_state.lock() {
+        Ok(state) => state,
+        Err(_) => {
+            warn!(%session_id, "session event state mutex poisoned while publishing event");
+            return;
+        }
+    };
+    let _ = event_tx.send(event);
 }
 
 fn default_shell() -> String {

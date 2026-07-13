@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: session persistence baseline complete
+Stage: bounded terminal replay baseline complete
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: preview persistence, then app state/config and security hardening
+Next focus: preview replay, then app state/config and security hardening
 ```
 
 The Windows tech stack is now:
@@ -106,6 +106,39 @@ Acceptance criteria:
 - [x] Start app, type in pane 1, close app, reopen app, same backend session responds.
 - [x] `./dev electron-test` passes.
 - [x] protocol/docs updated for session lifecycle behavior.
+
+### Milestone: bounded terminal replay
+
+Status: complete and ready for manual preview.
+
+Goal:
+
+```text
+Reopening Electron restores recent terminal output and the latest shell prompt before live output continues.
+```
+
+Tasks:
+
+- [x] Add a bounded 2 MiB output replay buffer per hub session.
+- [x] Add monotonic sequence numbers to terminal output messages.
+- [x] Atomically capture replay plus a live subscription without gaps or duplicates.
+- [x] Replay buffered output after `attached` and before queued live output.
+- [x] Ignore duplicate output and expose sequence gaps in frontend state.
+- [x] Verify detached output replay with a real WebSocket/PTY integration test.
+- [x] Verify close/reopen restores pre-close terminal output in Playwright.
+
+Acceptance criteria:
+
+- [x] Reopened shell shows recent output rather than a blank terminal.
+- [x] New shell commands continue after replay.
+- [x] Replay transitions to live output with no detected sequence gap.
+- [x] Replay memory is bounded per session.
+
+Limitations:
+
+- replay is bounded raw terminal output, not a canonical terminal-screen snapshot;
+- very old output beyond the 2 MiB window is discarded;
+- exact restoration of arbitrary full-screen applications still needs snapshot/resync semantics.
 
 ## Near-term product foundation
 

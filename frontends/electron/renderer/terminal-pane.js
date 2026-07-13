@@ -422,8 +422,9 @@ class TerminalPane {
   handleHubOutput(message) {
     const bytes = base64ToBytes(message.data_b64 || '');
     const text = decoder.decode(bytes);
-    this.sessionModel.recordOutput(this.state, text);
-    this.state.terminal.write(bytes);
+    if (this.sessionModel.recordOutput(this.state, text, message.seq)) {
+      this.state.terminal.write(bytes);
+    }
   }
 
   handleHubClose() {

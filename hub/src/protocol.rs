@@ -49,6 +49,7 @@ pub enum ServerMessage {
     },
     Output {
         session_id: String,
+        seq: u64,
         data_b64: String,
     },
     Exit {
