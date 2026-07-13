@@ -130,6 +130,34 @@ async function pressTerminalKey(page, paneId, key) {
   await page.keyboard.press(key);
 }
 
+async function terminalPoint(page, paneId, { xFraction = 0.5, yFraction = 0.5 } = {}) {
+  const paneIndex = paneIds.indexOf(paneId) + 1;
+  const screen = page.locator(`#terminal-${paneIndex} .xterm-screen`);
+  const box = await screen.boundingBox();
+  assert(box, `xterm screen has no bounding box for ${paneId}`);
+  return {
+    x: box.x + box.width * xFraction,
+    y: box.y + box.height * yFraction,
+  };
+}
+
+async function terminalCellPoint(page, paneId, row, column) {
+  const pane = (await getState(page)).panes.find((candidate) => candidate.paneId === paneId);
+  assert(pane, `missing terminal state for ${paneId}`);
+  assert(row >= 1 && row <= pane.rows, `terminal row ${row} is outside ${paneId}`);
+  assert(column >= 1 && column <= pane.cols, `terminal column ${column} is outside ${paneId}`);
+  return terminalPoint(page, paneId, {
+    xFraction: (column - 0.5) / pane.cols,
+    yFraction: (row - 0.5) / pane.rows,
+  });
+}
+
+async function clickTerminal(page, paneId, options) {
+  const point = await terminalPoint(page, paneId, options);
+  await page.mouse.click(point.x, point.y);
+  return point;
+}
+
 async function verifyMouseReporting(page, paneId, token) {
   const ready = `mouse-ready-${token}`;
   const script = [
@@ -152,11 +180,7 @@ async function verifyMouseReporting(page, paneId, token) {
   await sendText(page, paneId, command);
   await waitForOutput(page, paneId, ready);
 
-  const paneIndex = paneIds.indexOf(paneId) + 1;
-  const screen = page.locator(`#terminal-${paneIndex} .xterm-screen`);
-  const box = await screen.boundingBox();
-  assert(box, `xterm screen has no bounding box for ${paneId}`);
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await clickTerminal(page, paneId);
   await waitForOutput(page, paneId, 'mouse-bytes-');
 
   const state = await getState(page);
@@ -168,6 +192,72 @@ async function verifyMouseReporting(page, paneId, token) {
     /^\x1b\[<0;\d+;\d+M\x1b\[<0;\d+;\d+m$/.test(report),
     `unexpected SGR mouse report: ${JSON.stringify(report)}`,
   );
+}
+
+async function verifyTmuxMouseBehavior(page, paneId, token) {
+  const clickExpected = `tmux-click-0-${token}`;
+  await clickTerminal(page, paneId, { xFraction: 0.25, yFraction: 0.35 });
+  const clickCommand = `v=$(tmux display-message -p '#{pane_index}'); printf 'tmux-click-%s-%s\\n' "$v" '${token}'\n`;
+  assertMarkerIsNotEchoed(clickCommand, clickExpected);
+  await sendText(page, paneId, clickCommand);
+  await waitForOutput(page, paneId, clickExpected);
+
+  const historyExpected = `tmux-history-${token}`;
+  const historyCommand = `i=0; while [ $i -lt 120 ]; do printf 'tmux-line-%03d\\n' "$i"; i=$((i+1)); done; printf 'tmux-history-%s\\n' '${token}'\n`;
+  assertMarkerIsNotEchoed(historyCommand, historyExpected);
+  await sendText(page, paneId, historyCommand);
+  await waitForOutput(page, paneId, historyExpected);
+
+  const leftPoint = await terminalPoint(page, paneId, { xFraction: 0.25, yFraction: 0.35 });
+  await page.mouse.move(leftPoint.x, leftPoint.y);
+  await page.mouse.wheel(0, -600);
+  await page.waitForTimeout(200);
+
+  await clickTerminal(page, paneId, { xFraction: 0.75, yFraction: 0.35 });
+  const wheelExpected = `tmux-wheel-1-${token}`;
+  const wheelCommand = `v=$(tmux display-message -p -t ':0.0' '#{pane_in_mode}'); printf 'tmux-wheel-%s-%s\\n' "$v" '${token}'\n`;
+  assertMarkerIsNotEchoed(wheelCommand, wheelExpected);
+  await sendText(page, paneId, wheelCommand);
+  await waitForOutput(page, paneId, wheelExpected);
+  await sendText(page, paneId, "tmux copy-mode -q -t ':0.0'\n");
+}
+
+async function verifyNeovimMouseBehavior(page, paneId, token) {
+  const sourcePath = `/tmp/neoncode-nvim-mouse-${token}.txt`;
+  const resultPath = `/tmp/neoncode-nvim-mouse-result-${token}.txt`;
+  const ready = `nvim-mouse-ready-${token}`;
+  const launchCommand = `seq -f 'line-%02g' 1 80 > '${sourcePath}'; printf 'nvim-mouse-ready-%s\\n' '${token}'; nvim -u NONE -n -c 'set mouse=a laststatus=0 noshowmode noruler' '${sourcePath}'\n`;
+  assertMarkerIsNotEchoed(launchCommand, ready);
+  await sendText(page, paneId, launchCommand);
+  await waitForOutput(page, paneId, ready);
+  await page.waitForTimeout(500);
+
+  const targetRow = 7;
+  const point = await terminalCellPoint(page, paneId, targetRow, 6);
+  await page.mouse.click(point.x, point.y);
+  await sendText(page, paneId, `\x1b:call writefile([string(line('.'))], '${resultPath}')\n`);
+  await page.waitForTimeout(100);
+
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.wheel(0, 800);
+  await page.waitForTimeout(200);
+  await sendText(page, paneId, `\x1b:call writefile([string(line('w0'))], '${resultPath}', 'a')\n:qa!\n`);
+  await page.waitForTimeout(300);
+
+  const resultPrefix = 'nvim-mouse-result-';
+  const resultExpected = `${resultPrefix}${targetRow}`;
+  const verifyCommand = `printf '${resultPrefix}'; cat '${resultPath}'; rm -f '${sourcePath}' '${resultPath}'\n`;
+  assertMarkerIsNotEchoed(verifyCommand, resultExpected);
+  await sendText(page, paneId, verifyCommand);
+  await waitForOutput(page, paneId, resultExpected);
+
+  const output = (await getState(page)).panes.find((pane) => pane.paneId === paneId).recentOutput;
+  const result = [...output.matchAll(/nvim-mouse-result-(\d+)\r?\n(\d+)/g)].at(-1);
+  assert(result, 'Neovim mouse result was not captured');
+  const clickedLine = Number.parseInt(result[1], 10);
+  const viewportTop = Number.parseInt(result[2], 10);
+  assert(clickedLine === targetRow, `Neovim click selected line ${clickedLine}, expected ${targetRow}`);
+  assert(viewportTop > 1, `Neovim wheel did not scroll the viewport: top line ${viewportTop}`);
 }
 
 async function waitForOutput(page, paneId, expected) {
@@ -512,6 +602,9 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
     const tmuxSocket = `neoncode-${runToken}`;
     await sendText(page, 'tasks', `tmux -f /dev/null -L '${tmuxSocket}' new-session -s '${tmuxSession}'\n`);
     await page.waitForTimeout(500);
+    await sendText(page, 'tasks', "tmux set-option -g mouse on; tmux split-window -h\n");
+    await page.waitForTimeout(300);
+    await verifyTmuxMouseBehavior(page, 'tasks', runToken);
     const tmuxLiveExpected = `tmux-live-${runToken}`;
     const tmuxLiveCommand = `printf 'tmux-live-%s\\n' '${runToken}'\n`;
     assertMarkerIsNotEchoed(tmuxLiveCommand, tmuxLiveExpected);
@@ -540,6 +633,7 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
     assertMarkerIsNotEchoed(nvimVerifyCommand, nvimExpected);
     await sendText(page, 'tasks', nvimVerifyCommand);
     await waitForOutput(page, 'tasks', nvimExpected);
+    await verifyNeovimMouseBehavior(page, 'tasks', runToken);
   }
 
   const beforeResize = await getState(page);

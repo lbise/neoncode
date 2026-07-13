@@ -245,7 +245,7 @@ Still needed:
 - [x] Neovim interactive insert/write/exit behavior;
 - [x] tmux interactive command/detach behavior;
 - [x] xterm SGR press/release mouse reporting to the Linux PTY;
-- [ ] application-specific mouse behavior in Neovim/tmux;
+- [x] application-specific mouse behavior: tmux split selection/copy-mode wheel and Neovim cursor/viewport interaction;
 - [x] Initial 2,000-line heavy-output continuity test;
 - [x] 20,000-line output soak under 30 seconds with no sequence gap;
 - [ ] Extended multi-minute performance soak;

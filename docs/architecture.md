@@ -184,18 +184,17 @@ Currently validated:
 - command execution in both panes without shell-echo false positives;
 - paste normalization without global clipboard state;
 - resize propagation matching `stty size` without foreground-window automation;
-- Ctrl+C;
-- tmux/nvim availability.
+- Ctrl+C/D/Z and navigation/function keys;
+- selection/copy and paste deduplication;
+- interactive tmux and Neovim workflows;
+- SGR mouse reporting plus tmux split/copy-mode and Neovim cursor/viewport mouse behavior;
+- bounded heavy-output and reconnect/attach continuity.
 
 Still needs validation/hardening:
 
-- deeper tmux behavior;
-- deeper Neovim behavior;
-- mouse mode;
-- Ctrl+D / Ctrl+Z;
-- copy/selection behavior;
-- long output/performance soak;
-- reconnect/attach frontend behavior.
+- extended multi-minute output/performance soaking;
+- long-session and repeated reconnect/replay stability;
+- broader fake-hub timeout, protocol-error, and reconnect race coverage.
 
 ## Session model direction
 

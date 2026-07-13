@@ -135,16 +135,18 @@ Explicit app commands:
 ./dev electron
 ```
 
-## Next validation checklist
+## Validation status
 
-Before building much more product UX, validate:
+Validated through the real Electron/xterm/hub/PTY path:
 
-- Ctrl+D;
-- Ctrl+Z;
-- broader Alt key combinations;
+- Ctrl+D and Ctrl+Z;
 - copy/selection;
-- Neovim interactive behavior;
-- tmux interactive behavior;
-- mouse mode in Neovim/tmux;
-- large output throughput;
-- long-session soak.
+- interactive Neovim and tmux behavior;
+- SGR mouse reporting plus application-specific Neovim/tmux click and wheel behavior;
+- bounded large-output throughput.
+
+Still needed:
+
+- broader Alt key combinations;
+- extended multi-minute output soaking;
+- long-session and repeated reconnect/replay stability.
