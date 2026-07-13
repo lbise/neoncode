@@ -58,7 +58,7 @@ function Copy-ElectronAppFiles {
     )
 
     New-Item -ItemType Directory -Force -Path $DestinationDirectory | Out-Null
-    foreach ($file in @("package.json", "package-lock.json", "main.js", "preload.js", "index.html", "styles.css", "renderer.js")) {
+    foreach ($file in @("package.json", "package-lock.json", "main.js", "preload.js", "config-store.js", "index.html", "styles.css", "renderer.js")) {
         $source = Join-Path $SourceDirectory $file
         if (Test-Path -LiteralPath $source -PathType Leaf) {
             Copy-Item -LiteralPath $source -Destination (Join-Path $DestinationDirectory $file) -Force
@@ -128,8 +128,10 @@ switch ($Command) {
             throw "Published Electron app not found at $OutputPath. Run './dev publish' first."
         }
 
-        $env:NEONCODE_TERMINAL_COUNT = [string]$TerminalCount
-        Write-Host "Terminal count: $env:NEONCODE_TERMINAL_COUNT"
+        if ($PSBoundParameters.ContainsKey("TerminalCount")) {
+            $env:NEONCODE_TERMINAL_COUNT = [string]$TerminalCount
+            Write-Host "Terminal count override: $env:NEONCODE_TERMINAL_COUNT"
+        }
         Invoke-Npm -WorkingDirectory $publishedDir -Arguments "start"
     }
 }

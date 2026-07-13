@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Local Electron/hub security baseline implemented; Windows auth regression rerun blocked by Defender
+Stage: Persisted desktop configuration baseline ready for manual preview
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: clear the Electron runtime false positive, rerun GUI tests, then persist app configuration
+Next focus: evaluate configured launch profiles/state restoration, then add protocol identity and reconnect
 ```
 
 The Windows tech stack is now:
@@ -142,6 +142,44 @@ Limitations:
 - very old output beyond the 2 MiB window is discarded;
 - exact restoration of arbitrary full-screen applications still needs snapshot/resync semantics.
 
+### Milestone: persisted desktop configuration
+
+Status: complete and ready for manual preview.
+
+Goal:
+
+```text
+Let users configure the local hub endpoint, stable sessions, launch commands/cwd, and close policy while NeonCode safely restores app-owned window state.
+```
+
+Tasks:
+
+- [x] Add versioned `config.json` and `state.json` under `%APPDATA%\\NeonCode`.
+- [x] Keep filesystem access in Electron main and deeply freeze validated preload bootstrap data.
+- [x] Add strict schema/resource/loopback validation and version-0 migration.
+- [x] Add atomic writes, valid backups, malformed-file preservation, recovery warnings, and future-schema protection.
+- [x] Add one/two-pane process launch profiles with explicit command/args/cwd.
+- [x] Add configurable pane IDs/titles and detach/kill close policy.
+- [x] Persist and restore window content size.
+- [x] Add isolated Node and Windows Electron tests for profiles, cwd, state, recovery, invalid config, and both close policies.
+- [x] Document manual configuration and limitations in `docs/configuration.md`.
+
+Acceptance criteria:
+
+- [x] First launch creates safe defaults without persisting the hub token.
+- [x] Configured titles and cwd are applied on Windows.
+- [x] Detach policy preserves/reattaches sessions and kill policy starts fresh sessions.
+- [x] Malformed configuration recovers from backup with a visible warning; unrecoverable configuration starts no sessions.
+- [x] Resized window content dimensions survive close/reopen.
+- [x] `./dev check`, publish, and authenticated `./dev electron-test` pass.
+
+Limitations:
+
+- configuration is user-edited JSON with restart-to-apply; no settings UI/live reload yet;
+- version 1 exposes at most two static panes;
+- font/theme and workspace/layout persistence remain future schema work;
+- changing a configured ID does not automatically kill an old detached hub session.
+
 ## Near-term product foundation
 
 ### 1. App architecture
@@ -149,7 +187,7 @@ Limitations:
 - [x] Move Electron app to product path `frontends/electron`.
 - [ ] Introduce a small state model for panes/sessions/workspaces.
 - [x] Add app-level error display for hub disconnect/session exit/protocol errors.
-- [ ] Add config storage under `%APPDATA%\NeonCode`.
+- [x] Add config storage under `%APPDATA%\NeonCode`.
 - [ ] Load terminal font/theme from app config.
 
 ### 2. Security hardening
@@ -167,7 +205,7 @@ Release-blocking baseline:
 - [x] Refuse non-loopback hub binding; no remote mode is supported yet.
 - [x] Add bounded WebSocket/session event queues plus frame, input, session, attachment, process, ID, and terminal-size limits.
 - [x] Add security integration tests for unauthorized origins/capabilities and invalid/oversized inputs.
-- [ ] Re-run the Electron functional suite with capability authentication after the current Windows Defender false positive against the official Electron runtime is resolved.
+- [x] Re-run the Electron functional suite with capability authentication after restoring the official Electron runtime.
 
 Before treating hostile native local accounts/processes as in-scope or enabling remote access:
 
@@ -198,7 +236,7 @@ Still needed:
 ### 4. Workspace model
 
 - [ ] Define workspace schema.
-- [ ] Define launch profiles:
+- [x] Define user-level process launch profiles supporting:
   - local WSL shell;
   - project cwd shell;
   - custom command;

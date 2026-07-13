@@ -54,7 +54,8 @@ Explicit commands:
 ## Source layout
 
 ```text
-main.js              Electron main process and security policy
+main.js              Electron main process, security policy, and window-state lifecycle
+config-store.js      versioned config/state validation, migration, recovery, and atomic IO
 preload.js           narrow context-isolated desktop bridge
 renderer.js          browser-bundle bootstrap entrypoint
 renderer/app.js      app/bootstrap and pane grid wiring
@@ -66,10 +67,12 @@ renderer/terminal-pane.js
                      xterm.js pane, input, resize, output handling
 renderer/test-api.js
                      structured API enabled only in test mode
-tests/               hidden-window Playwright functional tests
+tests/               Node config/auth tests and hidden-window Playwright functional tests
 ```
 
-On startup, the renderer calls `list_sessions`, attaches matching stable sessions, and starts missing sessions. A normal Electron window close waits for `detached` acknowledgements so hub sessions survive and are reattached on the next launch. Attach replays up to 2 MiB of recent ordered terminal output before live output continues, so normal shell history and prompts reappear.
+On startup, Electron main loads `%APPDATA%\\NeonCode\\config.json`, validates configured sessions/process profiles, and sends a deeply frozen bootstrap object to the renderer. The renderer calls `list_sessions`, attaches matching stable sessions, and starts missing sessions with configured command/args/cwd. The close policy waits for `detached` or `killed` acknowledgements. Attach replays up to 2 MiB of recent ordered terminal output before live output continues, so normal shell history and prompts reappear.
+
+Window content size is stored atomically in `%APPDATA%\\NeonCode\\state.json`. Valid backups and visible recovery diagnostics protect malformed configuration. See [`docs/configuration.md`](../../docs/configuration.md) for the schema, launch-profile examples, and manual preview workflow.
 
 Default panes use stable frontend session keys instead of deriving session identity from UI indexes:
 

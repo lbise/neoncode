@@ -1,7 +1,7 @@
 const { startRendererApp } = require('./renderer/app');
 
 const rendererApp = startRendererApp({
-  env: window.neoncodeDesktop.config,
+  bootstrap: window.neoncodeDesktop.config,
 });
 
 window.neoncodeDesktop.onPrepareClose(async () => {

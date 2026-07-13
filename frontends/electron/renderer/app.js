@@ -3,64 +3,67 @@ const { SessionModel } = require('./session-model');
 const { TerminalPane } = require('./terminal-pane');
 const { installRendererTestApi } = require('./test-api');
 
-const DEFAULT_ENDPOINT = 'ws://127.0.0.1:44777/ws';
-const DEFAULT_TERMINAL_COUNT = 2;
-const DEFAULT_SESSION_PREFIX = 'electron-xterm-shell';
 const MAX_STATIC_TERMINAL_PANES = 2;
 const STARTUP_SESSION_LIST_TIMEOUT_MS = 2000;
-const DEFAULT_PANE_DEFINITIONS = Object.freeze([
-  Object.freeze({ paneId: 'shell', sessionKey: 'shell', terminalElementId: 'terminal-1' }),
-  Object.freeze({ paneId: 'tasks', sessionKey: 'tasks', terminalElementId: 'terminal-2' }),
-]);
-
-function parseTerminalCount(value) {
-  return Number.parseInt(value || String(DEFAULT_TERMINAL_COUNT), 10) || DEFAULT_TERMINAL_COUNT;
-}
-
-function normalizeSessionKey(value, fallback) {
-  const normalized = String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_.-]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return normalized || fallback;
-}
 
 function createSessionId(sessionPrefix, sessionKey) {
-  return `${sessionPrefix}-${normalizeSessionKey(sessionKey, 'session')}`;
+  return `${sessionPrefix}-${sessionKey}`;
 }
 
-function createPaneDescriptors({ terminalCount, sessionPrefix }) {
-  const count = Math.min(MAX_STATIC_TERMINAL_PANES, Math.max(1, terminalCount));
-  return DEFAULT_PANE_DEFINITIONS.slice(0, count).map((definition, index) => ({
-    ...definition,
+function createPaneDescriptors(bootstrap) {
+  return (bootstrap.sessions || []).slice(0, MAX_STATIC_TERMINAL_PANES).map((session, index) => ({
     index,
-    sessionId: createSessionId(sessionPrefix, definition.sessionKey),
+    paneId: session.id,
+    sessionKey: session.id,
+    title: session.title,
+    terminalElementId: `terminal-${index + 1}`,
+    sessionId: createSessionId(bootstrap.sessionPrefix, session.id),
+    launchProfile: { ...session.launchProfile },
   }));
 }
 
-function createAppConfig(env = process.env) {
-  const terminalCount = parseTerminalCount(env.NEONCODE_TERMINAL_COUNT);
-  const sessionPrefix = env.NEONCODE_SESSION_PREFIX || DEFAULT_SESSION_PREFIX;
+function createAppConfig(bootstrap = {}) {
   return {
-    endpoint: env.NEONCODE_HUB_ENDPOINT || DEFAULT_ENDPOINT,
-    capabilityToken: env.NEONCODE_HUB_TOKEN,
-    terminalCount,
-    sessionPrefix,
-    persistSessions: env.NEONCODE_PERSIST_SESSIONS !== '0',
-    testMode: env.NEONCODE_TEST_MODE === '1',
-    panes: createPaneDescriptors({ terminalCount, sessionPrefix }),
+    schemaVersion: bootstrap.schemaVersion,
+    configurationValid: bootstrap.configurationValid === true,
+    endpoint: bootstrap.endpoint || '',
+    capabilityToken: bootstrap.capabilityToken,
+    sessionPrefix: bootstrap.sessionPrefix || '',
+    persistencePolicy: bootstrap.persistencePolicy || 'detach',
+    testMode: bootstrap.testMode === true,
+    diagnostics: {
+      configStatus: bootstrap.diagnostics?.configStatus || 'error',
+      stateStatus: bootstrap.diagnostics?.stateStatus || 'error',
+      warnings: [...(bootstrap.diagnostics?.warnings || [])],
+      errors: [...(bootstrap.diagnostics?.errors || [])],
+    },
+    panes: createPaneDescriptors(bootstrap),
   };
 }
 
 class NeonCodeApp {
-  constructor({ documentRef = document, windowRef = window, env = process.env } = {}) {
+  constructor({ documentRef = document, windowRef = window, bootstrap = {} } = {}) {
     this.document = documentRef;
     this.window = windowRef;
-    this.config = createAppConfig(env);
+    this.config = createAppConfig(bootstrap);
     this.statusElement = this.document.getElementById('status');
+    this.configurationStatusElement = this.document.getElementById('configuration-status');
     this.terminalGrid = this.document.getElementById('terminal-grid');
     this.sessionModel = new SessionModel({ windowRef: this.window });
+    this.sessionModel.setConfiguration({
+      valid: this.config.configurationValid,
+      configStatus: this.config.diagnostics.configStatus,
+      stateStatus: this.config.diagnostics.stateStatus,
+      warnings: this.config.diagnostics.warnings,
+      errors: this.config.diagnostics.errors,
+      persistencePolicy: this.config.persistencePolicy,
+      sessions: this.config.panes.map(({ paneId, title, sessionId, launchProfile }) => ({
+        id: paneId,
+        title,
+        sessionId,
+        launchProfile,
+      })),
+    });
     this.sessionDiscoveryClient = undefined;
     this.knownSessionIds = new Set();
     this.panes = [];
@@ -75,20 +78,53 @@ class NeonCodeApp {
     this.statusElement.textContent = text;
   }
 
+  showConfigurationDiagnostics() {
+    const { warnings, errors } = this.config.diagnostics;
+    if (errors.length > 0) {
+      this.configurationStatusElement.textContent = `Configuration error: ${errors.join('; ')}`;
+      this.configurationStatusElement.dataset.state = 'error';
+    } else if (warnings.length > 0) {
+      this.configurationStatusElement.textContent = warnings.join('; ');
+      this.configurationStatusElement.dataset.state = 'warning';
+    } else {
+      this.configurationStatusElement.textContent = '';
+      this.configurationStatusElement.dataset.state = 'ready';
+    }
+  }
+
   configureGrid() {
-    const count = Math.max(1, this.config.panes.length);
-    this.terminalGrid.style.gridTemplateColumns = `repeat(${count}, minmax(0, 1fr))`;
+    const count = this.config.panes.length;
+    this.terminalGrid.style.gridTemplateColumns = `repeat(${Math.max(1, count)}, minmax(0, 1fr))`;
 
     for (let index = 0; index < MAX_STATIC_TERMINAL_PANES; index += 1) {
-      const pane = this.document.getElementById(`terminal-${index + 1}`)?.parentElement;
-      if (pane) {
-        pane.style.display = index < count ? 'grid' : 'none';
+      const descriptor = this.config.panes[index];
+      const container = this.document.getElementById(`terminal-${index + 1}`);
+      const pane = container?.parentElement;
+      const title = this.document.getElementById(`pane-title-${index + 1}`);
+      const status = this.document.getElementById(`pane-status-${index + 1}`);
+      if (!pane) {
+        continue;
+      }
+      pane.style.display = descriptor ? 'grid' : 'none';
+      if (descriptor) {
+        pane.dataset.testid = `terminal-pane-${descriptor.paneId}`;
+        title.textContent = descriptor.title;
+        title.dataset.testid = `pane-title-${descriptor.paneId}`;
+        status.dataset.testid = `pane-status-${descriptor.paneId}`;
       }
     }
   }
 
   async start() {
     this.configureGrid();
+    this.showConfigurationDiagnostics();
+    if (!this.config.configurationValid) {
+      const message = this.config.diagnostics.errors.join('; ') || 'Configuration is invalid';
+      this.sessionModel.setSessionDiscoveryStatus('configuration_error', message);
+      this.setStatus('Configuration error — edit %APPDATA%\\NeonCode\\config.json and restart');
+      return;
+    }
+
     this.knownSessionIds = new Set(await this.discoverSessions());
     if (this.closed) {
       return;
@@ -181,6 +217,7 @@ class NeonCodeApp {
       activationMode: this.knownSessionIds.has(descriptor.sessionId) ? 'attach' : 'start',
       endpoint: this.config.endpoint,
       capabilityToken: this.config.capabilityToken,
+      launchProfile: descriptor.launchProfile,
       container,
       statusElement: this.document.getElementById(`pane-status-${descriptor.index + 1}`),
       sessionModel: this.sessionModel,
@@ -197,13 +234,8 @@ class NeonCodeApp {
 
     this.closed = true;
     this.sessionDiscoveryClient?.close();
-    this.closePromise = this.config.persistSessions
-      ? Promise.all(this.panes.map((pane) => pane.detachAndClose())).then(() => undefined)
-      : Promise.resolve().then(() => {
-        for (const pane of this.panes) {
-          pane.close();
-        }
-      });
+    const closeMethod = this.config.persistencePolicy === 'kill' ? 'killAndClose' : 'detachAndClose';
+    this.closePromise = Promise.all(this.panes.map((pane) => pane[closeMethod]())).then(() => undefined);
     return this.closePromise;
   }
 
@@ -231,16 +263,11 @@ function startRendererApp(options = {}) {
 }
 
 module.exports = {
-  DEFAULT_ENDPOINT,
-  DEFAULT_PANE_DEFINITIONS,
-  DEFAULT_SESSION_PREFIX,
-  DEFAULT_TERMINAL_COUNT,
+  MAX_STATIC_TERMINAL_PANES,
   STARTUP_SESSION_LIST_TIMEOUT_MS,
   NeonCodeApp,
   createAppConfig,
   createPaneDescriptors,
   createSessionId,
-  normalizeSessionKey,
-  parseTerminalCount,
   startRendererApp,
 };

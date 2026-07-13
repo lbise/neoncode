@@ -37,6 +37,7 @@ Useful commands:
 - [Product requirements](docs/product-requirements.md)
 - [Architecture](docs/architecture.md)
 - [Development plan](docs/development-plan.md)
+- [Desktop configuration](docs/configuration.md)
 - [Hub guide](docs/hub.md)
 - [Hub protocol](docs/protocol.md)
 - [Testing strategy](docs/testing.md)

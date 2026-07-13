@@ -1,10 +1,42 @@
 const { _electron: electron } = require('playwright');
+const { spawn } = require('node:child_process');
+const electronExecutable = require('electron');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const appRoot = path.resolve(__dirname, '..');
 const endpoint = process.env.NEONCODE_HUB_ENDPOINT || 'ws://127.0.0.1:44777/ws';
 const timeout = Number.parseInt(process.env.NEONCODE_PLAYWRIGHT_TIMEOUT || '20000', 10);
 const paneIds = ['shell', 'tasks'];
+
+function writeTestConfig(directory, { persistencePolicy = 'detach' } = {}) {
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, 'config.json'), `${JSON.stringify({
+    schemaVersion: 1,
+    hub: { endpoint: 'ws://127.0.0.1:44777/ws' },
+    sessionPrefix: 'config-file-prefix',
+    persistence: { onWindowClose: persistencePolicy },
+    launchProfiles: {
+      'default-shell': {
+        type: 'process',
+        command: 'bash',
+        args: [],
+        cwd: null,
+      },
+      'tasks-in-tmp': {
+        type: 'process',
+        command: 'bash',
+        args: [],
+        cwd: '/tmp',
+      },
+    },
+    sessions: [
+      { id: 'shell', title: 'Configured Shell', launchProfile: 'default-shell' },
+      { id: 'tasks', title: 'Configured Tasks', launchProfile: 'tasks-in-tmp' },
+    ],
+  }, null, 2)}\n`);
+}
 
 function log(message, details) {
   const payload = details === undefined ? '' : ` ${JSON.stringify(details)}`;
@@ -19,6 +51,7 @@ function assert(condition, message) {
 
 function summarizeState(state) {
   return {
+    configuration: state.configuration,
     panes: state.panes.map(({ recentOutput, ...pane }) => ({
       ...pane,
       recentOutputChars: recentOutput.length,
@@ -27,18 +60,18 @@ function summarizeState(state) {
   };
 }
 
-async function launchApp(sessionPrefix) {
+async function launchApp(sessionPrefix, configDirectory, { expectReady = true } = {}) {
+  const launchEnvironment = {
+    ...process.env,
+    NEONCODE_HUB_ENDPOINT: endpoint,
+    NEONCODE_SESSION_PREFIX: sessionPrefix,
+    NEONCODE_TEST_CONFIG_DIR: configDirectory,
+    NEONCODE_TEST_MODE: '1',
+  };
   const electronApp = await electron.launch({
     args: [appRoot],
     cwd: appRoot,
-    env: {
-      ...process.env,
-      NEONCODE_HUB_ENDPOINT: endpoint,
-      NEONCODE_PERSIST_SESSIONS: '1',
-      NEONCODE_SESSION_PREFIX: sessionPrefix,
-      NEONCODE_TERMINAL_COUNT: '2',
-      NEONCODE_TEST_MODE: '1',
-    },
+    env: launchEnvironment,
   });
   const consoleMessages = [];
   const page = await electronApp.firstWindow({ timeout });
@@ -52,17 +85,28 @@ async function launchApp(sessionPrefix) {
   await page.waitForSelector('[data-testid="app-header"]', { state: 'attached', timeout });
   await page.waitForFunction(() => Boolean(window.neoncodeTest), null, { timeout });
   await page.waitForFunction(
-    () => {
+    (shouldBeReady) => {
       const state = window.neoncodeTest?.getState();
-      return state?.sessionDiscovery?.status === 'ready'
+      if (!shouldBeReady) {
+        return state?.configuration?.valid === false
+          && state?.sessionDiscovery?.status === 'configuration_error';
+      }
+      return state?.configuration?.valid === true
+        && state?.sessionDiscovery?.status === 'ready'
         && state.panes.length === 2
         && state.panes.every((pane) => pane.started);
     },
-    null,
+    expectReady,
     { timeout },
   );
 
-  return { electronApp, page, consoleMessages };
+  return {
+    electronApp,
+    page,
+    consoleMessages,
+    configDirectory,
+    launchEnvironment,
+  };
 }
 
 async function getState(page) {
@@ -160,10 +204,40 @@ async function closeInstance(instance) {
   await instance.electronApp.close();
 }
 
-async function cleanupSessions(sessionPrefix) {
+async function assertSecondInstanceDoesNotTouchConfig(instance) {
+  const backupPath = path.join(instance.configDirectory, 'config.json.bak');
+  const before = fs.statSync(backupPath);
+  const child = spawn(electronExecutable, [appRoot], {
+    cwd: appRoot,
+    env: instance.launchEnvironment,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  });
+  let stderr = '';
+  child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+  const exitCode = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error('second Electron instance did not exit promptly'));
+    }, 10000);
+    child.once('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+  assert(exitCode === 0, `second Electron instance exited with ${exitCode}: ${stderr}`);
+  const after = fs.statSync(backupPath);
+  assert(after.mtimeMs === before.mtimeMs, 'second Electron instance touched configuration backup');
+}
+
+async function cleanupSessions(sessionPrefix, configDirectory) {
   let cleanupInstance;
   try {
-    cleanupInstance = await launchApp(sessionPrefix);
+    cleanupInstance = await launchApp(sessionPrefix, configDirectory);
     await killAllPanes(cleanupInstance);
   } catch (error) {
     log('cleanup.failed', { message: error.message });
@@ -173,24 +247,32 @@ async function cleanupSessions(sessionPrefix) {
 }
 
 async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
-  const { electronApp, page } = instance;
-  const windowState = await electronApp.evaluate(({ BrowserWindow }) => {
+  const { electronApp, page, configDirectory } = instance;
+  const windowState = await electronApp.evaluate(({ app, BrowserWindow }) => {
     const window = BrowserWindow.getAllWindows()[0];
     return {
       visible: window.isVisible(),
       contentSize: window.getContentSize(),
       webPreferences: window.webContents.getLastWebPreferences(),
+      userData: app.getPath('userData'),
     };
   });
   assert(windowState.visible === false, 'test-mode Electron window should remain hidden');
   assert(windowState.webPreferences.contextIsolation === true, 'context isolation is not enabled');
   assert(windowState.webPreferences.nodeIntegration === false, 'renderer Node integration is enabled');
   assert(windowState.webPreferences.sandbox === true, 'renderer sandbox is not enabled');
+  assert(
+    path.resolve(windowState.userData).toLowerCase() === path.resolve(configDirectory).toLowerCase(),
+    `unexpected Electron userData path: ${windowState.userData}`,
+  );
 
   const rendererSecurity = await page.evaluate(async () => {
     const permission = await navigator.permissions.query({ name: 'notifications' });
     const opened = window.open('https://example.com');
     return {
+      configDeepFrozen: Object.isFrozen(window.neoncodeDesktop.config)
+        && Object.isFrozen(window.neoncodeDesktop.config.sessions)
+        && Object.isFrozen(window.neoncodeDesktop.config.sessions[0].launchProfile),
       desktopKeys: Object.keys(window.neoncodeDesktop).sort(),
       nodeProcessType: typeof window.process,
       nodeRequireType: typeof window.require,
@@ -198,6 +280,7 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
       permission: permission.state,
     };
   });
+  assert(rendererSecurity.configDeepFrozen === true, 'preload bootstrap configuration is not deeply frozen');
   assert(rendererSecurity.nodeProcessType === 'undefined', 'renderer exposes Node process');
   assert(rendererSecurity.nodeRequireType === 'undefined', 'renderer exposes Node require');
   assert(rendererSecurity.openedWindow === false, 'renderer opened an external window');
@@ -209,9 +292,13 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
 
   const windowCount = await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
   assert(windowCount === 1, `unexpected Electron window count after denied window.open: ${windowCount}`);
+  await assertSecondInstanceDoesNotTouchConfig(instance);
 
   const initialState = await getState(page);
   log('state.first-launch', summarizeState(initialState));
+  assert(initialState.configuration.valid === true, 'persisted configuration was not valid');
+  assert(initialState.configuration.configStatus === 'loaded', `unexpected config status ${initialState.configuration.configStatus}`);
+  assert(initialState.configuration.persistencePolicy === 'detach', 'configured close policy was not applied');
   assert(initialState.sessionDiscovery.sessionListEvents >= 1, 'startup did not list hub sessions');
   assert(
     !initialState.sessionDiscovery.sessions.some((sessionId) => sessionId.startsWith(`${sessionPrefix}-`)),
@@ -229,9 +316,23 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
     }
   }
   await assertPaneLifecycles(instance, 'started');
+  assert(
+    await page.getByTestId('pane-title-shell').textContent() === 'Configured Shell',
+    'configured shell title was not rendered',
+  );
+  assert(
+    await page.getByTestId('pane-title-tasks').textContent() === 'Configured Tasks',
+    'configured tasks title was not rendered',
+  );
 
   await verifyExecutedCommand(page, 'shell', 'shell-command', runToken);
   await verifyExecutedCommand(page, 'tasks', 'tasks-command', runToken);
+
+  const cwdExpected = `cwd-/tmp-${runToken}`;
+  const cwdCommand = `printf 'cwd-%s-%s\\n' "$PWD" '${runToken}'\n`;
+  assertMarkerIsNotEchoed(cwdCommand, cwdExpected);
+  await sendText(page, 'tasks', cwdCommand);
+  await waitForOutput(page, 'tasks', cwdExpected);
 
   const pasteExpected = `paste-${runToken}`;
   const pasteCommand = `printf 'paste-%s\\n' '${runToken}'\r\n`;
@@ -298,11 +399,28 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
 }
 
 async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
+  const restoredWindowSize = await instance.electronApp.evaluate(({ BrowserWindow }) => (
+    BrowserWindow.getAllWindows()[0].getContentSize()
+  ));
+  assert(
+    restoredWindowSize[0] === 1400 && restoredWindowSize[1] === 900,
+    `window size was not restored: ${restoredWindowSize.join('x')}`,
+  );
+
   const seedExpected = `seed-${runToken}`;
   await waitForOutput(instance.page, 'shell', seedExpected);
 
   const state = await getState(instance.page);
   log('state.second-launch', summarizeState(state));
+  assert(state.configuration.configStatus === 'recovered', `expected recovered config, got ${state.configuration.configStatus}`);
+  assert(
+    state.configuration.warnings.some((warning) => warning.includes('restored from config.json.bak')),
+    'configuration recovery warning was not exposed',
+  );
+  assert(
+    await instance.page.getByTestId('configuration-status').getAttribute('data-state') === 'warning',
+    'configuration recovery warning was not visible',
+  );
   const expectedSessionIds = [`${sessionPrefix}-shell`, `${sessionPrefix}-tasks`];
   for (const sessionId of expectedSessionIds) {
     assert(
@@ -328,26 +446,89 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
   await waitForOutput(instance.page, 'shell', restoredExpected);
 }
 
+async function runKillPolicyCheck(runToken) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-kill-policy-'));
+  const sessionPrefix = `kill-policy-${runToken}`;
+  let instance;
+  try {
+    writeTestConfig(directory, { persistencePolicy: 'kill' });
+    instance = await launchApp(sessionPrefix, directory);
+    const firstState = await getState(instance.page);
+    assert(firstState.configuration.persistencePolicy === 'kill', 'kill close policy was not loaded');
+    await closeInstance(instance);
+    instance = undefined;
+
+    instance = await launchApp(sessionPrefix, directory);
+    const secondState = await getState(instance.page);
+    assert(
+      !secondState.sessionDiscovery.sessions.some((sessionId) => sessionId.startsWith(`${sessionPrefix}-`)),
+      'kill close policy left sessions running after window close',
+    );
+    await assertPaneLifecycles(instance, 'started');
+    await killAllPanes(instance);
+  } finally {
+    await closeInstance(instance).catch(() => {});
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+async function runInvalidConfigurationCheck(runToken) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-invalid-config-'));
+  let instance;
+  try {
+    fs.writeFileSync(path.join(directory, 'config.json'), JSON.stringify({
+      schemaVersion: 1,
+      unexpected: true,
+    }));
+    instance = await launchApp(`invalid-${runToken}`, directory, { expectReady: false });
+    const state = await getState(instance.page);
+    assert(state.configuration.valid === false, 'invalid configuration was accepted');
+    assert(state.configuration.errors.length > 0, 'invalid configuration error was not exposed');
+    assert(state.panes.length === 0, 'invalid configuration launched terminal panes');
+    assert(state.sessionDiscovery.sessionListEvents === 0, 'invalid configuration connected to the hub');
+    assert(
+      await instance.page.getByTestId('configuration-status').getAttribute('data-state') === 'error',
+      'invalid configuration was not visibly reported',
+    );
+  } finally {
+    await closeInstance(instance).catch(() => {});
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   log('launch', { appRoot, endpoint });
   const runToken = `${Date.now()}`;
   const sessionPrefix = `electron-playwright-${runToken}`;
+  const configDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-electron-config-'));
+  writeTestConfig(configDirectory);
   let instance;
   let sessionsCleaned = false;
 
   try {
-    instance = await launchApp(sessionPrefix);
+    instance = await launchApp(sessionPrefix, configDirectory);
     await runFirstLaunchChecks(instance, sessionPrefix, runToken);
     await closeInstance(instance);
     instance = undefined;
 
-    instance = await launchApp(sessionPrefix);
+    const persistedState = JSON.parse(fs.readFileSync(path.join(configDirectory, 'state.json'), 'utf8'));
+    assert(
+      persistedState.window.width === 1400 && persistedState.window.height === 900,
+      `window state was not persisted: ${JSON.stringify(persistedState.window)}`,
+    );
+    fs.writeFileSync(path.join(configDirectory, 'config.json'), '{ intentionally invalid');
+
+    instance = await launchApp(sessionPrefix, configDirectory);
     await runSecondLaunchChecks(instance, sessionPrefix, runToken);
     await killAllPanes(instance);
     sessionsCleaned = true;
 
     const finalState = await getState(instance.page);
     log('state.final', summarizeState(finalState));
+    await closeInstance(instance);
+    instance = undefined;
+    await runKillPolicyCheck(runToken);
+    await runInvalidConfigurationCheck(runToken);
     log('passed');
   } catch (error) {
     log('failed', { message: error.message, consoleMessages: instance?.consoleMessages || [] });
@@ -365,8 +546,9 @@ async function main() {
       await closeInstance(instance).catch(() => {});
     }
     if (!sessionsCleaned) {
-      await cleanupSessions(sessionPrefix);
+      await cleanupSessions(sessionPrefix, configDirectory);
     }
+    fs.rmSync(configDirectory, { recursive: true, force: true });
   }
 }
 

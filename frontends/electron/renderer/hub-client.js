@@ -167,11 +167,13 @@ class HubClient {
     });
   }
 
-  start({ command = 'bash', rows = 30, cols = 120 }) {
+  start({ command = 'bash', args = [], cwd = null, rows = 30, cols = 120 }) {
     return this.send({
       type: 'start',
       session_id: this.sessionId,
       command,
+      args,
+      cwd,
       rows,
       cols,
     });

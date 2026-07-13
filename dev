@@ -110,11 +110,7 @@ publish_electron_app() {
 
 run_electron_app() {
   ensure_hub_token
-  if [[ $# -gt 0 ]]; then
-    ps_file 'scripts\electron-app.ps1' -Command start "$@"
-  else
-    ps_file 'scripts\electron-app.ps1' -Command start -TerminalCount 2
-  fi
+  ps_file 'scripts\electron-app.ps1' -Command start "$@"
 }
 
 command="${1:-help}"
@@ -160,6 +156,7 @@ case "$command" in
     done < <(find frontends/electron \
       -path 'frontends/electron/node_modules' -prune -o \
       -name '*.js' -print0)
+    node frontends/electron/tests/config-store.js
     node frontends/electron/tests/hub-client-auth.js
     cargo fmt --check
     cargo check

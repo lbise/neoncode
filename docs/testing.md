@@ -60,7 +60,7 @@ Use injected/fake dependencies for:
 - timers/reconnect backoff;
 - persisted configuration.
 
-The current `frontends/electron/tests/hub-client-auth.js` test uses a mock WebSocket plus Node Web Crypto to verify that the renderer sends no bearer token, accepts a valid reciprocal hub proof, and rejects a fake hub proof. `./dev check` runs it without Electron.
+The current `frontends/electron/tests/hub-client-auth.js` test uses a mock WebSocket plus Node Web Crypto to verify that the renderer sends no bearer token, accepts a valid reciprocal hub proof, and rejects a fake hub proof. `frontends/electron/tests/config-store.js` covers first-run defaults, environment precedence, migration, strict validation, backup recovery, future schemas, state clamping/persistence, stale temporary-file cleanup, unusable missing-primary backups, and injected backup-write failures. `./dev check` runs both without Electron.
 
 This layer should verify state transitions such as:
 
@@ -135,5 +135,7 @@ Then assert `result-token`. Other options are base64-decoding a random token in 
 - [x] Remove the old focus-sensitive PowerShell functional smoke scripts.
 - [x] Add close/reopen/reattach coverage using a stable session prefix and a real test hub.
 - [x] Verify pre-close output is replayed with contiguous output sequence numbers after reattach.
+- [x] Use an isolated desktop config directory for every Electron test run.
+- [x] Verify configured pane titles and process cwd, detach/kill close policies, single-instance storage ownership, atomic window-size restoration, malformed-config backup recovery, and visible unrecoverable-config errors.
 - [ ] Add renderer tests with a fake hub for errors, timeouts, and reconnect state transitions.
 - [ ] Add a narrow PowerShell window-launch/desktop compatibility smoke when installer/DPI/multi-monitor work begins.

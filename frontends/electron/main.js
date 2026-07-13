@@ -1,31 +1,101 @@
-const { app, BrowserWindow, Menu, clipboard, ipcMain, session } = require('electron');
+const { app, BrowserWindow, Menu, clipboard, ipcMain, screen, session } = require('electron');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const fs = require('node:fs');
 
+const { ConfigStore, defaultState } = require('./config-store');
+
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-gpu-compositing');
+app.setName('NeonCode');
+
+const testMode = process.env.NEONCODE_TEST_MODE === '1';
+const hubCapabilityToken = process.env.NEONCODE_HUB_TOKEN;
+if (!/^[0-9a-fA-F]{64}$/.test(hubCapabilityToken || '')) {
+  throw new Error('NEONCODE_HUB_TOKEN must contain exactly 64 hexadecimal characters');
+}
+
+function resolveConfigDirectory() {
+  const testDirectory = process.env.NEONCODE_TEST_CONFIG_DIR;
+  if (testDirectory) {
+    if (!testMode) {
+      throw new Error('NEONCODE_TEST_CONFIG_DIR is allowed only when NEONCODE_TEST_MODE=1');
+    }
+    if (!path.isAbsolute(testDirectory)) {
+      throw new Error('NEONCODE_TEST_CONFIG_DIR must be absolute');
+    }
+    return path.normalize(testDirectory);
+  }
+  return path.join(app.getPath('appData'), 'NeonCode');
+}
+
+const configDirectory = resolveConfigDirectory();
+fs.mkdirSync(configDirectory, { recursive: true });
+app.setPath('userData', configDirectory);
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+let configStore;
+let desktopState = defaultState();
+let bootstrapResult = {
+  config: null,
+  state: desktopState,
+  diagnostics: {
+    configStatus: 'error',
+    stateStatus: 'error',
+    warnings: [],
+    errors: ['another NeonCode instance already owns the configuration directory'],
+  },
+};
+if (hasSingleInstanceLock) {
+  configStore = new ConfigStore(configDirectory);
+  try {
+    bootstrapResult = configStore.load(process.env);
+    desktopState = bootstrapResult.state;
+  } catch (error) {
+    bootstrapResult = {
+      config: null,
+      state: desktopState,
+      diagnostics: {
+        configStatus: 'error',
+        stateStatus: 'error',
+        warnings: [],
+        errors: [`configuration storage failed: ${error.message}`],
+      },
+    };
+  }
+}
 
 let mainWindow;
 let logFilePath;
 let allowWindowClose = false;
 let closeRequestInFlight = false;
 let closeTimeout;
-
-const hubCapabilityToken = process.env.NEONCODE_HUB_TOKEN;
-if (!/^[0-9a-fA-F]{64}$/.test(hubCapabilityToken || '')) {
-  throw new Error('NEONCODE_HUB_TOKEN must contain exactly 64 hexadecimal characters');
-}
+let stateSaveTimeout;
 
 function rendererConfig() {
+  const config = bootstrapResult.config;
   return {
-    NEONCODE_HUB_ENDPOINT: process.env.NEONCODE_HUB_ENDPOINT,
-    NEONCODE_HUB_TOKEN: hubCapabilityToken,
-    NEONCODE_PERSIST_SESSIONS: process.env.NEONCODE_PERSIST_SESSIONS,
-    NEONCODE_SESSION_PREFIX: process.env.NEONCODE_SESSION_PREFIX,
-    NEONCODE_TERMINAL_COUNT: process.env.NEONCODE_TERMINAL_COUNT,
-    NEONCODE_TEST_MODE: process.env.NEONCODE_TEST_MODE,
+    schemaVersion: 1,
+    configurationValid: Boolean(config),
+    endpoint: config?.hub.endpoint || '',
+    capabilityToken: hubCapabilityToken,
+    sessionPrefix: config?.sessionPrefix || '',
+    persistencePolicy: config?.persistence.onWindowClose || 'detach',
+    sessions: config
+      ? config.sessions.map((configuredSession) => ({
+        id: configuredSession.id,
+        title: configuredSession.title,
+        launchProfile: { ...config.launchProfiles[configuredSession.launchProfile] },
+      }))
+      : [],
+    diagnostics: {
+      configStatus: bootstrapResult.diagnostics.configStatus,
+      stateStatus: bootstrapResult.diagnostics.stateStatus,
+      warnings: [...bootstrapResult.diagnostics.warnings],
+      errors: [...bootstrapResult.diagnostics.errors],
+    },
+    testMode,
   };
 }
 
@@ -34,24 +104,6 @@ ipcMain.on('neoncode:get-renderer-config', (event) => {
 });
 
 ipcMain.handle('neoncode:read-clipboard-text', () => clipboard.readText());
-
-function finishWindowClose(sender) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
-    return;
-  }
-  if (sender && sender !== mainWindow.webContents) {
-    return;
-  }
-
-  clearTimeout(closeTimeout);
-  closeTimeout = undefined;
-  allowWindowClose = true;
-  mainWindow.close();
-}
-
-ipcMain.on('neoncode:close-ready', (event) => {
-  finishWindowClose(event.sender);
-});
 
 function ensureLogFile() {
   if (logFilePath) {
@@ -74,6 +126,56 @@ function log(message, details) {
   }
 }
 
+function saveWindowState() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  clearTimeout(stateSaveTimeout);
+  stateSaveTimeout = undefined;
+  const [width, height] = mainWindow.getContentSize();
+  try {
+    desktopState = configStore.saveState({
+      schemaVersion: 1,
+      window: { width, height },
+    });
+    log('state.saved', desktopState.window);
+  } catch (error) {
+    log('state.save-failed', { message: error.message });
+  }
+}
+
+function scheduleWindowStateSave() {
+  clearTimeout(stateSaveTimeout);
+  stateSaveTimeout = setTimeout(saveWindowState, 250);
+}
+
+function restoredWindowSize() {
+  const workArea = screen.getPrimaryDisplay().workAreaSize;
+  return {
+    width: Math.min(desktopState.window.width, workArea.width),
+    height: Math.min(desktopState.window.height, workArea.height),
+  };
+}
+
+function finishWindowClose(sender) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (sender && sender !== mainWindow.webContents) {
+    return;
+  }
+
+  clearTimeout(closeTimeout);
+  closeTimeout = undefined;
+  saveWindowState();
+  allowWindowClose = true;
+  mainWindow.close();
+}
+
+ipcMain.on('neoncode:close-ready', (event) => {
+  finishWindowClose(event.sender);
+});
+
 function configureSessionSecurity() {
   session.defaultSession.setPermissionCheckHandler(() => false);
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
@@ -83,15 +185,17 @@ function configureSessionSecurity() {
 
 function createWindow() {
   Menu.setApplicationMenu(null);
-  const testMode = process.env.NEONCODE_TEST_MODE === '1';
   const indexPath = path.join(__dirname, 'index.html');
   const appUrl = pathToFileURL(indexPath).toString();
+  const windowSize = restoredWindowSize();
   allowWindowClose = false;
   closeRequestInFlight = false;
 
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    ...windowSize,
+    useContentSize: true,
+    minWidth: 800,
+    minHeight: 600,
     backgroundColor: '#0c0c0c',
     title: 'NeonCode',
     show: !testMode,
@@ -120,7 +224,12 @@ function createWindow() {
   });
 
   mainWindow.loadFile(indexPath);
-  log('window.create');
+  log('window.create', {
+    configStatus: bootstrapResult.diagnostics.configStatus,
+    stateStatus: bootstrapResult.diagnostics.stateStatus,
+    warnings: bootstrapResult.diagnostics.warnings,
+    errors: bootstrapResult.diagnostics.errors,
+  });
 
   mainWindow.webContents.once('did-finish-load', () => {
     log('window.did-finish-load');
@@ -136,7 +245,10 @@ function createWindow() {
   });
   mainWindow.on('focus', () => log('window.focus'));
   mainWindow.on('blur', () => log('window.blur'));
-  mainWindow.on('resize', () => log('window.resize', { contentSize: mainWindow.getContentSize() }));
+  mainWindow.on('resize', () => {
+    log('window.resize', { contentSize: mainWindow.getContentSize() });
+    scheduleWindowStateSave();
+  });
   mainWindow.on('close', (event) => {
     if (allowWindowClose) {
       return;
@@ -148,6 +260,7 @@ function createWindow() {
     }
 
     closeRequestInFlight = true;
+    saveWindowState();
     log('window.prepare-close');
     closeTimeout = setTimeout(() => {
       log('window.prepare-close-timeout');
@@ -161,17 +274,33 @@ function createWindow() {
   });
   mainWindow.on('closed', () => {
     clearTimeout(closeTimeout);
+    clearTimeout(stateSaveTimeout);
     closeTimeout = undefined;
+    stateSaveTimeout = undefined;
     log('window.closed');
     mainWindow = undefined;
   });
 }
 
-app.whenReady().then(() => {
-  configureSessionSecurity();
-  createWindow();
-});
-
-app.on('window-all-closed', () => {
+if (!hasSingleInstanceLock) {
   app.quit();
-});
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow && !testMode) {
+      if (mainWindow.isMinimized()) {
+        mainWindow.restore();
+      }
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  app.whenReady().then(() => {
+    configureSessionSecurity();
+    createWindow();
+  });
+
+  app.on('window-all-closed', () => {
+    app.quit();
+  });
+}

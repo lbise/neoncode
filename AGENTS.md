@@ -21,6 +21,7 @@ frontends/electron/               Electron + xterm.js app, preload, renderer bun
 docs/product-requirements.md      Product requirements / PRD
 docs/architecture.md              Current technical architecture
 docs/development-plan.md          Roadmap and progress tracker
+docs/configuration.md             Electron config/state schema and manual workflow
 docs/hub.md                       Hub usage/lifecycle docs
 docs/protocol.md                  Hub WebSocket protocol docs
 docs/terminal-renderer-decision.md Renderer decision record
@@ -31,6 +32,13 @@ Windows-local publish output:
 
 ```text
 %USERPROFILE%\neoncode-electron
+```
+
+Desktop configuration/state:
+
+```text
+%APPDATA%\NeonCode\config.json
+%APPDATA%\NeonCode\state.json
 ```
 
 Debug log:

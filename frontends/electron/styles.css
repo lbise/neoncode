@@ -28,9 +28,32 @@ header strong {
 }
 
 header span,
-.status {
+.status,
+.configuration-status {
   color: #9ca3af;
   font-size: 13px;
+}
+
+.header-statuses {
+  min-width: 0;
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+}
+
+.configuration-status {
+  max-width: 720px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.configuration-status[data-state="warning"] {
+  color: #facc15;
+}
+
+.configuration-status[data-state="error"] {
+  color: #f87171;
 }
 
 main {

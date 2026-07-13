@@ -1,9 +1,19 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-const config = ipcRenderer.sendSync('neoncode:get-renderer-config');
+function deepFreeze(value) {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const nested of Object.values(value)) {
+      deepFreeze(nested);
+    }
+  }
+  return value;
+}
+
+const config = deepFreeze(ipcRenderer.sendSync('neoncode:get-renderer-config'));
 
 contextBridge.exposeInMainWorld('neoncodeDesktop', Object.freeze({
-  config: Object.freeze(config),
+  config,
 
   readClipboardText() {
     return ipcRenderer.invoke('neoncode:read-clipboard-text');

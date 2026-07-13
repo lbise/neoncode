@@ -31,8 +31,9 @@ Current role:
 
 - default Windows app path;
 - renders terminals with xterm.js;
+- loads validated user configuration and app-owned state from `%APPDATA%\\NeonCode`;
 - performs startup session discovery with `list_sessions`;
-- opens one WebSocket per pane/session for the current prototype;
+- opens one WebSocket per configured pane/session for the current prototype;
 - attaches known sessions and starts missing sessions;
 - sends `input`, `resize`, and acknowledgement-based `detach` before normal app close;
 - provides smoke-test state for Playwright and PowerShell validation.
@@ -113,7 +114,8 @@ hub/src/state.rs                   app state and session registry
 hub/src/ws.rs                      WebSocket handling and protocol dispatch
 hub/tests/                         real WebSocket and PTY integration tests
 
-frontends/electron/main.js          Electron main process and security policy
+frontends/electron/main.js          Electron main process, lifecycle, and state persistence
+frontends/electron/config-store.js  versioned config/state validation, migration, recovery, atomic IO
 frontends/electron/preload.js       narrow context-isolated desktop bridge
 frontends/electron/renderer.js      browser-bundle bootstrap entrypoint
 frontends/electron/renderer/        renderer modules:
@@ -122,7 +124,7 @@ frontends/electron/renderer/        renderer modules:
   session-model.js                  pane/session state and bounded output view
   terminal-pane.js                  xterm.js pane, input, resize, output handling
   test-api.js                       test-mode structured renderer API
-frontends/electron/tests/           hidden-window Playwright functional tests
+frontends/electron/tests/           Node config/auth tests and hidden-window Playwright tests
 scripts/electron-app.ps1            npm ci, renderer build, Windows publish/start
 scripts/electron-test.ps1           Windows wrapper for Playwright tests
 ```
@@ -139,7 +141,15 @@ sandbox: true
 
 The browser-world renderer is bundled with `esbuild-wasm` and receives only a narrow preload API for validated bootstrap configuration (including the local hub capability), clipboard reads, and graceful-close coordination. The app applies a restrictive CSP and denies unexpected navigation, new windows, webviews, and permission requests.
 
-Playwright asserts the effective BrowserWindow preferences, absence of renderer `process`/`require`, exact preload API keys, denied window creation, and denied notification permission.
+Playwright asserts the effective BrowserWindow preferences, absence of renderer `process`/`require`, exact preload API keys, deeply frozen bootstrap configuration, denied window creation, and denied notification permission.
+
+## Desktop configuration and state
+
+Electron main exclusively owns `%APPDATA%\\NeonCode\\config.json` and `state.json`. Versioned strict validation produces a narrow bootstrap object containing the loopback endpoint, configured session IDs/titles, resolved process launch profiles, close policy, and diagnostics. The capability token remains environment-only.
+
+Version 1 supports one/two static panes and explicit process profiles (`command`, `args`, `cwd`). Normal close either detaches or kills configured sessions according to policy. Window content size is app-owned state; hub sessions remain authoritative backend state. Writes use same-directory temporary files and atomic rename, and valid backups support visible recovery from malformed JSON.
+
+See [configuration.md](configuration.md) for the schema and manual workflow.
 
 ## Hub security boundary
 

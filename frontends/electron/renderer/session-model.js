@@ -4,6 +4,15 @@ class SessionModel {
   constructor({ windowRef = window } = {}) {
     this.windowRef = windowRef;
     this.publicState = {
+      configuration: {
+        valid: false,
+        configStatus: 'idle',
+        stateStatus: 'idle',
+        warnings: [],
+        errors: [],
+        persistencePolicy: 'detach',
+        sessions: [],
+      },
       panes: [],
       sessionDiscovery: {
         status: 'idle',
@@ -13,6 +22,10 @@ class SessionModel {
       },
     };
     this.windowRef.neoncodeXtermState = this.publicState;
+  }
+
+  setConfiguration(configuration) {
+    this.publicState.configuration = JSON.parse(JSON.stringify(configuration));
   }
 
   setSessionDiscoveryStatus(status, error = '') {

@@ -57,6 +57,7 @@ class TerminalPane {
     activationMode,
     endpoint,
     capabilityToken,
+    launchProfile,
     container,
     statusElement,
     sessionModel,
@@ -69,6 +70,7 @@ class TerminalPane {
     this.activationMode = activationMode;
     this.endpoint = endpoint;
     this.capabilityToken = capabilityToken;
+    this.launchProfile = launchProfile;
     this.container = container;
     this.statusElement = statusElement;
     this.sessionModel = sessionModel;
@@ -355,7 +357,9 @@ class TerminalPane {
     const sent = mode === 'attach'
       ? this.hubClient.attach()
       : this.hubClient.start({
-        command: 'bash',
+        command: this.launchProfile.command,
+        args: this.launchProfile.args,
+        cwd: this.launchProfile.cwd,
         rows: this.state.terminal.rows || 30,
         cols: this.state.terminal.cols || 120,
       });
