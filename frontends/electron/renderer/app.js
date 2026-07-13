@@ -44,6 +44,7 @@ function createAppConfig(env = process.env) {
   const sessionPrefix = env.NEONCODE_SESSION_PREFIX || DEFAULT_SESSION_PREFIX;
   return {
     endpoint: env.NEONCODE_HUB_ENDPOINT || DEFAULT_ENDPOINT,
+    capabilityToken: env.NEONCODE_HUB_TOKEN,
     terminalCount,
     sessionPrefix,
     persistSessions: env.NEONCODE_PERSIST_SESSIONS !== '0',
@@ -120,6 +121,7 @@ class NeonCodeApp {
 
       this.sessionDiscoveryClient = new HubClient({
         endpoint: this.config.endpoint,
+        capabilityToken: this.config.capabilityToken,
         onOpen: () => {
           console.log('hub_session_list_requested');
           this.sessionModel.setSessionDiscoveryStatus('requested');
@@ -178,6 +180,7 @@ class NeonCodeApp {
       sessionId: descriptor.sessionId,
       activationMode: this.knownSessionIds.has(descriptor.sessionId) ? 'attach' : 'start',
       endpoint: this.config.endpoint,
+      capabilityToken: this.config.capabilityToken,
       container,
       statusElement: this.document.getElementById(`pane-status-${descriptor.index + 1}`),
       sessionModel: this.sessionModel,

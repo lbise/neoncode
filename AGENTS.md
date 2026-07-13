@@ -47,7 +47,8 @@ Run from WSL repo root unless noted.
 ./dev hub       # run Rust hub on 127.0.0.1:44777
 ./dev app       # publish/start Electron app, two xterm panes
 ./dev publish   # publish Electron app only
-./dev check     # JS syntax + Rust fmt/check/clippy
+./dev check     # JS syntax + Rust fmt/check/test/clippy
+./dev reset-token # rotate local hub capability; restart hub/app afterward
 ```
 
 The app expects the hub at:
@@ -55,6 +56,8 @@ The app expects the hub at:
 ```text
 ws://127.0.0.1:44777/ws
 ```
+
+`./dev` automatically creates/loads the shared per-user hub capability token. Direct hub/Electron invocations must provide the same valid `NEONCODE_HUB_TOKEN`.
 
 Typical manual loop:
 

@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Electron renderer security boundary hardened
+Stage: Local Electron/hub security baseline implemented; Windows auth regression rerun blocked by Defender
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: local hub security and resource limits
+Next focus: clear the Electron runtime false positive, rerun GUI tests, then persist app configuration
 ```
 
 The Windows tech stack is now:
@@ -162,11 +162,16 @@ Release-blocking baseline:
 - [x] Bundle renderer code so browser-world code does not depend on Node `require`.
 - [x] Add a restrictive Content Security Policy.
 - [x] Deny unexpected navigation, new windows, and renderer permission requests.
-- [ ] Define a local hub threat model and authentication/capability-token lifecycle.
-- [ ] Validate WebSocket `Origin` and authenticate hub control connections.
-- [ ] Refuse non-loopback hub binding unless an explicitly secure remote mode is configured.
-- [ ] Add bounded WebSocket queues plus frame/session/attachment/process limits.
-- [ ] Add security integration tests for unauthorized origins/connections and oversized inputs.
+- [x] Define a local hub threat model and authentication/capability-token lifecycle.
+- [x] Require the Electron `file://` WebSocket origin and a per-user 256-bit mutual nonce/HMAC capability challenge (the token is never transmitted).
+- [x] Refuse non-loopback hub binding; no remote mode is supported yet.
+- [x] Add bounded WebSocket/session event queues plus frame, input, session, attachment, process, ID, and terminal-size limits.
+- [x] Add security integration tests for unauthorized origins/capabilities and invalid/oversized inputs.
+- [ ] Re-run the Electron functional suite with capability authentication after the current Windows Defender false positive against the official Electron runtime is resolved.
+
+Before treating hostile native local accounts/processes as in-scope or enabling remote access:
+
+- [ ] Add a non-relayable authenticated/encrypted transport (pinned TLS, OS-protected IPC, or per-message authenticated encryption).
 
 ### 3. Terminal correctness
 

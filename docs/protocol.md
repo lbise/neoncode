@@ -18,16 +18,31 @@ Default bind address:
 127.0.0.1:44777
 ```
 
-Override with:
+The process refuses non-loopback bind addresses. `NEONCODE_HUB_BIND` may select a different loopback address/port.
 
-```bash
-NEONCODE_HUB_BIND=127.0.0.1:44777 cargo run -p neoncode-hub
+## WebSocket authorization
+
+Every `/ws` upgrade must include:
+
+```text
+Origin: file://
+Sec-WebSocket-Protocol: neoncode.v1
 ```
 
-## Framing
+The hub responds with `Sec-WebSocket-Protocol: neoncode.v1`. Missing/foreign origins receive HTTP `403`, and a missing app subprotocol receives HTTP `400`.
+
+Immediately after upgrade, the hub sends a fresh random `auth_challenge`. The client generates its own fresh nonce and computes `HMAC-SHA256(token_bytes, "client:" + server_nonce_ascii)`, then sends both in `authenticate`. The hub verifies it and returns `HMAC-SHA256(token_bytes, "server:" + client_nonce_ascii)` in `authenticated`; the client must verify that proof before sending operations. The hub rejects/closes connections whose first message is not valid authentication or which do not authenticate within five seconds. The token itself is never transmitted.
+
+`./dev` creates and propagates the per-user token automatically. See [`hub.md`](hub.md) for the threat model and token lifecycle.
+
+`GET /health` remains unauthenticated and returns only `ok`.
+
+## Framing and limits
 
 For the current prototype, all WebSocket messages are JSON text frames.
 Terminal bytes are base64-encoded in `data_b64` fields.
+
+Client text messages and frames are limited to 64 KiB. Decoded `input` data is limited to 32 KiB per message. Each WebSocket has a bounded 256-message server queue and may attach to at most 64 sessions. The hub permits at most 128 WebSockets and 64 active sessions/top-level PTY child processes; descendant process containment is not implemented yet. Oversized WebSocket messages are closed by the transport; semantic limit violations produce scoped `error` messages where possible.
 
 This is not the final high-performance protocol. Later we can move terminal output/input to binary frames while keeping JSON for control messages.
 
@@ -38,6 +53,18 @@ hub/src/protocol.rs
 ```
 
 ## Client messages
+
+### Authenticate
+
+Respond to the server's challenge before sending any session operation:
+
+```json
+{
+  "type": "authenticate",
+  "client_nonce": "<fresh-64-hex-character nonce>",
+  "hmac": "<HMAC-SHA256 over client:<server_nonce>>"
+}
+```
 
 ### Start a PTY session
 
@@ -55,11 +82,11 @@ hub/src/protocol.rs
 
 Fields:
 
-- `session_id`: frontend-owned ID, unique among active hub sessions for the current POC.
-- `command`: executable to spawn. Defaults to `$SHELL`, then `bash`.
-- `args`: optional argument list.
-- `cwd`: optional working directory.
-- `rows`, `cols`: optional terminal size. Defaults to `24x80`.
+- `session_id`: frontend-owned ID, unique among active hub sessions; 1–128 ASCII letters, digits, `.`, `_`, or `-`.
+- `command`: executable to spawn, at most 4 KiB. Defaults to `$SHELL`, then `bash`.
+- `args`: optional argument list; at most 128 arguments and 4 KiB per argument.
+- `cwd`: optional working directory, at most 4 KiB.
+- `rows`, `cols`: optional terminal size in the range 1–1,000. Defaults to `24x80`.
 
 ### List active sessions
 
@@ -125,6 +152,28 @@ If the detaching WebSocket created the session, the session is released from tha
 ```
 
 ## Server messages
+
+### Authentication challenge
+
+The first server message on every WebSocket:
+
+```json
+{
+  "type": "auth_challenge",
+  "nonce": "<64-hex-character random nonce>"
+}
+```
+
+### Authenticated
+
+```json
+{
+  "type": "authenticated",
+  "hmac": "<HMAC-SHA256 over server:<client_nonce>>"
+}
+```
+
+The client verifies this server proof and may then send session operations.
 
 ### Session started
 
@@ -220,19 +269,14 @@ Start the hub:
 ./dev hub
 ```
 
-Equivalent direct command:
+`./dev hub` creates/loads the local capability automatically. In another shell, if `websocat` is available:
 
 ```bash
-cargo run -p neoncode-hub
+export NEONCODE_HUB_TOKEN="$(tr -d '\r\n' < "${XDG_STATE_HOME:-$HOME/.local/state}/neoncode/hub-token")"
+websocat -H='Origin: file://' --protocol neoncode.v1 ws://127.0.0.1:44777/ws
 ```
 
-In another shell, if `websocat` is available:
-
-```bash
-websocat ws://127.0.0.1:44777/ws
-```
-
-Then send:
+Complete the `auth_challenge` HMAC flow documented above, wait for `authenticated`, then send:
 
 ```json
 {"type":"start","session_id":"shell","command":"bash","rows":24,"cols":80}

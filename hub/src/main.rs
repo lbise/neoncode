@@ -13,14 +13,17 @@ async fn main() -> Result<()> {
     let bind = env::var("NEONCODE_HUB_BIND")
         .or_else(|_| env::var("WORKSPACE_HUB_BIND"))
         .unwrap_or_else(|_| DEFAULT_BIND.to_string());
+    let capability_token = env::var("NEONCODE_HUB_TOKEN")
+        .context("NEONCODE_HUB_TOKEN is required (use ./dev hub to manage it)")?;
     let addr: SocketAddr = bind
         .parse()
         .with_context(|| format!("invalid NEONCODE_HUB_BIND address: {bind}"))?;
+    neoncode_hub::validate_bind_address(addr)?;
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!(%addr, "neoncode-hub listening");
 
-    axum::serve(listener, neoncode_hub::app())
+    axum::serve(listener, neoncode_hub::app(capability_token)?)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 

@@ -3,6 +3,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
+    Authenticate {
+        client_nonce: String,
+        hmac: String,
+    },
     Start {
         session_id: String,
         command: Option<String>,
@@ -35,6 +39,12 @@ pub enum ClientMessage {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ServerMessage {
+    AuthChallenge {
+        nonce: String,
+    },
+    Authenticated {
+        hmac: String,
+    },
     Started {
         session_id: String,
     },

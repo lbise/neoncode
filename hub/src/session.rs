@@ -15,8 +15,9 @@ use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_s
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
-const SESSION_EVENT_BUFFER: usize = 1024;
+const SESSION_EVENT_BUFFER: usize = 256;
 const SESSION_REPLAY_BUFFER_BYTES: usize = 2 * 1024 * 1024;
+const SESSION_REPLAY_BUFFER_ENTRIES: usize = 4096;
 
 #[derive(Debug, Clone)]
 pub enum SessionEvent {
@@ -80,6 +81,7 @@ impl Session {
 
         let command = command.unwrap_or_else(default_shell);
         let mut cmd = CommandBuilder::new(&command);
+        remove_control_environment(&mut cmd);
         for arg in args {
             cmd.arg(arg);
         }
@@ -288,7 +290,9 @@ fn publish_output(
         event: event.clone(),
         bytes: bytes.len(),
     });
-    while state.replay_bytes > SESSION_REPLAY_BUFFER_BYTES {
+    while state.replay_bytes > SESSION_REPLAY_BUFFER_BYTES
+        || state.replay.len() > SESSION_REPLAY_BUFFER_ENTRIES
+    {
         if let Some(entry) = state.replay.pop_front() {
             state.replay_bytes -= entry.bytes;
         } else {
@@ -317,6 +321,51 @@ fn publish_event(
     let _ = event_tx.send(event);
 }
 
+fn remove_control_environment(command: &mut CommandBuilder) {
+    command.env_remove("NEONCODE_HUB_TOKEN");
+}
+
 fn default_shell() -> String {
     env::var("SHELL").unwrap_or_else(|_| "bash".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use portable_pty::CommandBuilder;
+    use tokio::sync::broadcast;
+
+    use super::{
+        SESSION_REPLAY_BUFFER_ENTRIES, SessionEventState, publish_output,
+        remove_control_environment,
+    };
+
+    #[test]
+    fn capability_token_is_removed_from_child_environment() {
+        let mut command = CommandBuilder::new("sh");
+        command.env("NEONCODE_HUB_TOKEN", "secret");
+
+        remove_control_environment(&mut command);
+
+        assert!(command.get_env("NEONCODE_HUB_TOKEN").is_none());
+    }
+
+    #[test]
+    fn replay_is_bounded_by_entry_count() {
+        let (events, _receiver) = broadcast::channel(1);
+        let state = Mutex::new(SessionEventState {
+            next_output_seq: 1,
+            ..SessionEventState::default()
+        });
+
+        for _ in 0..(SESSION_REPLAY_BUFFER_ENTRIES + 100) {
+            publish_output("bounded-replay", &events, &state, b"x");
+        }
+
+        assert_eq!(
+            state.lock().unwrap().replay.len(),
+            SESSION_REPLAY_BUFFER_ENTRIES
+        );
+    }
 }

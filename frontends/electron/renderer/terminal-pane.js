@@ -56,6 +56,7 @@ class TerminalPane {
     sessionId,
     activationMode,
     endpoint,
+    capabilityToken,
     container,
     statusElement,
     sessionModel,
@@ -67,6 +68,7 @@ class TerminalPane {
     this.sessionId = sessionId;
     this.activationMode = activationMode;
     this.endpoint = endpoint;
+    this.capabilityToken = capabilityToken;
     this.container = container;
     this.statusElement = statusElement;
     this.sessionModel = sessionModel;
@@ -329,6 +331,7 @@ class TerminalPane {
   connect() {
     this.hubClient = new HubClient({
       endpoint: this.endpoint,
+      capabilityToken: this.capabilityToken,
       sessionId: this.sessionId,
       onOpen: () => this.handleHubOpen(),
       onMessage: (message) => this.handleHubMessage(message),

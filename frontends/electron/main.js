@@ -13,9 +13,15 @@ let allowWindowClose = false;
 let closeRequestInFlight = false;
 let closeTimeout;
 
+const hubCapabilityToken = process.env.NEONCODE_HUB_TOKEN;
+if (!/^[0-9a-fA-F]{64}$/.test(hubCapabilityToken || '')) {
+  throw new Error('NEONCODE_HUB_TOKEN must contain exactly 64 hexadecimal characters');
+}
+
 function rendererConfig() {
   return {
     NEONCODE_HUB_ENDPOINT: process.env.NEONCODE_HUB_ENDPOINT,
+    NEONCODE_HUB_TOKEN: hubCapabilityToken,
     NEONCODE_PERSIST_SESSIONS: process.env.NEONCODE_PERSIST_SESSIONS,
     NEONCODE_SESSION_PREFIX: process.env.NEONCODE_SESSION_PREFIX,
     NEONCODE_TERMINAL_COUNT: process.env.NEONCODE_TERMINAL_COUNT,

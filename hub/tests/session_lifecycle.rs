@@ -2,17 +2,31 @@ use std::time::Duration;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use futures_util::{SinkExt, StreamExt};
+use hmac::{Hmac, Mac};
 use serde_json::{Value, json};
+use sha2::Sha256;
 use tokio::{
     net::TcpStream,
     task::JoinHandle,
     time::{Instant, sleep, timeout},
 };
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
+use tokio_tungstenite::{
+    MaybeTlsStream, WebSocketStream, connect_async,
+    tungstenite::{
+        Error as WebSocketError, Message,
+        client::IntoClientRequest,
+        http::{
+            HeaderValue, StatusCode,
+            header::{ORIGIN, SEC_WEBSOCKET_PROTOCOL},
+        },
+    },
+};
 
 type TestSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const MESSAGE_TIMEOUT: Duration = Duration::from_secs(5);
+const TEST_CAPABILITY_TOKEN: &str =
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 struct TestHub {
     ws_url: String,
@@ -26,9 +40,12 @@ impl TestHub {
             .expect("bind test hub");
         let address = listener.local_addr().expect("test hub address");
         let server = tokio::spawn(async move {
-            axum::serve(listener, neoncode_hub::app())
-                .await
-                .expect("serve test hub");
+            axum::serve(
+                listener,
+                neoncode_hub::app(TEST_CAPABILITY_TOKEN.to_string()).expect("build test hub"),
+            )
+            .await
+            .expect("serve test hub");
         });
 
         Self {
@@ -38,10 +55,40 @@ impl TestHub {
     }
 
     async fn connect(&self) -> TestSocket {
-        let (socket, _) = connect_async(&self.ws_url)
+        let mut socket = self
+            .connect_with_origin(Some("file://"))
             .await
             .expect("connect to test hub");
+        let response = authenticate(&mut socket, TEST_CAPABILITY_TOKEN).await;
+        assert_eq!(response["type"], "authenticated");
         socket
+    }
+
+    async fn connect_with_origin(
+        &self,
+        origin: Option<&str>,
+    ) -> Result<TestSocket, WebSocketError> {
+        let mut request = self.ws_url.as_str().into_client_request()?;
+        if let Some(origin) = origin {
+            request.headers_mut().insert(
+                ORIGIN,
+                HeaderValue::from_str(origin).expect("valid test origin"),
+            );
+        }
+        request.headers_mut().insert(
+            SEC_WEBSOCKET_PROTOCOL,
+            HeaderValue::from_static("neoncode.v1"),
+        );
+        connect_async(request).await.map(|(socket, response)| {
+            assert_eq!(
+                response
+                    .headers()
+                    .get(SEC_WEBSOCKET_PROTOCOL)
+                    .and_then(|value| value.to_str().ok()),
+                Some("neoncode.v1")
+            );
+            socket
+        })
     }
 }
 
@@ -81,6 +128,38 @@ async fn next_json_before(socket: &mut TestSocket, deadline: Instant) -> Value {
             _ => {}
         }
     }
+}
+
+async fn authenticate(socket: &mut TestSocket, capability_token: &str) -> Value {
+    let challenge = next_json_before(socket, Instant::now() + MESSAGE_TIMEOUT).await;
+    assert_eq!(challenge["type"], "auth_challenge");
+    let nonce = challenge["nonce"].as_str().expect("authentication nonce");
+    let key = hex::decode(capability_token).expect("valid test capability");
+    let client_nonce = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+    let mut hmac = Hmac::<Sha256>::new_from_slice(&key).expect("valid HMAC key");
+    hmac.update(b"client:");
+    hmac.update(nonce.as_bytes());
+    send_json(
+        socket,
+        json!({
+            "type": "authenticate",
+            "client_nonce": client_nonce,
+            "hmac": hex::encode(hmac.finalize().into_bytes())
+        }),
+    )
+    .await;
+    let response = next_json_before(socket, Instant::now() + MESSAGE_TIMEOUT).await;
+    if response["type"] == "authenticated" {
+        let supplied_proof = hex::decode(response["hmac"].as_str().expect("server proof"))
+            .expect("valid server proof hex");
+        let mut expected_proof = Hmac::<Sha256>::new_from_slice(&key).expect("valid HMAC key");
+        expected_proof.update(b"server:");
+        expected_proof.update(client_nonce.as_bytes());
+        expected_proof
+            .verify_slice(&supplied_proof)
+            .expect("valid server authentication proof");
+    }
+    response
 }
 
 async fn wait_for_type(socket: &mut TestSocket, message_type: &str) -> Value {
@@ -178,6 +257,80 @@ async fn send_input(socket: &mut TestSocket, session_id: &str, input: &str) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn websocket_origin_must_be_the_electron_file_origin() {
+    let hub = TestHub::start().await;
+
+    for origin in [None, Some("https://evil.example")] {
+        let error = hub
+            .connect_with_origin(origin)
+            .await
+            .expect_err("unauthorized origin unexpectedly connected");
+        match error {
+            WebSocketError::Http(response) => {
+                assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            }
+            other => panic!("expected HTTP rejection, got {other:?}"),
+        }
+    }
+
+    let mut authorized = hub.connect().await;
+    assert!(list_session_ids(&mut authorized).await.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn websocket_requires_the_capability_token() {
+    let hub = TestHub::start().await;
+    let wrong_token = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+
+    let mut missing = hub
+        .connect_with_origin(Some("file://"))
+        .await
+        .expect("connect without authenticating");
+    let challenge = next_json_before(&mut missing, Instant::now() + MESSAGE_TIMEOUT).await;
+    assert_eq!(challenge["type"], "auth_challenge");
+    send_json(&mut missing, json!({ "type": "list_sessions" })).await;
+    let missing_error = next_json_before(&mut missing, Instant::now() + MESSAGE_TIMEOUT).await;
+    assert_eq!(missing_error["type"], "error");
+    assert!(
+        missing_error["message"]
+            .as_str()
+            .unwrap()
+            .contains("authentication")
+    );
+
+    let mut incorrect = hub
+        .connect_with_origin(Some("file://"))
+        .await
+        .expect("connect with incorrect capability");
+    let incorrect_error = authenticate(&mut incorrect, wrong_token).await;
+    assert_eq!(incorrect_error["type"], "error");
+    assert!(
+        incorrect_error["message"]
+            .as_str()
+            .unwrap()
+            .contains("authentication")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn oversized_websocket_message_closes_the_connection() {
+    let hub = TestHub::start().await;
+    let mut socket = hub.connect().await;
+    socket
+        .send(Message::Text("x".repeat(64 * 1024 + 1).into()))
+        .await
+        .expect("send oversized test message");
+
+    let result = timeout(MESSAGE_TIMEOUT, socket.next())
+        .await
+        .expect("timed out waiting for oversized-message disconnect");
+    assert!(
+        matches!(result, None | Some(Err(_)) | Some(Ok(Message::Close(_)))),
+        "oversized message did not close the connection: {result:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn session_operation_errors_include_the_session_id() {
     let hub = TestHub::start().await;
     let mut socket = hub.connect().await;
@@ -205,6 +358,77 @@ async fn session_operation_errors_include_the_session_id() {
     .await;
     let start_error = wait_for_type(&mut socket, "error").await;
     assert_eq!(start_error["session_id"], session_id);
+
+    send_json(
+        &mut socket,
+        json!({
+            "type": "start",
+            "session_id": "../invalid",
+            "command": "sh"
+        }),
+    )
+    .await;
+    let invalid_id_error = wait_for_type(&mut socket, "error").await;
+    assert_eq!(invalid_id_error["session_id"], "../invalid");
+    assert!(
+        invalid_id_error["message"]
+            .as_str()
+            .unwrap()
+            .contains("session_id")
+    );
+
+    let overlong_session_id = "x".repeat(129);
+    send_json(
+        &mut socket,
+        json!({ "type": "attach", "session_id": overlong_session_id }),
+    )
+    .await;
+    let overlong_id_error = wait_for_type(&mut socket, "error").await;
+    assert!(overlong_id_error["session_id"].is_null());
+    assert!(
+        overlong_id_error["message"]
+            .as_str()
+            .unwrap()
+            .contains("session_id")
+    );
+
+    send_json(
+        &mut socket,
+        json!({
+            "type": "resize",
+            "session_id": session_id,
+            "rows": 0,
+            "cols": 80
+        }),
+    )
+    .await;
+    let resize_error = wait_for_type(&mut socket, "error").await;
+    assert_eq!(resize_error["session_id"], session_id);
+    assert!(
+        resize_error["message"]
+            .as_str()
+            .unwrap()
+            .contains("terminal size")
+    );
+
+    let oversized_input = vec![b'x'; 32 * 1024 + 1];
+    send_json(
+        &mut socket,
+        json!({
+            "type": "input",
+            "session_id": session_id,
+            "data_b64": BASE64.encode(oversized_input)
+        }),
+    )
+    .await;
+    let input_error = wait_for_type(&mut socket, "error").await;
+    assert_eq!(input_error["session_id"], session_id);
+    assert!(
+        input_error["message"]
+            .as_str()
+            .unwrap()
+            .contains("input exceeds")
+    );
 
     send_json(
         &mut socket,

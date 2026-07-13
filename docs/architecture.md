@@ -62,7 +62,9 @@ Current role:
 
 - Rust backend process;
 - runs in WSL/Linux today;
-- exposes `/health` and `/ws`;
+- exposes unauthenticated `/health` and authenticated `/ws` on loopback only;
+- validates Electron `file://` origin and a per-user capability token;
+- bounds WebSocket/session queues and session/process resources;
 - starts PTYs through `portable-pty`;
 - owns session registry;
 - supports start/list/attach/detach/input/resize/kill;
@@ -135,9 +137,15 @@ nodeIntegration: false
 sandbox: true
 ```
 
-The browser-world renderer is bundled with `esbuild-wasm` and receives only a narrow preload API for sanitized startup configuration, clipboard reads, and graceful-close coordination. The app applies a restrictive CSP and denies unexpected navigation, new windows, webviews, and permission requests.
+The browser-world renderer is bundled with `esbuild-wasm` and receives only a narrow preload API for validated bootstrap configuration (including the local hub capability), clipboard reads, and graceful-close coordination. The app applies a restrictive CSP and denies unexpected navigation, new windows, webviews, and permission requests.
 
 Playwright asserts the effective BrowserWindow preferences, absence of renderer `process`/`require`, exact preload API keys, denied window creation, and denied notification permission.
+
+## Hub security boundary
+
+`./dev` manages a per-user 256-bit token in a mode-0600 WSL state file and passes it to the hub and Electron through process environments without copying it into publish output. The hub strips the token from PTY child environments. Electron WebSockets offer only `neoncode.v1`; the hub and renderer then exchange independent nonces and verify domain-separated HMAC-SHA256 proofs within five seconds. The token never crosses the socket, so an impostor cannot capture a reusable bearer, although the plaintext channel does not resist an active local relay. The hub also requires `Origin: file://`, caps WebSocket connections, and rejects non-loopback bind addresses.
+
+This boundary protects against browser cross-origin access, accidental LAN exposure, and clients that cannot complete the capability exchange. Hostile native local processes/accounts capable of binding and relaying loopback traffic are out of scope. Hostile multi-user or remote access will require pinned TLS, OS-protected IPC, or per-message authenticated encryption.
 
 ## Validation commands
 

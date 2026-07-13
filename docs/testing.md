@@ -33,7 +33,13 @@ Current coverage:
 - sessions still owned by a disconnected WebSocket are removed and killed;
 - detached sessions survive owner disconnect;
 - output produced while detached is replayed after attach;
-- a new WebSocket can list, attach, resize, send input, receive ordered output, and kill a detached session.
+- a new WebSocket can list, attach, resize, send input, receive ordered output, and kill a detached session;
+- missing/foreign WebSocket origins are rejected;
+- missing/incorrect capability challenge responses are rejected without sending the token;
+- invalid/overlong session IDs, invalid sizes, oversized decoded input, and oversized transport messages are rejected;
+- non-loopback bind addresses and excess WebSocket permits are rejected by unit tests;
+- replay is bounded by both raw bytes and entry count;
+- the capability token is removed from PTY child environments.
 
 Run:
 
@@ -41,7 +47,7 @@ Run:
 cargo test -p neoncode-hub
 ```
 
-Future hub integration coverage should include malformed/oversized messages, multiple attachments, backpressure, shutdown, and authentication.
+Future hub integration coverage should include transport-level oversized frames, saturated backpressure behavior, attachment/session-limit boundaries, multiple concurrent attachments, and graceful shutdown.
 
 ### 2. Renderer unit/integration tests
 
@@ -53,6 +59,8 @@ Use injected/fake dependencies for:
 - terminal surface;
 - timers/reconnect backoff;
 - persisted configuration.
+
+The current `frontends/electron/tests/hub-client-auth.js` test uses a mock WebSocket plus Node Web Crypto to verify that the renderer sends no bearer token, accepts a valid reciprocal hub proof, and rejects a fake hub proof. `./dev check` runs it without Electron.
 
 This layer should verify state transitions such as:
 

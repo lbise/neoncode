@@ -33,6 +33,8 @@ Current capabilities:
 - list active sessions;
 - attach a WebSocket with bounded recent terminal-output replay followed by live events;
 - detach a WebSocket from a session;
+- require the Electron `file://` origin and a per-user capability challenge-response on WebSockets;
+- enforce loopback-only binding and bounded connection/session resources;
 - allow explicitly detached sessions to survive the creating WebSocket closing;
 - kill still-owned sessions when their owning WebSocket disconnects;
 - structured logging via `tracing` / `RUST_LOG`.
@@ -45,7 +47,36 @@ Current limitations:
 - session IDs are currently frontend-provided;
 - natural process exits report an exit code when `portable-pty` provides one; `status` remains nullable for unavailable/error cases;
 - terminal input/output is JSON text with base64 payloads, not binary frames;
-- no authentication or remote access hardening yet; bind to loopback for now.
+- remote access is intentionally unsupported; the process refuses non-loopback bind addresses.
+
+## Local security model
+
+The current hub protects a local development service from browser cross-origin requests, accidental LAN exposure, and clients that cannot complete the capability exchange. Hostile native local processes—including processes under another local account that can bind/relay loopback traffic—are outside this prototype boundary. A non-relayable boundary requires pinned TLS, OS-protected IPC, or authenticated encryption of every message.
+
+`./dev` creates a random 256-bit hexadecimal capability token at:
+
+```text
+${XDG_STATE_HOME:-$HOME/.local/state}/neoncode/hub-token
+```
+
+The file is mode `0600`. The wrapper loads the same token for `./dev hub`, `./dev app`, `./dev electron`, and `./dev electron-test`, passing it to Windows Electron through the process environment. It is never copied into the published app directory, and the hub explicitly removes `NEONCODE_HUB_TOKEN` from every spawned PTY child environment. Rotate it and restart both processes with:
+
+```bash
+./dev reset-token
+```
+
+A WebSocket upgrade must provide:
+
+```text
+Origin: file://
+Sec-WebSocket-Protocol: neoncode.v1
+```
+
+After upgrading, the server sends a fresh 256-bit `auth_challenge` nonce. The client sends its own fresh nonce plus `HMAC-SHA256(token, "client:" + server_nonce)`. The server verifies it and returns `HMAC-SHA256(token, "server:" + client_nonce)` in `authenticated`; the renderer verifies that proof before opening the protocol client. Authentication must finish within five seconds. The raw capability token is never sent over the socket, so an impostor cannot capture a reusable credential; however, the current plaintext channel does not prevent an active local relay from forwarding the complete exchange.
+
+Origin validation is defense in depth rather than authentication: all local file renderers share the same origin, so the challenge-response remains required. The hub also caps authenticated/authenticating WebSockets at 128.
+
+The `/health` endpoint is intentionally unauthenticated and returns no state. The hub refuses non-loopback bind addresses. A future hostile-multi-user or remote mode will require a non-relayable authenticated/encrypted design rather than relaxing these checks.
 
 ## Run
 
@@ -55,9 +86,10 @@ From the repository root in WSL/Linux:
 ./dev hub
 ```
 
-Equivalent direct command:
+Equivalent direct command after loading a valid token:
 
 ```bash
+export NEONCODE_HUB_TOKEN="$(tr -d '\r\n' < "${XDG_STATE_HOME:-$HOME/.local/state}/neoncode/hub-token")"
 cargo run -p neoncode-hub
 ```
 
@@ -93,7 +125,7 @@ Useful examples:
 
 ```bash
 RUST_LOG=neoncode_hub=debug,tower_http=debug ./dev hub
-RUST_LOG=trace cargo run -p neoncode-hub
+RUST_LOG=trace ./dev hub
 ```
 
 The hub logs:
@@ -124,7 +156,7 @@ curl http://127.0.0.1:44777/health
 
 ### `WS /ws`
 
-Main WebSocket endpoint for terminal control and data.
+Main authenticated WebSocket endpoint for terminal control and data. Clients must use the required origin and subprotocol capability described above.
 
 Protocol details live in [`protocol.md`](protocol.md).
 
@@ -158,6 +190,17 @@ error
 ```
 
 Terminal bytes are base64-encoded in `data_b64` fields.
+
+Current resource bounds:
+
+- 64 KiB maximum WebSocket text message/frame;
+- 32 KiB maximum decoded terminal input per message;
+- 256 queued server messages per connection with asynchronous backpressure;
+- 64 attached sessions per connection and 128 WebSockets per hub;
+- 64 active PTY sessions/top-level child processes per hub (descendant containment is future work);
+- 256 live session events plus at most 4,096 replay entries / 2 MiB raw replay data per session;
+- 1–1,000 terminal rows/columns;
+- restricted 1–128 byte session IDs, 128 arguments, and 4 KiB command/argument/cwd strings.
 
 See [`protocol.md`](protocol.md) for exact JSON examples.
 
@@ -260,11 +303,27 @@ Check health:
 curl http://127.0.0.1:44777/health
 ```
 
-If `websocat` is available:
+If `websocat` is available, load the token and connect with the required origin/protocol:
 
 ```bash
-websocat ws://127.0.0.1:44777/ws
+export NEONCODE_HUB_TOKEN="$(tr -d '\r\n' < "${XDG_STATE_HOME:-$HOME/.local/state}/neoncode/hub-token")"
+websocat -H='Origin: file://' --protocol neoncode.v1 ws://127.0.0.1:44777/ws
 ```
+
+The first server message is `auth_challenge`. Compute the response over its hexadecimal nonce (as ASCII, not decoded bytes):
+
+```bash
+printf %s 'client:<server-nonce>' | openssl dgst -sha256 -mac HMAC \
+  -macopt "hexkey:$NEONCODE_HUB_TOKEN"
+```
+
+Then send the resulting hexadecimal digest:
+
+```json
+{"type":"authenticate","client_nonce":"<fresh-64-hex-character-nonce>","hmac":"<digest>"}
+```
+
+Verify the `authenticated.hmac` digest over `server:<client_nonce>` before sending session messages.
 
 Start a shell:
 

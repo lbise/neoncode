@@ -30,7 +30,9 @@ nodeIntegration: false
 sandbox: true
 ```
 
-The preload exposes only sanitized configuration, clipboard reads, and graceful-close coordination. CSP, navigation, new-window, webview, and permission restrictions are enforced by the Electron main process.
+The preload exposes only validated bootstrap configuration, clipboard reads, and graceful-close coordination. CSP, navigation, new-window, webview, and permission restrictions are enforced by the Electron main process.
+
+Hub WebSockets require `Origin: file://` plus a per-user mutual HMAC challenge-response. `./dev` creates the 256-bit token in a mode-0600 WSL state file and propagates it to both processes without copying it into publish output or sending the raw token over the socket.
 
 ## Run
 
@@ -46,6 +48,7 @@ Explicit commands:
 ```bash
 ./dev publish
 ./dev electron
+./dev reset-token  # rotate token, then restart hub and app
 ```
 
 ## Source layout
