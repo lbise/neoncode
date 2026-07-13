@@ -72,6 +72,7 @@ Typical manual loop:
 ./dev electron-publish  # publish Electron app
 ./dev electron          # start published Electron app
 ./dev electron-install  # npm install in source app directory
+./dev electron-audit    # audit locked Electron dependencies
 ./dev electron-test     # hidden-window Playwright functional tests
 ```
 

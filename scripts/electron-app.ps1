@@ -97,7 +97,8 @@ switch ($Command) {
         New-Item -ItemType Directory -Force -Path $OutputPath | Out-Null
         Write-Host "Copying Electron app to: $publishedDir"
         Copy-ElectronAppFiles -SourceDirectory $sourceDir -DestinationDirectory $publishedDir
-        Invoke-Npm -WorkingDirectory $publishedDir -Arguments "install"
+        Invoke-Npm -WorkingDirectory $publishedDir -Arguments "ci"
+        Invoke-Npm -WorkingDirectory $publishedDir -Arguments "exec -- install-electron"
 
         $packageJson = Join-Path $publishedDir "package.json"
         $electronBin = Join-Path $publishedDir "node_modules\electron\dist\electron.exe"

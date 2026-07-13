@@ -21,6 +21,7 @@ Electron app commands:
   ./dev electron-publish              Publish Electron app
   ./dev electron                      Start already-published Electron app
   ./dev electron-install  Install Electron npm dependencies in source app
+  ./dev electron-audit    Audit the locked Electron app dependencies
   ./dev electron-test     Run hidden-window Playwright functional tests
 
 Utility commands:
@@ -77,6 +78,10 @@ case "$command" in
 
   electron-install)
     ps_file 'scripts\electron-app.ps1' -Command install
+    ;;
+
+  electron-audit)
+    (cd frontends/electron && npm audit --package-lock-only)
     ;;
 
   hub)

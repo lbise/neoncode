@@ -13,6 +13,15 @@ Electron
 
 It intentionally does not use native Windows Terminal embedding or `node-pty`.
 
+Pinned test/runtime tooling:
+
+```text
+Electron 43.1.0
+Playwright 1.61.1
+```
+
+Electron 43 uses an explicit `install-electron` executable rather than a package lifecycle script. The publish helper runs that exact installer after `npm ci`.
+
 ## Run
 
 From repo root:
@@ -53,6 +62,12 @@ Default panes use stable frontend session keys instead of deriving session ident
 ```text
 Pane key: shell  -> session id: <NEONCODE_SESSION_PREFIX>-shell
 Pane key: tasks  -> session id: <NEONCODE_SESSION_PREFIX>-tasks
+```
+
+Dependency audit:
+
+```bash
+./dev electron-audit
 ```
 
 ## Validation

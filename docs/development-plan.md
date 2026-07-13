@@ -30,6 +30,8 @@ Previous Windows Terminal/WPF embedding POCs are obsolete and are not a product 
 - [x] Rejected native child-HWND terminal embedding as the product path due to focus/polish/automation risk.
 - [x] Adopted Electron + xterm.js as the supported Windows app stack.
 - [x] Moved the Electron app to `frontends/electron`.
+- [x] Upgraded and pinned Electron 43.1.0 and Playwright 1.61.1; locked dependencies audit with zero known vulnerabilities.
+- [x] Made Windows-local publishing reproducible with `npm ci` plus Electron 43's explicit pinned binary installer.
 
 ### Hub/session foundation
 
