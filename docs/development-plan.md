@@ -244,9 +244,11 @@ Still needed:
 - [x] copy/selection behavior;
 - [x] Neovim interactive insert/write/exit behavior;
 - [x] tmux interactive command/detach behavior;
-- [ ] mouse mode in Neovim/tmux;
+- [x] xterm SGR press/release mouse reporting to the Linux PTY;
+- [ ] application-specific mouse behavior in Neovim/tmux;
 - [x] Initial 2,000-line heavy-output continuity test;
-- [ ] Extended heavy-output/performance soak;
+- [x] 20,000-line output soak under 30 seconds with no sequence gap;
+- [ ] Extended multi-minute performance soak;
 - [ ] long-session stability.
 
 ### 4. Workspace model

@@ -102,6 +102,8 @@ With the hub running:
 
 The test launches a hidden Electron window and uses structured renderer/Electron APIs, restoring clipboard state after copy checks rather than relying on it for terminal/session correctness. It does not use foreground-window automation, `SendKeys`, or log scraping. It closes/reopens the real Electron app and verifies the same shell state survives reattachment.
 
+Automated terminal coverage includes navigation/function keys, Ctrl+C/D/Z, selection copy and paste-race handling, interactive tmux/Neovim workflows, SGR mouse reports, Unicode, and a 20,000-line output soak.
+
 Manual checks inside a terminal:
 
 ```bash

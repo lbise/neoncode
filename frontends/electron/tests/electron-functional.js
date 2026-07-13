@@ -138,6 +138,46 @@ async function pressTerminalKey(page, paneId, key) {
   await page.keyboard.press(key);
 }
 
+async function verifyMouseReporting(page, paneId, token) {
+  const ready = `mouse-ready-${token}`;
+  const script = [
+    'import os, termios, tty',
+    'fd = 0',
+    'old = termios.tcgetattr(fd)',
+    `print('${ready}', flush=True)`,
+    'tty.setraw(fd)',
+    "os.write(1, b'\\x1b[?1000h\\x1b[?1006h')",
+    "data = b''",
+    "while not data.endswith(b'm'):",
+    '    data += os.read(fd, 1)',
+    "os.write(1, b'\\x1b[?1000l\\x1b[?1006l')",
+    'termios.tcsetattr(fd, termios.TCSADRAIN, old)',
+    "print('\\n' + 'mouse-bytes-' + data.hex(), flush=True)",
+  ].join('\n');
+  const encoded = Buffer.from(script).toString('base64');
+  const command = `python3 -c "$(printf '%s' '${encoded}' | base64 -d)"\n`;
+  assertMarkerIsNotEchoed(command, ready);
+  await sendText(page, paneId, command);
+  await waitForOutput(page, paneId, ready);
+
+  const paneIndex = paneIds.indexOf(paneId) + 1;
+  const screen = page.locator(`#terminal-${paneIndex} .xterm-screen`);
+  const box = await screen.boundingBox();
+  assert(box, `xterm screen has no bounding box for ${paneId}`);
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await waitForOutput(page, paneId, 'mouse-bytes-');
+
+  const state = await getState(page);
+  const output = state.panes.find((pane) => pane.paneId === paneId).recentOutput;
+  const hex = [...output.matchAll(/mouse-bytes-([0-9a-f]+)/g)].at(-1)?.[1];
+  assert(hex, 'mouse report bytes were not captured');
+  const report = Buffer.from(hex, 'hex').toString('binary');
+  assert(
+    /^\x1b\[<0;\d+;\d+M\x1b\[<0;\d+;\d+m$/.test(report),
+    `unexpected SGR mouse report: ${JSON.stringify(report)}`,
+  );
+}
+
 async function waitForOutput(page, paneId, expected) {
   await page.waitForFunction(
     ({ targetPaneId, output }) => {
@@ -435,11 +475,20 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   );
   await electronApp.evaluate(({ clipboard }, text) => clipboard.writeText(text), previousClipboard);
 
+  await verifyMouseReporting(page, 'tasks', runToken);
+
   const heavyExpected = `heavy-done-${runToken}`;
-  const heavyCommand = `i=0; while [ $i -lt 2000 ]; do printf 'load-%04d\\n' "$i"; i=$((i+1)); done; printf 'heavy-done-%s\\n' '${runToken}'\n`;
+  const heavyCommand = `i=0; while [ $i -lt 20000 ]; do printf 'load-%05d\\n' "$i"; i=$((i+1)); done; printf 'heavy-done-%s\\n' '${runToken}'\n`;
   assertMarkerIsNotEchoed(heavyCommand, heavyExpected);
+  const heavyStarted = Date.now();
   await sendText(page, 'tasks', heavyCommand);
   await waitForOutput(page, 'tasks', heavyExpected);
+  assert(Date.now() - heavyStarted < 30000, '20,000-line output soak exceeded 30 seconds');
+  const heavyState = await getState(page);
+  assert(
+    heavyState.panes.find((pane) => pane.paneId === 'tasks').outputGap === '',
+    '20,000-line output soak produced a sequence gap',
+  );
 
   const tmuxValues = [`tool-tmux-present-${runToken}`, `tool-tmux-missing-${runToken}`];
   const tmuxCommand = `if command -v tmux >/dev/null 2>&1; then v=present; else v=missing; fi; printf 'tool-tmux-%s-%s\\n' "$v" '${runToken}'\n`;
