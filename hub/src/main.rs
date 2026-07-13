@@ -1,15 +1,8 @@
 use std::{env, net::SocketAddr};
 
 use anyhow::{Context, Result};
-use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
-use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt};
-
-mod protocol;
-mod session;
-mod state;
-mod ws;
 
 const DEFAULT_BIND: &str = "127.0.0.1:44777";
 
@@ -24,19 +17,10 @@ async fn main() -> Result<()> {
         .parse()
         .with_context(|| format!("invalid NEONCODE_HUB_BIND address: {bind}"))?;
 
-    let app_state = state::AppState::default();
-
-    let app = Router::new()
-        .route("/health", get(health))
-        .route("/ws", get(ws::ws_handler))
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
-        .with_state(app_state);
-
     let listener = tokio::net::TcpListener::bind(addr).await?;
     info!(%addr, "neoncode-hub listening");
 
-    axum::serve(listener, app)
+    axum::serve(listener, neoncode_hub::app())
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
@@ -53,8 +37,4 @@ async fn shutdown_signal() {
         error!(%err, "failed to install Ctrl+C handler");
     }
     info!("shutdown requested");
-}
-
-async fn health() -> impl IntoResponse {
-    (StatusCode::OK, "ok\n")
 }

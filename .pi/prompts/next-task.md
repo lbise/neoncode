@@ -110,6 +110,7 @@ For hub/Rust changes, normally run:
 ```bash
 cargo fmt --check
 cargo check
+cargo test
 cargo clippy --all-targets -- -D warnings
 ```
 

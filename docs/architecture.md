@@ -102,11 +102,13 @@ This protocol is intentionally simple. Product work should evolve it toward:
 ## Source layout
 
 ```text
-hub/src/main.rs                    hub process setup, routes, logging, shutdown
+hub/src/main.rs                    hub process setup, logging, shutdown
+hub/src/lib.rs                     reusable Axum application/router
 hub/src/protocol.rs                JSON protocol types
 hub/src/session.rs                 PTY lifecycle, IO, session events
 hub/src/state.rs                   app state and session registry
 hub/src/ws.rs                      WebSocket handling and protocol dispatch
+hub/tests/                         real WebSocket and PTY integration tests
 
 frontends/electron/main.js          Electron main process
 frontends/electron/renderer.js      renderer bootstrap entrypoint

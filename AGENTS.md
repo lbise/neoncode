@@ -91,6 +91,7 @@ It intentionally does not use `node-pty`. `node-pty` would be relevant for a VS 
 ```bash
 cargo fmt --check
 cargo check
+cargo test
 cargo clippy --all-targets -- -D warnings
 ```
 
@@ -98,6 +99,7 @@ Hub-only quick checks:
 
 ```bash
 cargo check -p neoncode-hub
+cargo test -p neoncode-hub
 cargo clippy -p neoncode-hub --all-targets -- -D warnings
 ```
 
@@ -133,6 +135,12 @@ Playwright is useful for the Electron/web shell layer:
 - collecting console/network/tracing info;
 - coordinating higher-level smoke workflows.
 
+Testing strategy and automation-layer guidance:
+
+```text
+docs/testing.md
+```
+
 For the Electron app, also use the app-level Playwright smoke:
 
 ```bash
@@ -162,6 +170,7 @@ For Rust-only changes:
 ```bash
 cargo fmt --check
 cargo check
+cargo test
 cargo clippy --all-targets -- -D warnings
 ```
 

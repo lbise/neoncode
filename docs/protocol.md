@@ -183,11 +183,11 @@ If the detaching WebSocket created the session, the session is released from tha
 {
   "type": "exit",
   "session_id": "shell-1",
-  "status": null
+  "status": 0
 }
 ```
 
-`status` is currently usually `null`; exit-code tracking will be improved later.
+`status` is the process exit code when available. It is `null` if the child wait operation cannot provide a status.
 
 ### Session killed
 

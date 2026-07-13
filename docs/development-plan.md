@@ -39,6 +39,12 @@ Previous Windows Terminal/WPF embedding POCs are obsolete and are not a product 
 - [x] Added `list_sessions`, `attach`, and `detach` protocol messages.
 - [x] Documented hub and protocol.
 
+### Testing foundation
+
+- [x] Added hub integration tests using an in-process server, ephemeral port, real WebSocket protocol, and real PTYs.
+- [x] Covered fast output/exit, exit cleanup and ID reuse, disconnect cleanup, detach/list/reattach, resize, input/output, and kill.
+- [x] Documented a layered testing strategy that moves Electron functional tests away from global focus, `SendKeys`, clipboard, and log scraping.
+
 ### xterm.js validation
 
 - [x] Added Electron xterm app.
@@ -86,6 +92,7 @@ Tasks:
   - app/bootstrap.
 - [x] Introduce stable frontend session IDs independent of pane indexes.
 - [x] On startup, call `list_sessions`.
+- [ ] Add a structured Playwright renderer test API and remove echo/log/`SendKeys` assertions from core Electron functional tests.
 - [ ] Attach to known sessions when present.
 - [ ] Start missing sessions when not present.
 - [ ] Detach sessions before app close when persistence is desired.

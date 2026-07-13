@@ -1,13 +1,16 @@
 use std::{
     env,
     io::{Read, Write},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
 };
 
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
+use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
@@ -24,7 +27,8 @@ pub struct Session {
     id: String,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
-    child: Arc<Mutex<Box<dyn Child + Send + Sync>>>,
+    child_killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    running: Arc<AtomicBool>,
     event_tx: broadcast::Sender<SessionEvent>,
 }
 
@@ -37,8 +41,8 @@ impl Session {
         cwd: Option<String>,
         rows: u16,
         cols: u16,
-    ) -> Result<Self> {
-        let (event_tx, _) = broadcast::channel(SESSION_EVENT_BUFFER);
+    ) -> Result<(Self, broadcast::Receiver<SessionEvent>)> {
+        let (event_tx, events) = broadcast::channel(SESSION_EVENT_BUFFER);
 
         let pty_system = native_pty_system();
         let pair = pty_system
@@ -60,10 +64,11 @@ impl Session {
         }
 
         info!(session_id = %id, %command, rows, cols, "starting PTY session");
-        let child = pair
+        let mut child = pair
             .slave
             .spawn_command(cmd)
             .with_context(|| format!("failed to spawn command: {command}"))?;
+        let child_killer = child.clone_killer();
         drop(pair.slave);
 
         let mut reader = pair
@@ -77,7 +82,7 @@ impl Session {
 
         let reader_session_id = id.clone();
         let reader_event_tx = event_tx.clone();
-        thread::Builder::new()
+        let reader_thread = thread::Builder::new()
             .name(format!("pty-reader-{reader_session_id}"))
             .spawn(move || {
                 let mut buffer = [0_u8; 8192];
@@ -101,22 +106,58 @@ impl Session {
                         }
                     }
                 }
-
-                let _ = reader_event_tx.send(SessionEvent::Exit { status: None });
             })
             .context("failed to spawn PTY reader thread")?;
 
-        Ok(Self {
-            id,
-            writer: Arc::new(Mutex::new(writer)),
-            master: Arc::new(Mutex::new(pair.master)),
-            child: Arc::new(Mutex::new(child)),
-            event_tx,
-        })
+        let running = Arc::new(AtomicBool::new(true));
+        let waiter_running = running.clone();
+        let waiter_session_id = id.clone();
+        let waiter_event_tx = event_tx.clone();
+        thread::Builder::new()
+            .name(format!("pty-waiter-{waiter_session_id}"))
+            .spawn(move || {
+                let wait_result = child.wait();
+                if reader_thread.join().is_err() {
+                    let _ = waiter_event_tx.send(SessionEvent::Error {
+                        message: "PTY reader thread panicked".to_string(),
+                    });
+                }
+
+                waiter_running.store(false, Ordering::Release);
+                match wait_result {
+                    Ok(exit_status) => {
+                        let status = i32::try_from(exit_status.exit_code()).ok();
+                        let _ = waiter_event_tx.send(SessionEvent::Exit { status });
+                    }
+                    Err(err) => {
+                        let _ = waiter_event_tx.send(SessionEvent::Error {
+                            message: format!("failed to wait for PTY child: {err}"),
+                        });
+                        let _ = waiter_event_tx.send(SessionEvent::Exit { status: None });
+                    }
+                }
+            })
+            .context("failed to spawn PTY waiter thread")?;
+
+        Ok((
+            Self {
+                id,
+                writer: Arc::new(Mutex::new(writer)),
+                master: Arc::new(Mutex::new(pair.master)),
+                child_killer: Mutex::new(child_killer),
+                running,
+                event_tx,
+            },
+            events,
+        ))
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<SessionEvent> {
         self.event_tx.subscribe()
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.running.load(Ordering::Acquire)
     }
 
     pub fn write_input(&self, bytes: &[u8]) -> Result<()> {
@@ -148,9 +189,9 @@ impl Session {
     }
 
     pub fn kill(self) {
-        match self.child.lock() {
-            Ok(mut child) => {
-                if let Err(err) = child.kill() {
+        match self.child_killer.lock() {
+            Ok(mut child_killer) => {
+                if let Err(err) = child_killer.kill() {
                     debug!(session_id = %self.id, %err, "failed to kill child process");
                 }
             }

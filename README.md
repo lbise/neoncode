@@ -39,6 +39,7 @@ Useful commands:
 - [Development plan](docs/development-plan.md)
 - [Hub guide](docs/hub.md)
 - [Hub protocol](docs/protocol.md)
+- [Testing strategy](docs/testing.md)
 - [Terminal renderer decision](docs/terminal-renderer-decision.md)
 - [External tool inspiration](docs/external-tool-inspiration.md)
 

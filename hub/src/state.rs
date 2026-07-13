@@ -38,12 +38,13 @@ impl SessionRegistry {
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+        prune_exited_sessions(&mut sessions);
 
         if sessions.contains_key(&request.session_id) {
             return Err(anyhow!("session already exists: {}", request.session_id));
         }
 
-        let session = Session::spawn(
+        let (session, events) = Session::spawn(
             request.session_id.clone(),
             request.command,
             request.args.unwrap_or_default(),
@@ -51,7 +52,6 @@ impl SessionRegistry {
             request.rows.unwrap_or(DEFAULT_ROWS),
             request.cols.unwrap_or(DEFAULT_COLS),
         )?;
-        let events = session.subscribe();
 
         sessions.insert(
             request.session_id,
@@ -65,10 +65,12 @@ impl SessionRegistry {
     }
 
     pub fn list_sessions(&self) -> Result<Vec<SessionSummary>> {
-        let sessions = self
+        let mut sessions = self
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+        prune_exited_sessions(&mut sessions);
+
         let mut summaries = sessions
             .keys()
             .map(|session_id| SessionSummary {
@@ -80,10 +82,12 @@ impl SessionRegistry {
     }
 
     pub fn subscribe_session(&self, session_id: &str) -> Result<broadcast::Receiver<SessionEvent>> {
-        let sessions = self
+        let mut sessions = self
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+        prune_exited_sessions(&mut sessions);
+
         let entry = sessions
             .get(session_id)
             .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
@@ -99,6 +103,8 @@ impl SessionRegistry {
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+        prune_exited_sessions(&mut sessions);
+
         let entry = sessions
             .get_mut(session_id)
             .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
@@ -112,10 +118,12 @@ impl SessionRegistry {
     }
 
     pub fn write_input(&self, session_id: &str, bytes: &[u8]) -> Result<()> {
-        let sessions = self
+        let mut sessions = self
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+        prune_exited_sessions(&mut sessions);
+
         let entry = sessions
             .get(session_id)
             .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
@@ -123,10 +131,12 @@ impl SessionRegistry {
     }
 
     pub fn resize(&self, session_id: &str, rows: u16, cols: u16) -> Result<()> {
-        let sessions = self
+        let mut sessions = self
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+        prune_exited_sessions(&mut sessions);
+
         let entry = sessions
             .get(session_id)
             .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
@@ -145,26 +155,45 @@ impl SessionRegistry {
     }
 
     pub fn kill_sessions_for_connection(&self, owner_connection_id: &str) -> Result<usize> {
-        let mut sessions = self
-            .sessions
-            .lock()
-            .map_err(|_| anyhow!("session registry mutex poisoned"))?;
-        let session_ids = sessions
-            .iter()
-            .filter(|(_, entry)| entry.owner_connection_id.as_deref() == Some(owner_connection_id))
-            .map(|(session_id, _)| session_id.clone())
-            .collect::<Vec<_>>();
+        let entries = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+            let session_ids = sessions
+                .iter()
+                .filter(|(_, entry)| {
+                    entry.owner_connection_id.as_deref() == Some(owner_connection_id)
+                })
+                .map(|(session_id, _)| session_id.clone())
+                .collect::<Vec<_>>();
 
-        let count = session_ids.len();
-        for session_id in session_ids {
-            if let Some(entry) = sessions.remove(&session_id) {
-                debug!(%session_id, %owner_connection_id, "killing session owned by disconnected websocket");
-                entry.session.kill();
-            }
+            session_ids
+                .into_iter()
+                .filter_map(|session_id| {
+                    sessions.remove(&session_id).inspect(|_| {
+                        debug!(%session_id, %owner_connection_id, "killing session owned by disconnected websocket");
+                    })
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let count = entries.len();
+        for entry in entries {
+            entry.session.kill();
         }
-
         Ok(count)
     }
+}
+
+fn prune_exited_sessions(sessions: &mut HashMap<String, SessionEntry>) {
+    sessions.retain(|session_id, entry| {
+        let running = entry.session.is_running();
+        if !running {
+            debug!(%session_id, "removing exited session from registry");
+        }
+        running
+    });
 }
 
 pub struct StartSessionRequest {

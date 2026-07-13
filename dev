@@ -95,6 +95,7 @@ case "$command" in
       -name '*.js' -print0)
     cargo fmt --check
     cargo check
+    cargo test
     cargo clippy --all-targets -- -D warnings
     ;;
 

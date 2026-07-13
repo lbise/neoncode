@@ -114,6 +114,7 @@ fn handle_client_text(
     session_forwarders: &mut HashMap<String, JoinHandle<()>>,
 ) -> Result<()> {
     let message: ClientMessage = serde_json::from_str(text).context("invalid client JSON")?;
+    session_forwarders.retain(|_, forwarder| !forwarder.is_finished());
 
     match message {
         ClientMessage::Start {
@@ -217,27 +218,39 @@ fn spawn_session_event_forwarder(
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
-            let message = match events.recv().await {
-                Ok(SessionEvent::Output { data_b64 }) => ServerMessage::Output {
-                    session_id: session_id.clone(),
-                    data_b64,
-                },
-                Ok(SessionEvent::Exit { status }) => ServerMessage::Exit {
-                    session_id: session_id.clone(),
-                    status,
-                },
-                Ok(SessionEvent::Error { message }) => ServerMessage::Error {
-                    session_id: Some(session_id.clone()),
-                    message,
-                },
-                Err(broadcast::error::RecvError::Lagged(count)) => ServerMessage::Error {
-                    session_id: Some(session_id.clone()),
-                    message: format!("session output lagged by {count} messages"),
-                },
+            let (message, terminal) = match events.recv().await {
+                Ok(SessionEvent::Output { data_b64 }) => (
+                    ServerMessage::Output {
+                        session_id: session_id.clone(),
+                        data_b64,
+                    },
+                    false,
+                ),
+                Ok(SessionEvent::Exit { status }) => (
+                    ServerMessage::Exit {
+                        session_id: session_id.clone(),
+                        status,
+                    },
+                    true,
+                ),
+                Ok(SessionEvent::Error { message }) => (
+                    ServerMessage::Error {
+                        session_id: Some(session_id.clone()),
+                        message,
+                    },
+                    false,
+                ),
+                Err(broadcast::error::RecvError::Lagged(count)) => (
+                    ServerMessage::Error {
+                        session_id: Some(session_id.clone()),
+                        message: format!("session output lagged by {count} messages"),
+                    },
+                    false,
+                ),
                 Err(broadcast::error::RecvError::Closed) => break,
             };
 
-            if outgoing.send(message).is_err() {
+            if outgoing.send(message).is_err() || terminal {
                 break;
             }
         }

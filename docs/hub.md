@@ -43,7 +43,7 @@ Current limitations:
 - detached session output is not replayed on attach; clients receive future events only;
 - the session registry is in-process only and does not persist across hub restarts;
 - session IDs are currently frontend-provided;
-- exit status is currently usually `null`;
+- natural process exits report an exit code when `portable-pty` provides one; `status` remains nullable for unavailable/error cases;
 - terminal input/output is JSON text with base64 payloads, not binary frames;
 - no authentication or remote access hardening yet; bind to loopback for now.
 
@@ -169,14 +169,13 @@ Frontend sends `start` with a frontend-owned `session_id`.
 
 The hub:
 
-1. registers the new session in the shared in-process registry;
-2. creates a session-owned event broadcaster;
-3. opens a PTY with requested/default rows and columns;
-4. spawns the requested command or default shell;
-5. starts a reader thread for PTY output;
-6. subscribes the creating WebSocket to the session event stream;
-7. emits `started`;
-8. forwards session events as `output`, `exit`, and `error` messages.
+1. creates a session-owned event broadcaster and initial receiver before the child can emit output;
+2. opens a PTY with requested/default rows and columns;
+3. spawns the requested command or default shell;
+4. starts a reader thread for PTY output and a waiter thread for process exit/reaping;
+5. registers the new session in the shared in-process registry;
+6. emits `started`;
+7. forwards session events as `output`, `exit`, and `error` messages.
 
 Default shell resolution:
 
@@ -191,7 +190,7 @@ Default size:
 
 ### List
 
-Frontend sends `list_sessions` to get active session IDs from the in-process registry.
+Frontend sends `list_sessions` to get active session IDs from the in-process registry. Naturally exited sessions are pruned and are not returned; their IDs can be reused.
 
 ### Attach
 
@@ -230,7 +229,7 @@ PTY reader threads do not write directly to WebSocket channels anymore.
 Instead, each session owns an internal broadcast channel:
 
 ```text
-PTY reader thread
+PTY reader/waiter threads
   → SessionEvent::{Output, Exit, Error}
   → broadcast channel owned by Session
   → attached WebSocket forwarder task
@@ -305,11 +304,13 @@ Kill:
 ## Source layout
 
 ```text
-hub/src/main.rs       process setup, routing, logging, shutdown
+hub/src/main.rs       process setup, logging, shutdown
+hub/src/lib.rs        reusable Axum application/router
 hub/src/protocol.rs   JSON protocol structs/enums
 hub/src/session.rs    PTY session lifecycle, IO, and session event broadcasting
 hub/src/state.rs      shared app state and in-process session registry
 hub/src/ws.rs         WebSocket handling, protocol dispatch, and event forwarding
+hub/tests/            real WebSocket and PTY integration tests
 ```
 
 ## Development checks
@@ -319,6 +320,7 @@ From repo root:
 ```bash
 cargo fmt --check
 cargo check -p neoncode-hub
+cargo test -p neoncode-hub
 cargo clippy -p neoncode-hub --all-targets -- -D warnings
 ```
 
