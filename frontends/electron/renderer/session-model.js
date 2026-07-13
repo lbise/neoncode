@@ -1,3 +1,5 @@
+const MAX_RECENT_OUTPUT_CHARS = 32768;
+
 class SessionModel {
   constructor({ windowRef = window } = {}) {
     this.windowRef = windowRef;
@@ -38,12 +40,8 @@ class SessionModel {
       outputEvents: 0,
       inputEvents: 0,
       resizeEvents: 0,
-      smokeMarkerCount: 0,
       lastRows: terminal.rows,
       lastCols: terminal.cols,
-      outputScanBuffer: '',
-      lastResizeMarker: '',
-      lastCheckMarker: '',
       suppressedPasteText: '',
     };
 
@@ -55,7 +53,7 @@ class SessionModel {
       outputEvents: 0,
       inputEvents: 0,
       resizeEvents: 0,
-      lastSmokeMarkerCount: 0,
+      recentOutput: '',
       rows: terminal.rows,
       cols: terminal.cols,
     };
@@ -82,22 +80,20 @@ class SessionModel {
     this.pane(state).inputEvents = state.inputEvents;
   }
 
-  recordOutput(state) {
+  recordOutput(state, text) {
     state.outputEvents += 1;
-    this.pane(state).outputEvents = state.outputEvents;
+    const pane = this.pane(state);
+    pane.outputEvents = state.outputEvents;
+    pane.recentOutput = (pane.recentOutput + text).slice(-MAX_RECENT_OUTPUT_CHARS);
   }
 
   recordResize(state) {
     state.resizeEvents += 1;
     this.pane(state).resizeEvents = state.resizeEvents;
   }
-
-  recordSmokeMarker(state) {
-    state.smokeMarkerCount += 1;
-    this.pane(state).lastSmokeMarkerCount = state.smokeMarkerCount;
-  }
 }
 
 module.exports = {
+  MAX_RECENT_OUTPUT_CHARS,
   SessionModel,
 };

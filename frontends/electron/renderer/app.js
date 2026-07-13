@@ -1,6 +1,7 @@
 const { HubClient } = require('./hub-client');
 const { SessionModel } = require('./session-model');
 const { TerminalPane } = require('./terminal-pane');
+const { installRendererTestApi } = require('./test-api');
 
 const DEFAULT_ENDPOINT = 'ws://127.0.0.1:44777/ws';
 const DEFAULT_TERMINAL_COUNT = 2;
@@ -45,6 +46,7 @@ function createAppConfig(env = process.env) {
     endpoint: env.NEONCODE_HUB_ENDPOINT || DEFAULT_ENDPOINT,
     terminalCount,
     sessionPrefix,
+    testMode: env.NEONCODE_TEST_MODE === '1',
     panes: createPaneDescriptors({ terminalCount, sessionPrefix }),
   };
 }
@@ -61,6 +63,9 @@ class NeonCodeApp {
     this.knownSessionIds = [];
     this.panes = [];
     this.closed = false;
+    if (this.config.testMode) {
+      installRendererTestApi(this);
+    }
   }
 
   setStatus(text) {

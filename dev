@@ -15,16 +15,13 @@ Daily commands:
   ./dev app          Publish/start Electron + xterm.js app
   ./dev publish      Publish Electron app to %USERPROFILE%\neoncode-electron
   ./dev hub          Run the Rust NeonCode hub
-  ./dev check        Run Electron JS checks + Rust fmt/check/clippy
+  ./dev check        Run Electron JS checks + Rust tests/fmt/check/clippy
 
 Electron app commands:
   ./dev electron-publish              Publish Electron app
   ./dev electron                      Start already-published Electron app
-  ./dev electron-install              Install Electron npm dependencies in source app
-  ./dev electron-xterm-smoke          Validate running app hub input/output
-  ./dev electron-xterm-resize-smoke   Validate xterm resize propagation with stty size
-  ./dev electron-xterm-playwright-smoke Validate app DOM/state/input with Playwright
-  ./dev electron-xterm-behavior-smoke Validate basic command/Ctrl+C/tool availability
+  ./dev electron-install  Install Electron npm dependencies in source app
+  ./dev electron-test     Run hidden-window Playwright functional tests
 
 Utility commands:
   ./dev status       Show git status and important output paths
@@ -99,33 +96,8 @@ case "$command" in
     cargo clippy --all-targets -- -D warnings
     ;;
 
-  electron-xterm-smoke)
-    ps_file 'scripts\electron-xterm-smoke.ps1' "$@"
-    ;;
-
-  electron-xterm-resize-smoke)
-    ps_file 'scripts\electron-xterm-resize-smoke.ps1' "$@"
-    ;;
-
-  electron-xterm-playwright-smoke)
-    ps_file 'scripts\electron-xterm-playwright-smoke.ps1' "$@"
-    ;;
-
-  electron-xterm-behavior-smoke)
-    ps_file 'scripts\electron-xterm-behavior-smoke.ps1' "$@"
-    ;;
-
-  # Backward-compatible aliases for recent docs/scripts while the app rename settles.
-  electron-xterm-publish)
-    publish_electron_app "$@"
-    ;;
-
-  electron-xterm)
-    run_electron_app "$@"
-    ;;
-
-  electron-xterm-install)
-    ps_file 'scripts\electron-app.ps1' -Command install
+  electron-test)
+    ps_file 'scripts\electron-test.ps1' "$@"
     ;;
 
   status)

@@ -49,15 +49,15 @@ Previous Windows Terminal/WPF embedding POCs are obsolete and are not a product 
 
 - [x] Added Electron xterm app.
 - [x] Made `./dev app` and `./dev publish` target the Electron app.
-- [x] Added smoke for hub start/input/output.
+- [x] Added functional coverage for hub start/input/output in both panes.
 - [x] Added paste handling and common special keys:
   - Ctrl+Shift+V;
   - Shift+Insert;
   - Ctrl+Space → NUL;
   - Alt+Backspace → ESC DEL.
-- [x] Added resize smoke verifying xterm rows/cols match `stty size`.
-- [x] Added Playwright smoke for DOM/state/input.
-- [x] Added behavior smoke for command round-trip, Ctrl+C, tmux/nvim availability.
+- [x] Added hidden-window Playwright resize validation verifying xterm rows/cols match `stty size`.
+- [x] Added structured Playwright coverage for DOM/state/input without foreground-window automation.
+- [x] Added deterministic command round-trip, Ctrl+C, and tmux/nvim availability coverage.
 
 ### Documentation cleanup
 
@@ -92,7 +92,7 @@ Tasks:
   - app/bootstrap.
 - [x] Introduce stable frontend session IDs independent of pane indexes.
 - [x] On startup, call `list_sessions`.
-- [ ] Add a structured Playwright renderer test API and remove echo/log/`SendKeys` assertions from core Electron functional tests.
+- [x] Add a structured Playwright renderer test API and remove echo/log/`SendKeys` assertions from core Electron functional tests.
 - [ ] Attach to known sessions when present.
 - [ ] Start missing sessions when not present.
 - [ ] Detach sessions before app close when persistence is desired.
@@ -102,8 +102,7 @@ Tasks:
 Acceptance criteria:
 
 - [ ] Start app, type in pane 1, close app, reopen app, same backend session responds.
-- [ ] `./dev electron-xterm-smoke` still passes.
-- [ ] `./dev electron-xterm-playwright-smoke` still passes.
+- [ ] `./dev electron-test` still passes.
 - [ ] protocol/docs updated if behavior changes.
 
 ## Near-term product foundation
@@ -221,14 +220,8 @@ Default checks:
 ./dev publish
 ```
 
-With hub/app running:
+With the hub running:
 
 ```bash
-./dev electron-xterm-smoke -PaneIndex 1
-./dev electron-xterm-smoke -PaneIndex 2
-./dev electron-xterm-resize-smoke -PaneIndex 1
-./dev electron-xterm-resize-smoke -PaneIndex 2
-./dev electron-xterm-playwright-smoke
-./dev electron-xterm-behavior-smoke -PaneIndex 1
-./dev electron-xterm-behavior-smoke -PaneIndex 2
+./dev electron-test
 ```

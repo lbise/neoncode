@@ -115,11 +115,12 @@ frontends/electron/renderer.js      renderer bootstrap entrypoint
 frontends/electron/renderer/        renderer modules:
   app.js                            app/bootstrap and pane grid wiring
   hub-client.js                     WebSocket protocol client helpers
-  session-model.js                  pane/session state mirrored to test state
+  session-model.js                  pane/session state and bounded output view
   terminal-pane.js                  xterm.js pane, input, resize, output handling
-frontends/electron/tests/           Playwright smoke tests
+  test-api.js                       test-mode structured renderer API
+frontends/electron/tests/           hidden-window Playwright functional tests
 scripts/electron-app.ps1            Windows-local publish/start helper
-scripts/electron-xterm-*-smoke.ps1 smoke/validation helpers
+scripts/electron-test.ps1           Windows wrapper for Playwright tests
 ```
 
 ## Validation commands
@@ -131,16 +132,10 @@ Baseline:
 ./dev publish
 ```
 
-With `./dev hub` and a running app:
+With `./dev hub` running:
 
 ```bash
-./dev electron-xterm-smoke -PaneIndex 1
-./dev electron-xterm-smoke -PaneIndex 2
-./dev electron-xterm-resize-smoke -PaneIndex 1
-./dev electron-xterm-resize-smoke -PaneIndex 2
-./dev electron-xterm-playwright-smoke
-./dev electron-xterm-behavior-smoke -PaneIndex 1
-./dev electron-xterm-behavior-smoke -PaneIndex 2
+./dev electron-test
 ```
 
 Currently validated:
@@ -151,7 +146,10 @@ Currently validated:
 - paste input;
 - duplicate paste suppression;
 - resize propagation matching `stty size`;
-- Playwright DOM/state/input smoke;
+- hidden-window Playwright DOM and structured renderer state;
+- command execution in both panes without shell-echo false positives;
+- paste normalization without global clipboard state;
+- resize propagation matching `stty size` without foreground-window automation;
 - Ctrl+C;
 - tmux/nvim availability.
 

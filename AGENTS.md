@@ -69,13 +69,10 @@ Typical manual loop:
 ## Electron app commands
 
 ```bash
-./dev electron-publish              # publish Electron app
-./dev electron                      # start published Electron app
-./dev electron-install              # npm install in source app directory
-./dev electron-xterm-smoke          # validate running app hub input/output
-./dev electron-xterm-resize-smoke   # validate resize propagation with stty size
-./dev electron-xterm-playwright-smoke # validate DOM/state/input with Playwright
-./dev electron-xterm-behavior-smoke # validate command/Ctrl+C/tool availability
+./dev electron-publish  # publish Electron app
+./dev electron          # start published Electron app
+./dev electron-install  # npm install in source app directory
+./dev electron-test     # hidden-window Playwright functional tests
 ```
 
 This path uses:
@@ -141,10 +138,10 @@ Testing strategy and automation-layer guidance:
 docs/testing.md
 ```
 
-For the Electron app, also use the app-level Playwright smoke:
+For the Electron app, use the structured hidden-window Playwright test:
 
 ```bash
-./dev electron-xterm-playwright-smoke
+./dev electron-test
 ```
 
 ## Useful log commands
@@ -154,7 +151,7 @@ Windows PowerShell:
 ```powershell
 Get-ChildItem $env:TEMP\NeonCode\*.log | Sort-Object LastWriteTime
 Get-Content $env:TEMP\NeonCode\electron-app-main.log -Tail 200
-Select-String -Path $env:TEMP\NeonCode\electron-app-main.log -Pattern "hub_connected|hub_started|hub_output|terminal_input|terminal_resize"
+Select-String -Path $env:TEMP\NeonCode\electron-app-main.log -Pattern "hub_connected|hub_started|terminal_resize|hub_error"
 ```
 
 From WSL:
@@ -182,16 +179,10 @@ find frontends/electron -path 'frontends/electron/node_modules' -prune -o -name 
 ./dev publish
 ```
 
-If the task affects terminal hub/input behavior, also run against a live app/hub:
+If the task affects terminal hub/input behavior, also run against a live hub:
 
 ```bash
-./dev electron-xterm-smoke -PaneIndex 1
-./dev electron-xterm-smoke -PaneIndex 2
-./dev electron-xterm-resize-smoke -PaneIndex 1
-./dev electron-xterm-resize-smoke -PaneIndex 2
-./dev electron-xterm-playwright-smoke
-./dev electron-xterm-behavior-smoke -PaneIndex 1
-./dev electron-xterm-behavior-smoke -PaneIndex 2
+./dev electron-test
 ```
 
 For docs-only changes, at minimum run:

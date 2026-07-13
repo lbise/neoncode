@@ -33,13 +33,16 @@ function log(message, details) {
 
 function createWindow() {
   Menu.setApplicationMenu(null);
+  const testMode = process.env.NEONCODE_TEST_MODE === '1';
 
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     backgroundColor: '#0c0c0c',
     title: 'NeonCode',
+    show: !testMode,
     webPreferences: {
+      backgroundThrottling: !testMode,
       contextIsolation: false,
       nodeIntegration: true,
     },

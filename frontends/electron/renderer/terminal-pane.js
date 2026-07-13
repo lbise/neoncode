@@ -132,16 +132,20 @@ class TerminalPane {
 
   sendTerminalBytes(bytes, reason = 'data') {
     if (!bytes || bytes.length === 0) {
-      return;
+      return false;
+    }
+
+    const sent = this.hubClient?.input(bytes) ?? false;
+    if (!sent) {
+      return false;
     }
 
     this.sessionModel.recordInput(this.state);
-    console.log(`terminal_input ${this.index} ${bytes.length} ${reason}`);
-    this.hubClient?.input(bytes);
+    return true;
   }
 
   sendTerminalText(text, reason = 'text') {
-    this.sendTerminalBytes(encoder.encode(text), reason);
+    return this.sendTerminalBytes(encoder.encode(text), reason);
   }
 
   shouldSuppressDuplicatePaste(data) {
@@ -161,12 +165,15 @@ class TerminalPane {
   pasteText(text, reason = 'paste') {
     const normalized = normalizeTerminalText(text || '');
     if (!normalized) {
-      return;
+      return false;
     }
 
     console.log(`terminal_paste ${this.index} ${normalized.length} ${reason}`);
-    this.state.suppressedPasteText = normalized;
-    this.sendTerminalText(normalized, reason);
+    const sent = this.sendTerminalText(normalized, reason);
+    if (sent) {
+      this.state.suppressedPasteText = normalized;
+    }
+    return sent;
   }
 
   pasteClipboardText(reason = 'clipboard') {
@@ -244,40 +251,9 @@ class TerminalPane {
 
   handleHubOutput(message) {
     const bytes = base64ToBytes(message.data_b64 || '');
-    this.sessionModel.recordOutput(this.state);
-    console.log(`hub_output ${this.index} ${bytes.length}`);
-
     const text = decoder.decode(bytes);
-    this.state.outputScanBuffer = (this.state.outputScanBuffer + text).slice(-4096);
-    this.scanOutputMarkers();
+    this.sessionModel.recordOutput(this.state, text);
     this.state.terminal.write(bytes);
-  }
-
-  scanOutputMarkers() {
-    if (this.state.outputScanBuffer.includes('xtermsmoke')) {
-      this.sessionModel.recordSmokeMarker(this.state);
-      console.log(`hub_output_marker ${this.index} xtermsmoke`);
-    }
-
-    const resizeMatches = [...this.state.outputScanBuffer.matchAll(/xtermresize:([A-Za-z0-9_-]+):(\d+)\s+(\d+)/g)];
-    if (resizeMatches.length > 0) {
-      const latest = resizeMatches[resizeMatches.length - 1];
-      const marker = `${latest[1]} ${latest[2]} ${latest[3]}`;
-      if (marker !== this.state.lastResizeMarker) {
-        this.state.lastResizeMarker = marker;
-        console.log(`hub_output_resize ${this.index} ${latest[1]} ${latest[2]} ${latest[3]}`);
-      }
-    }
-
-    const checkMatches = [...this.state.outputScanBuffer.matchAll(/xtermcheck:([A-Za-z0-9_-]+):([A-Za-z0-9_-]+):([A-Za-z0-9_.-]+)/g)];
-    if (checkMatches.length > 0) {
-      const latest = checkMatches[checkMatches.length - 1];
-      const marker = `${latest[1]} ${latest[2]} ${latest[3]}`;
-      if (marker !== this.state.lastCheckMarker) {
-        this.state.lastCheckMarker = marker;
-        console.log(`hub_output_check ${this.index} ${latest[1]} ${latest[2]} ${latest[3]}`);
-      }
-    }
   }
 
   handleHubStarted() {

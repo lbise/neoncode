@@ -107,21 +107,16 @@ Validated xterm.js behavior:
 - Ctrl+Shift+V and Shift+Insert paste work;
 - Ctrl+Space → NUL;
 - Alt+Backspace → ESC DEL;
-- resize smoke verifies latest xterm rows/cols match `stty size` from the PTY;
-- Playwright smoke launches Electron, asserts DOM/test state, and verifies xterm input produces hub output;
-- behavior smoke verifies basic command round-trip, Ctrl+C signal handling, and tmux/nvim availability reporting.
+- hidden-window Playwright tests use structured renderer state and direct pane methods, so foreground focus cannot corrupt functional assertions;
+- Playwright verifies command execution in both panes with output markers absent from typed input;
+- Playwright verifies normalized paste without global clipboard state;
+- Electron window bounds are changed through the Playwright Electron API and latest xterm rows/cols are verified against `stty size`;
+- Playwright verifies Ctrl+C signal handling and tmux/nvim availability reporting.
 
-Validation commands:
+Validation command with the hub running:
 
 ```bash
-./dev electron-xterm-smoke -PaneIndex 1
-./dev electron-xterm-smoke -PaneIndex 2
-./dev electron-xterm-smoke -PaneIndex 1 -PasteText 'echo xtermsmokepaste'
-./dev electron-xterm-resize-smoke -PaneIndex 1
-./dev electron-xterm-resize-smoke -PaneIndex 2
-./dev electron-xterm-playwright-smoke
-./dev electron-xterm-behavior-smoke -PaneIndex 1
-./dev electron-xterm-behavior-smoke -PaneIndex 2
+./dev electron-test
 ```
 
 ## Current commands

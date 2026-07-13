@@ -38,10 +38,12 @@ renderer/app.js      app/bootstrap and pane grid wiring
 renderer/hub-client.js
                      WebSocket protocol client helpers
 renderer/session-model.js
-                     pane/session state mirrored to test state
+                     pane/session state and bounded output view
 renderer/terminal-pane.js
                      xterm.js pane, input, resize, output handling
-tests/               Playwright smoke tests
+renderer/test-api.js
+                     structured API enabled only in test mode
+tests/               hidden-window Playwright functional tests
 ```
 
 On startup, the renderer calls `list_sessions` to discover existing hub sessions before starting pane sessions.
@@ -55,17 +57,13 @@ Pane key: tasks  -> session id: <NEONCODE_SESSION_PREFIX>-tasks
 
 ## Validation
 
-With hub and app running:
+With the hub running:
 
 ```bash
-./dev electron-xterm-smoke -PaneIndex 1
-./dev electron-xterm-smoke -PaneIndex 2
-./dev electron-xterm-resize-smoke -PaneIndex 1
-./dev electron-xterm-resize-smoke -PaneIndex 2
-./dev electron-xterm-playwright-smoke
-./dev electron-xterm-behavior-smoke -PaneIndex 1
-./dev electron-xterm-behavior-smoke -PaneIndex 2
+./dev electron-test
 ```
+
+The test launches a hidden Electron window and uses structured renderer/Electron APIs, not foreground focus, global clipboard state, `SendKeys`, or log scraping.
 
 Manual checks inside a terminal:
 

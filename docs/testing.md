@@ -72,13 +72,12 @@ Preferred mechanisms:
 - `electronApp.evaluate` for Electron main-process operations such as controlled window bounds;
 - a narrow test API enabled only by `NEONCODE_TEST_MODE=1` for deterministic terminal input and lifecycle actions.
 
-A future test-only renderer API can expose operations such as:
+The test-only renderer API currently exposes:
 
 ```js
 window.neoncodeTest.getState()
 window.neoncodeTest.sendText(paneId, text)
-window.neoncodeTest.resizePane(paneId, rows, cols)
-window.neoncodeTest.detachPane(paneId)
+window.neoncodeTest.pasteText(paneId, text)
 ```
 
 Production code should use the same underlying methods; the test API should not duplicate behavior.
@@ -115,12 +114,14 @@ printf 'result-%s\n' 'token'
 
 Then assert `result-token`. Other options are base64-decoding a random token in the shell or disabling echo for a tightly controlled test. Assertions should also distinguish command completion from output receipt.
 
-## Migration plan for current Electron smokes
+## Electron test migration status
 
-1. Add the test-only structured renderer API behind `NEONCODE_TEST_MODE=1`.
-2. Rewrite command, resize, session, and reconnect assertions in Playwright.
-3. Replace literal echoed markers with markers constructed only by executed commands.
-4. Add close/reopen/reattach coverage using a stable session prefix and a real test hub.
-5. Add renderer tests with a fake hub for errors, timeouts, and reconnect state transitions.
-6. Retain only a narrow PowerShell window-launch/desktop compatibility smoke.
-7. Remove functional dependencies on `%TEMP%\NeonCode\electron-app-main.log`, clipboard, and `SendKeys`.
+- [x] Add the test-only structured renderer API behind `NEONCODE_TEST_MODE=1`.
+- [x] Run functional Playwright tests in a hidden Electron window.
+- [x] Rewrite command, paste, Ctrl+C, tool, and resize assertions in Playwright.
+- [x] Replace literal echoed markers with markers constructed only by executed commands.
+- [x] Remove core functional dependencies on `%TEMP%\NeonCode\electron-app-main.log`, global clipboard state, and `SendKeys`.
+- [x] Remove the old focus-sensitive PowerShell functional smoke scripts.
+- [ ] Add close/reopen/reattach coverage using a stable session prefix and a real test hub.
+- [ ] Add renderer tests with a fake hub for errors, timeouts, and reconnect state transitions.
+- [ ] Add a narrow PowerShell window-launch/desktop compatibility smoke when installer/DPI/multi-monitor work begins.

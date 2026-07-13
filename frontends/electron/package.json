@@ -6,7 +6,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "smoke": "node tests/electron-smoke.js"
+    "test": "node tests/electron-functional.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

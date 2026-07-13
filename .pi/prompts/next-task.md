@@ -87,22 +87,14 @@ For Electron app changes, normally run:
 
 ```bash
 bash -n dev
-node --check frontends/electron/main.js
-node --check frontends/electron/renderer.js
-node --check frontends/electron/tests/electron-smoke.js
+find frontends/electron -path 'frontends/electron/node_modules' -prune -o -name '*.js' -print0 | xargs -0 -n1 node --check
 ./dev publish
 ```
 
-If terminal hub/input behavior is affected, also run against a live hub/app as relevant:
+If terminal hub/input behavior is affected, also run against a live hub:
 
 ```bash
-./dev electron-xterm-smoke -PaneIndex 1
-./dev electron-xterm-smoke -PaneIndex 2
-./dev electron-xterm-resize-smoke -PaneIndex 1
-./dev electron-xterm-resize-smoke -PaneIndex 2
-./dev electron-xterm-playwright-smoke
-./dev electron-xterm-behavior-smoke -PaneIndex 1
-./dev electron-xterm-behavior-smoke -PaneIndex 2
+./dev electron-test
 ```
 
 For hub/Rust changes, normally run:

@@ -22,12 +22,12 @@ function Resolve-Npm {
 
 $publishedDir = Join-Path $OutputPath "electron"
 $packageJson = Join-Path $publishedDir "package.json"
-$testScript = Join-Path $publishedDir "tests\electron-smoke.js"
+$testScript = Join-Path $publishedDir "tests\electron-functional.js"
 $playwrightPackage = Join-Path $publishedDir "node_modules\playwright\package.json"
 
 foreach ($required in @($packageJson, $testScript, $playwrightPackage)) {
     if (-not (Test-Path -LiteralPath $required)) {
-        throw "Required xterm Playwright smoke file missing: $required. Run './dev publish' first."
+        throw "Required Electron Playwright test file missing: $required. Run './dev publish' first."
     }
 }
 
@@ -35,9 +35,9 @@ $npm = Resolve-Npm
 $env:NEONCODE_PLAYWRIGHT_TIMEOUT = [string]($TimeoutSeconds * 1000)
 Write-Host "npm: $npm"
 Write-Host "Working directory: $publishedDir"
-Write-Host "Command: npm.cmd run smoke"
+Write-Host "Command: npm.cmd test (hidden Electron test mode)"
 
-$cmd = "pushd `"$publishedDir`" && `"$npm`" run smoke"
+$cmd = "pushd `"$publishedDir`" && `"$npm`" test"
 Push-Location $env:TEMP
 try {
     & cmd.exe /d /s /c $cmd
