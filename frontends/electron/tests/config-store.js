@@ -57,6 +57,30 @@ function testEnvironmentOverridesAreNotPersisted() {
   });
 }
 
+function testUnversionedTerminalConfigMigration() {
+  withStore((store, directory) => {
+    fs.mkdirSync(store.directory, { recursive: true });
+    const legacy = {
+      terminal: {
+        fontFace: 'FiraCode Nerd Font Mono',
+        fontSize: 14,
+        background: '#0C0C0C',
+      },
+    };
+    fs.writeFileSync(store.configPath, `${JSON.stringify(legacy)}\n`);
+
+    const result = store.load({});
+    assert.equal(result.diagnostics.configStatus, 'migrated');
+    assert.deepEqual(result.config, defaultConfig());
+    assert.equal(readJson(store.configPath).schemaVersion, 1);
+    assert(result.diagnostics.warnings.some((warning) => warning.includes('not applied yet')));
+    const preserved = fs.readdirSync(directory)
+      .find((name) => name.startsWith('config.json.pre-migration-'));
+    assert(preserved, 'legacy terminal config was not preserved');
+    assert.deepEqual(readJson(path.join(directory, preserved)), legacy);
+  });
+}
+
 function testLegacyMigration() {
   withStore((store) => {
     fs.mkdirSync(store.directory, { recursive: true });
@@ -194,6 +218,7 @@ function testStaleTemporaryCleanup() {
 for (const test of [
   testFirstRunCreation,
   testEnvironmentOverridesAreNotPersisted,
+  testUnversionedTerminalConfigMigration,
   testLegacyMigration,
   testInvalidPrimaryRecoversBackup,
   testMissingPrimaryWithUnusableBackupIsFatal,

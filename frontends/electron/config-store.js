@@ -131,7 +131,16 @@ function validateEndpoint(value) {
 function migrateConfig(raw) {
   requireObject(raw, 'config');
   if (raw.schemaVersion === CONFIG_SCHEMA_VERSION) {
-    return { document: raw, migrated: false };
+    return { document: raw, migrated: false, migrationSource: null };
+  }
+  if (raw.schemaVersion === undefined
+      && Object.keys(raw).length === 1
+      && isPlainObject(raw.terminal)) {
+    return {
+      document: defaultConfig(),
+      migrated: true,
+      migrationSource: 'legacy_terminal',
+    };
   }
   if (Number.isInteger(raw.schemaVersion) && raw.schemaVersion > CONFIG_SCHEMA_VERSION) {
     throw new ConfigurationError(
@@ -160,11 +169,11 @@ function migrateConfig(raw) {
   migrated.sessionPrefix = raw.sessionPrefix;
   migrated.persistence.onWindowClose = raw.persistSessions ? 'detach' : 'kill';
   migrated.sessions = migrated.sessions.slice(0, raw.terminalCount);
-  return { document: migrated, migrated: true };
+  return { document: migrated, migrated: true, migrationSource: 'schema_0' };
 }
 
 function validateConfig(raw) {
-  const { document, migrated } = migrateConfig(raw);
+  const { document, migrated, migrationSource } = migrateConfig(raw);
   requireExactKeys(
     document,
     ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'launchProfiles', 'sessions'],
@@ -248,6 +257,7 @@ function validateConfig(raw) {
       sessions,
     },
     migrated,
+    migrationSource,
   };
 }
 
@@ -373,6 +383,16 @@ class ConfigStore {
     return preserved;
   }
 
+  preserveForMigration(warnings) {
+    const preserved = `${this.configPath}.pre-migration-${Date.now()}`;
+    try {
+      fs.copyFileSync(this.configPath, preserved, fs.constants.COPYFILE_EXCL);
+      warnings.push(`legacy config.json was preserved as ${path.basename(preserved)}`);
+    } catch (error) {
+      warnings.push(`legacy config.json could not be preserved before migration: ${error.message}`);
+    }
+  }
+
   preserveInvalidSafely(filePath, warnings, label) {
     try {
       const preserved = this.preserveInvalid(filePath);
@@ -463,9 +483,13 @@ class ConfigStore {
     }
 
     if (primaryResult.migrated) {
+      this.preserveForMigration(warnings);
       try {
         writeJsonAtomic(this.configPath, primaryResult.value);
-        warnings.push(`config.json was migrated to schema ${CONFIG_SCHEMA_VERSION}`);
+        const migrationDetail = primaryResult.migrationSource === 'legacy_terminal'
+          ? '; legacy terminal theme settings remain in the preserved file and are not applied yet'
+          : '';
+        warnings.push(`config.json was migrated to schema ${CONFIG_SCHEMA_VERSION}${migrationDetail}`);
       } catch (error) {
         warnings.push(`migrated config.json could not be persisted: ${error.message}`);
       }

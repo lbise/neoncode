@@ -153,6 +153,8 @@ On every valid load, NeonCode updates `config.json.bak`. If `config.json` later 
 
 An unsupported future schema is preserved and is not downgraded automatically. If neither the primary nor backup is usable, NeonCode opens with a visible configuration error and launches no terminal sessions.
 
+Known pre-schema NeonCode files containing only a `terminal` object are preserved as `config.json.pre-migration-<timestamp>` and migrated to version 1 defaults. Their old font/color settings are not applied yet because terminal appearance is deferred to a later schema. Schema version 0 prototype fields are also migrated to version 1.
+
 App-owned `state.json` currently stores only content width and height. Invalid state is preserved and reset safely. Window position is deliberately not persisted yet to avoid reopening off-screen.
 
 Writes use same-directory temporary files, flush, and atomic rename. Electron also uses a single-instance lock to avoid competing state writers.
