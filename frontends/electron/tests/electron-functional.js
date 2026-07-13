@@ -370,6 +370,8 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
     assert(pane.fontSize === 16, `${pane.paneId} font size was not applied`);
     assert(pane.cursorBlink === false, `${pane.paneId} cursor blink was not applied`);
     assert(pane.background === '#101820', `${pane.paneId} background was not applied`);
+    assert(pane.magenta === '#881798', `${pane.paneId} purple color was not mapped to xterm magenta`);
+    assert(pane.brightMagenta === '#b4009e', `${pane.paneId} brightPurple was not mapped to xterm brightMagenta`);
   }
   assert(initialState.sessionDiscovery.sessionListEvents >= 1, 'startup did not list hub sessions');
   assert(

@@ -27,19 +27,28 @@ function normalizeTerminalText(text) {
 }
 
 function buildTerminalTheme(appearance) {
-  const [
-    black, red, green, yellow, blue, magenta, cyan, white,
-    brightBlack, brightRed, brightGreen, brightYellow,
-    brightBlue, brightMagenta, brightCyan, brightWhite,
-  ] = appearance.theme.ansi;
+  const theme = appearance.theme;
   return {
-    background: appearance.theme.background,
-    foreground: appearance.theme.foreground,
-    cursor: appearance.theme.cursor,
-    selectionBackground: appearance.theme.selectionBackground,
-    black, red, green, yellow, blue, magenta, cyan, white,
-    brightBlack, brightRed, brightGreen, brightYellow,
-    brightBlue, brightMagenta, brightCyan, brightWhite,
+    background: theme.background,
+    foreground: theme.foreground,
+    cursor: theme.cursorColor,
+    selectionBackground: theme.selectionBackground,
+    black: theme.black,
+    red: theme.red,
+    green: theme.green,
+    yellow: theme.yellow,
+    blue: theme.blue,
+    magenta: theme.purple,
+    cyan: theme.cyan,
+    white: theme.white,
+    brightBlack: theme.brightBlack,
+    brightRed: theme.brightRed,
+    brightGreen: theme.brightGreen,
+    brightYellow: theme.brightYellow,
+    brightBlue: theme.brightBlue,
+    brightMagenta: theme.brightPurple,
+    brightCyan: theme.brightCyan,
+    brightWhite: theme.brightWhite,
   };
 }
 

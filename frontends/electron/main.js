@@ -82,7 +82,7 @@ function processIntegrityLevel() {
 function rendererConfig() {
   const config = bootstrapResult.config;
   return {
-    schemaVersion: config?.schemaVersion || 2,
+    schemaVersion: config?.schemaVersion || 3,
     configurationValid: Boolean(config),
     endpoint: config?.hub.endpoint || '',
     capabilityToken: hubCapabilityToken,

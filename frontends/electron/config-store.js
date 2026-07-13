@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const CONFIG_SCHEMA_VERSION = 2;
+const CONFIG_SCHEMA_VERSION = 3;
 const STATE_SCHEMA_VERSION = 1;
 const MAX_CONFIG_BYTES = 64 * 1024;
 const MAX_STATE_BYTES = 16 * 1024;
@@ -11,6 +11,11 @@ const MIN_WINDOW_HEIGHT = 600;
 const MAX_WINDOW_DIMENSION = 10000;
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9_.-]+$/;
 const RESERVED_PROFILE_IDS = new Set(['__proto__', 'constructor', 'prototype']);
+const TERMINAL_COLOR_KEYS = [
+  'black', 'red', 'green', 'yellow', 'blue', 'purple', 'cyan', 'white',
+  'brightBlack', 'brightRed', 'brightGreen', 'brightYellow',
+  'brightBlue', 'brightPurple', 'brightCyan', 'brightWhite',
+];
 
 class ConfigurationError extends Error {
   constructor(message, code = 'invalid') {
@@ -30,16 +35,27 @@ function defaultTerminalAppearance() {
     fontSize: 14,
     cursorBlink: true,
     theme: {
+      name: 'NeonCode Default',
       background: '#0c0c0c',
       foreground: '#cccccc',
-      cursor: '#ffffff',
+      cursorColor: '#ffffff',
       selectionBackground: '#264f78',
-      ansi: [
-        '#0c0c0c', '#c50f1f', '#13a10e', '#c19c00',
-        '#0037da', '#881798', '#3a96dd', '#cccccc',
-        '#767676', '#e74856', '#16c60c', '#f9f1a5',
-        '#3b78ff', '#b4009e', '#61d6d6', '#f2f2f2',
-      ],
+      black: '#0c0c0c',
+      red: '#c50f1f',
+      green: '#13a10e',
+      yellow: '#c19c00',
+      blue: '#0037da',
+      purple: '#881798',
+      cyan: '#3a96dd',
+      white: '#cccccc',
+      brightBlack: '#767676',
+      brightRed: '#e74856',
+      brightGreen: '#16c60c',
+      brightYellow: '#f9f1a5',
+      brightBlue: '#3b78ff',
+      brightPurple: '#b4009e',
+      brightCyan: '#61d6d6',
+      brightWhite: '#f2f2f2',
     },
   };
 }
@@ -164,7 +180,26 @@ function migrateLegacyTerminal(rawTerminal) {
   for (const key of ['background', 'foreground', 'selectionBackground']) {
     if (typeof rawTerminal[key] === 'string') appearance.theme[key] = rawTerminal[key];
   }
-  if (Array.isArray(rawTerminal.colorTable)) appearance.theme.ansi = [...rawTerminal.colorTable];
+  if (Array.isArray(rawTerminal.colorTable) && rawTerminal.colorTable.length === 16) {
+    TERMINAL_COLOR_KEYS.forEach((key, index) => {
+      appearance.theme[key] = rawTerminal.colorTable[index];
+    });
+  }
+  return appearance;
+}
+
+function migrateSchemaTwoTerminal(terminal) {
+  const appearance = defaultTerminalAppearance();
+  appearance.fontFamily = terminal.fontFamily;
+  appearance.fontSize = terminal.fontSize;
+  appearance.cursorBlink = terminal.cursorBlink;
+  appearance.theme.background = terminal.theme.background;
+  appearance.theme.foreground = terminal.theme.foreground;
+  appearance.theme.cursorColor = terminal.theme.cursor;
+  appearance.theme.selectionBackground = terminal.theme.selectionBackground;
+  TERMINAL_COLOR_KEYS.forEach((key, index) => {
+    appearance.theme[key] = terminal.theme.ansi[index];
+  });
   return appearance;
 }
 
@@ -182,6 +217,13 @@ function migrateConfig(raw, legacyTerminal) {
       document: migrated,
       migrated: true,
       migrationSource: 'legacy_terminal',
+    };
+  }
+  if (raw.schemaVersion === 2) {
+    return {
+      document: { ...raw, schemaVersion: CONFIG_SCHEMA_VERSION, terminal: migrateSchemaTwoTerminal(raw.terminal) },
+      migrated: true,
+      migrationSource: 'schema_2',
     };
   }
   if (raw.schemaVersion === 1) {
@@ -202,7 +244,7 @@ function migrateConfig(raw, legacyTerminal) {
     );
   }
   if (raw.schemaVersion !== 0) {
-    throw new ConfigurationError('config.schemaVersion must be 0, 1, or 2');
+    throw new ConfigurationError('config.schemaVersion must be 0, 1, 2, or 3');
   }
 
   requireExactKeys(
@@ -253,25 +295,22 @@ function validateConfig(raw, { legacyTerminal } = {}) {
   if (typeof document.terminal.cursorBlink !== 'boolean') {
     throw new ConfigurationError('config.terminal.cursorBlink must be boolean');
   }
-  requireExactKeys(
-    document.terminal.theme,
-    ['background', 'foreground', 'cursor', 'selectionBackground', 'ansi'],
-    'config.terminal.theme',
-  );
-  if (!Array.isArray(document.terminal.theme.ansi) || document.terminal.theme.ansi.length !== 16) {
-    throw new ConfigurationError('config.terminal.theme.ansi must contain exactly 16 colors');
+  const themeKeys = [
+    'name', 'background', 'foreground', 'cursorColor', 'selectionBackground',
+    ...TERMINAL_COLOR_KEYS,
+  ];
+  requireExactKeys(document.terminal.theme, themeKeys, 'config.terminal.theme');
+  const theme = {
+    name: requireBoundedString(document.terminal.theme.name, 'config.terminal.theme.name', { max: 128 }),
+  };
+  for (const key of themeKeys.filter((key) => key !== 'name')) {
+    theme[key] = requireColor(document.terminal.theme[key], `config.terminal.theme.${key}`);
   }
   const terminal = {
     fontFamily,
     fontSize: document.terminal.fontSize,
     cursorBlink: document.terminal.cursorBlink,
-    theme: {
-      background: requireColor(document.terminal.theme.background, 'config.terminal.theme.background'),
-      foreground: requireColor(document.terminal.theme.foreground, 'config.terminal.theme.foreground'),
-      cursor: requireColor(document.terminal.theme.cursor, 'config.terminal.theme.cursor'),
-      selectionBackground: requireColor(document.terminal.theme.selectionBackground, 'config.terminal.theme.selectionBackground'),
-      ansi: document.terminal.theme.ansi.map((color, index) => requireColor(color, `config.terminal.theme.ansi[${index}]`)),
-    },
+    theme,
   };
 
   const rawProfiles = requireObject(document.launchProfiles, 'config.launchProfiles');

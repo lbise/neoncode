@@ -13,13 +13,13 @@ Electron main owns all filesystem access. The sandboxed renderer receives only a
 
 Configuration is read at startup. There is no settings UI or live reload yet; close and reopen NeonCode after editing `config.json`.
 
-## Version 2 schema
+## Version 3 schema
 
 The first launch creates:
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "hub": {
     "endpoint": "ws://127.0.0.1:44777/ws"
   },
@@ -32,16 +32,27 @@ The first launch creates:
     "fontSize": 14,
     "cursorBlink": true,
     "theme": {
+      "name": "NeonCode Default",
       "background": "#0c0c0c",
       "foreground": "#cccccc",
-      "cursor": "#ffffff",
+      "cursorColor": "#ffffff",
       "selectionBackground": "#264f78",
-      "ansi": [
-        "#0c0c0c", "#c50f1f", "#13a10e", "#c19c00",
-        "#0037da", "#881798", "#3a96dd", "#cccccc",
-        "#767676", "#e74856", "#16c60c", "#f9f1a5",
-        "#3b78ff", "#b4009e", "#61d6d6", "#f2f2f2"
-      ]
+      "black": "#0c0c0c",
+      "red": "#c50f1f",
+      "green": "#13a10e",
+      "yellow": "#c19c00",
+      "blue": "#0037da",
+      "purple": "#881798",
+      "cyan": "#3a96dd",
+      "white": "#cccccc",
+      "brightBlack": "#767676",
+      "brightRed": "#e74856",
+      "brightGreen": "#16c60c",
+      "brightYellow": "#f9f1a5",
+      "brightBlue": "#3b78ff",
+      "brightPurple": "#b4009e",
+      "brightCyan": "#61d6d6",
+      "brightWhite": "#f2f2f2"
     }
   },
   "launchProfiles": {
@@ -67,7 +78,7 @@ The first launch creates:
 }
 ```
 
-Version 2 intentionally supports one or two sessions because the current Electron layout has two static pane surfaces.
+Version 3 intentionally supports one or two sessions because the current Electron layout has two static pane surfaces.
 
 A hub session ID is:
 
@@ -170,7 +181,7 @@ On every valid load, NeonCode updates `config.json.bak`. If `config.json` later 
 
 An unsupported future schema is preserved and is not downgraded automatically. If neither the primary nor backup is usable, NeonCode opens with a visible configuration error and launches no terminal sessions.
 
-Known pre-schema NeonCode files containing only a `terminal` object are preserved as `config.json.pre-migration-<timestamp>` and their compatible font, cursor, and color-table settings are imported into version 2. Schema versions 0 and 1 are migrated automatically. When a preserved terminal-only file is available, schema 1 imports its appearance while retaining current pane/profile edits; otherwise it receives the default appearance.
+Known pre-schema NeonCode files containing only a `terminal` object are preserved as `config.json.pre-migration-<timestamp>` and their compatible font, cursor, and color-table settings are imported into version 3. Schema versions 0, 1, and 2 are migrated automatically. Version 2 positional `ansi` arrays are converted losslessly to named colors. When a preserved terminal-only file is available, schema 1 imports its appearance while retaining current pane/profile edits; otherwise it receives the default appearance.
 
 App-owned `state.json` currently stores only content width and height. Invalid state is preserved and reset safely. Window position is deliberately not persisted yet to avoid reopening off-screen.
 

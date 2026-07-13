@@ -91,6 +91,8 @@ class SessionModel {
       fontSize: terminal.options.fontSize,
       cursorBlink: terminal.options.cursorBlink,
       background: terminal.options.theme.background,
+      magenta: terminal.options.theme.magenta,
+      brightMagenta: terminal.options.theme.brightMagenta,
     };
 
     return state;

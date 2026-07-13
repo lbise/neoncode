@@ -188,7 +188,7 @@ Limitations:
 - [ ] Introduce a small state model for panes/sessions/workspaces.
 - [x] Add app-level error display for hub disconnect/session exit/protocol errors.
 - [x] Add config storage under `%APPDATA%\NeonCode`.
-- [x] Load validated font, cursor, and 16-color terminal appearance from schema-version-2 app config.
+- [x] Load validated font, cursor, and 16-color terminal appearance from schema-version-3 app config with named Windows-Terminal-style colors.
 
 ### 2. Security hardening
 
