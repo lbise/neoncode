@@ -82,6 +82,7 @@ Typical manual loop:
 ```bash
 ./dev electron-publish  # publish Electron app
 ./dev electron          # start published Electron app
+./dev electron-stop     # force-stop only NeonCode's published Electron processes
 ./dev electron-install  # npm install in source app directory
 ./dev electron-audit    # audit locked Electron dependencies
 ./dev electron-test     # hidden-window Playwright functional tests

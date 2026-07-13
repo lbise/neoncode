@@ -206,6 +206,7 @@ Release-blocking baseline:
 - [x] Add bounded WebSocket/session event queues plus frame, input, session, attachment, process, ID, and terminal-size limits.
 - [x] Add security integration tests for unauthorized origins/capabilities and invalid/oversized inputs.
 - [x] Re-run the Electron functional suite with capability authentication after restoring the official Electron runtime.
+- [ ] Launch the Windows app at medium integrity even when the invoking WSL development shell is elevated.
 
 Before treating hostile native local accounts/processes as in-scope or enabling remote access:
 

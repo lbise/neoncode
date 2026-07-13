@@ -20,6 +20,7 @@ Daily commands:
 Electron app commands:
   ./dev electron-publish              Publish Electron app
   ./dev electron                      Start already-published Electron app
+  ./dev electron-stop                 Force-stop only published NeonCode Electron processes
   ./dev electron-install  Install Electron npm dependencies in source app
   ./dev electron-audit    Audit the locked Electron app dependencies
   ./dev electron-test     Run hidden-window Playwright functional tests
@@ -134,6 +135,10 @@ case "$command" in
 
   electron)
     run_electron_app "$@"
+    ;;
+
+  electron-stop)
+    ps_file 'scripts\electron-app.ps1' -Command stop
     ;;
 
   electron-install)

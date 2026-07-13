@@ -48,7 +48,8 @@ Explicit commands:
 ```bash
 ./dev publish
 ./dev electron
-./dev reset-token  # rotate token, then restart hub and app
+./dev electron-stop  # force-stop only the published NeonCode Electron runtime
+./dev reset-token    # rotate token, then restart hub and app
 ```
 
 ## Source layout

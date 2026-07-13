@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("install", "publish", "start")]
+    [ValidateSet("install", "publish", "start", "stop")]
     [string]$Command = "start",
     [string]$OutputPath = "$env:USERPROFILE\neoncode-electron",
     [int]$TerminalCount = 2,
@@ -47,7 +47,14 @@ function Invoke-Npm {
 }
 
 function Stop-ElectronAppProcesses {
-    Get-Process electron -ErrorAction SilentlyContinue | Stop-Process -Force
+    param(
+        [Parameter(Mandatory=$true)][string]$PublishedDirectory
+    )
+
+    $expectedPath = Join-Path $PublishedDirectory "node_modules\electron\dist\electron.exe"
+    Get-Process electron -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -and ([string]::Equals($_.Path, $expectedPath, [System.StringComparison]::OrdinalIgnoreCase)) } |
+        Stop-Process -Force
     Start-Sleep -Milliseconds 500
 }
 
@@ -87,7 +94,7 @@ switch ($Command) {
     }
 
     "publish" {
-        Stop-ElectronAppProcesses
+        Stop-ElectronAppProcesses -PublishedDirectory $publishedDir
 
         if ($Clean -and (Test-Path -LiteralPath $OutputPath)) {
             Write-Host "Cleaning Electron app output: $OutputPath"
@@ -122,7 +129,7 @@ switch ($Command) {
     }
 
     "start" {
-        Stop-ElectronAppProcesses
+        Stop-ElectronAppProcesses -PublishedDirectory $publishedDir
 
         if (-not (Test-Path -LiteralPath (Join-Path $publishedDir "package.json"))) {
             throw "Published Electron app not found at $OutputPath. Run './dev publish' first."
@@ -133,5 +140,10 @@ switch ($Command) {
             Write-Host "Terminal count override: $env:NEONCODE_TERMINAL_COUNT"
         }
         Invoke-Npm -WorkingDirectory $publishedDir -Arguments "start"
+    }
+
+    "stop" {
+        Stop-ElectronAppProcesses -PublishedDirectory $publishedDir
+        Write-Host "Stopped published NeonCode Electron processes."
     }
 }
