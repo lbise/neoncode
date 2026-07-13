@@ -2,6 +2,7 @@
 description: Pick the next NeonCode task and complete implement/validate/check-off cycle
 argument-hint: "[task override]"
 ---
+
 You are working in the NeonCode repository.
 
 Your job is to run one complete implementation cycle:
@@ -22,12 +23,11 @@ If the override is non-empty, use it as the requested task unless it conflicts w
 
 Read these before selecting/implementing:
 
-1. `AGENTS.md`
-2. `README.md`
-3. `docs/development-plan.md`
-4. `docs/architecture.md`
-5. `docs/product-requirements.md`
-6. Any directly relevant doc linked from those files, especially:
+1. `README.md`
+2. `docs/development-plan.md`
+3. `docs/architecture.md`
+4. `docs/product-requirements.md`
+5. Any directly relevant doc linked from those files, especially:
    - `docs/protocol.md` for protocol changes;
    - `docs/hub.md` for hub changes;
    - `docs/terminal-renderer-decision.md` for renderer/app decisions;
