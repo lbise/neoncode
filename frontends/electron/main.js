@@ -110,6 +110,12 @@ ipcMain.on('neoncode:get-renderer-config', (event) => {
 });
 
 ipcMain.handle('neoncode:read-clipboard-text', () => clipboard.readText());
+ipcMain.handle('neoncode:write-clipboard-text', (_event, text) => {
+  if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > 1024 * 1024) {
+    throw new Error('clipboard text must be a string no larger than 1 MiB');
+  }
+  clipboard.writeText(text);
+});
 
 function ensureLogFile() {
   if (logFilePath) {

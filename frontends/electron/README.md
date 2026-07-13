@@ -30,7 +30,7 @@ nodeIntegration: false
 sandbox: true
 ```
 
-The preload exposes only validated bootstrap configuration, clipboard reads, and graceful-close coordination. CSP, navigation, new-window, webview, and permission restrictions are enforced by the Electron main process.
+The preload exposes only validated bootstrap configuration, bounded clipboard reads/writes, and graceful-close coordination. CSP, navigation, new-window, webview, and permission restrictions are enforced by the Electron main process.
 
 The WSL wrapper launches the visible app through Windows Explorer so Electron runs at medium integrity rather than inheriting an elevated WSL PowerShell token. Electron reads the mode-0600 hub token through `wsl.exe`; the token is not placed on the launch command line.
 
@@ -100,7 +100,7 @@ With the hub running:
 ./dev electron-test
 ```
 
-The test launches a hidden Electron window and uses structured renderer/Electron APIs, not foreground focus, global clipboard state, `SendKeys`, or log scraping. It closes/reopens the real Electron app and verifies the same shell state survives reattachment.
+The test launches a hidden Electron window and uses structured renderer/Electron APIs, restoring clipboard state after copy checks rather than relying on it for terminal/session correctness. It does not use foreground-window automation, `SendKeys`, or log scraping. It closes/reopens the real Electron app and verifies the same shell state survives reattachment.
 
 Manual checks inside a terminal:
 

@@ -240,10 +240,10 @@ Still needed:
 
 - [x] Ctrl+D;
 - [x] Ctrl+Z;
-- [ ] arrow/function/Home/End/PageUp/PageDown keys;
-- [ ] copy/selection behavior;
-- [ ] Neovim interactive behavior;
-- [ ] tmux interactive behavior;
+- [x] arrow/function/Home/End/PageUp/PageDown keys;
+- [x] copy/selection behavior;
+- [x] Neovim interactive insert/write/exit behavior;
+- [x] tmux interactive command/detach behavior;
 - [ ] mouse mode in Neovim/tmux;
 - [x] Initial 2,000-line heavy-output continuity test;
 - [ ] Extended heavy-output/performance soak;

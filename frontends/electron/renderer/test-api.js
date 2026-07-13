@@ -37,6 +37,10 @@ function installRendererTestApi(app) {
     disconnectPaneSocket(paneId) {
       findPane(app, paneId).forceDisconnectForTest();
     },
+
+    selectAll(paneId) {
+      findPane(app, paneId).state.terminal.selectAll();
+    },
   });
 
   app.window.neoncodeTest = api;

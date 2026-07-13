@@ -19,6 +19,10 @@ contextBridge.exposeInMainWorld('neoncodeDesktop', Object.freeze({
     return ipcRenderer.invoke('neoncode:read-clipboard-text');
   },
 
+  writeClipboardText(text) {
+    return ipcRenderer.invoke('neoncode:write-clipboard-text', text);
+  },
+
   onPrepareClose(callback) {
     ipcRenderer.on('neoncode:prepare-close', async () => {
       try {

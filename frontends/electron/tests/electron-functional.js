@@ -297,7 +297,7 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   assert(rendererSecurity.openedWindow === false, 'renderer opened an external window');
   assert(rendererSecurity.permission === 'denied', `notification permission was ${rendererSecurity.permission}`);
   assert(
-    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'onPrepareClose', 'readClipboardText']),
+    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'onPrepareClose', 'readClipboardText', 'writeClipboardText']),
     `unexpected preload API surface: ${rendererSecurity.desktopKeys.join(',')}`,
   );
 
@@ -376,12 +376,40 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   await waitForOutput(page, 'shell', ctrlZExpected);
   await sendText(page, 'shell', "kill %1 2>/dev/null || true\n");
 
+  const keyHex = [
+    '1b4f41', '1b4f42', '1b4f43', '1b4f44',
+    '1b4f48', '1b4f46', '1b5b357e', '1b5b367e',
+    '1b4f50', '1b4f51', '1b5b31357e', '1b5b32347e', '0a',
+  ].join('');
+  const keyExpected = `keys-${keyHex}`;
+  const keyCommand = `python3 -c "import os; d=b''.join(iter(lambda:os.read(0,1),b'\\n')); print('k'+'eys-'+(d+b'\\n').hex())"\n`;
+  assertMarkerIsNotEchoed(keyCommand, 'keys-');
+  await sendText(page, 'shell', keyCommand);
+  for (const key of ['ArrowUp', 'ArrowDown', 'ArrowRight', 'ArrowLeft', 'Home', 'End', 'PageUp', 'PageDown', 'F1', 'F2', 'F5', 'F12', 'Enter']) {
+    await pressTerminalKey(page, 'shell', key);
+  }
+  await waitForOutput(page, 'shell', 'keys-');
+  const keyState = await getState(page);
+  const keyOutput = keyState.panes.find((pane) => pane.paneId === 'shell').recentOutput;
+  const actualKeyHex = [...keyOutput.matchAll(/keys-([0-9a-f]+)/g)].at(-1)?.[1];
+  assert(actualKeyHex === keyHex, `terminal key bytes expected ${keyHex}, got ${actualKeyHex}`);
+
   const unicodeExpected = `unicode-λ-界-${runToken}`;
   const unicodePayload = Buffer.from(unicodeExpected).toString('base64');
   const unicodeCommand = `printf '%s' '${unicodePayload}' | base64 -d; printf '\\n'\n`;
   assertMarkerIsNotEchoed(unicodeCommand, unicodeExpected);
   await sendText(page, 'tasks', unicodeCommand);
   await waitForOutput(page, 'tasks', unicodeExpected);
+
+  const previousClipboard = await electronApp.evaluate(({ clipboard }) => clipboard.readText());
+  await page.evaluate(() => window.neoncodeTest.selectAll('tasks'));
+  await pressTerminalKey(page, 'tasks', 'Control+Shift+c');
+  await page.waitForFunction(
+    async (expected) => (await window.neoncodeDesktop.readClipboardText()).includes(expected),
+    unicodeExpected,
+    { timeout },
+  );
+  await electronApp.evaluate(({ clipboard }, text) => clipboard.writeText(text), previousClipboard);
 
   const heavyExpected = `heavy-done-${runToken}`;
   const heavyCommand = `i=0; while [ $i -lt 2000 ]; do printf 'load-%04d\\n' "$i"; i=$((i+1)); done; printf 'heavy-done-%s\\n' '${runToken}'\n`;
@@ -404,6 +432,41 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   }
   await sendText(page, 'tasks', nvimCommand);
   const nvimResult = await waitForEitherOutput(page, 'tasks', nvimValues);
+
+  if (tmuxResult.includes('present')) {
+    const tmuxSession = `neoncode-${runToken}`;
+    const tmuxSocket = `neoncode-${runToken}`;
+    await sendText(page, 'tasks', `tmux -f /dev/null -L '${tmuxSocket}' new-session -s '${tmuxSession}'\n`);
+    await page.waitForTimeout(500);
+    const tmuxLiveExpected = `tmux-live-${runToken}`;
+    const tmuxLiveCommand = `printf 'tmux-live-%s\\n' '${runToken}'\n`;
+    assertMarkerIsNotEchoed(tmuxLiveCommand, tmuxLiveExpected);
+    await sendText(page, 'tasks', tmuxLiveCommand);
+    await waitForOutput(page, 'tasks', tmuxLiveExpected);
+    await sendText(page, 'tasks', '\x02d');
+    await page.waitForTimeout(300);
+    const tmuxDetachedExpected = `tmux-detached-${runToken}`;
+    const tmuxDetachedCommand = `printf 'tmux-detached-%s\\n' '${runToken}'\n`;
+    assertMarkerIsNotEchoed(tmuxDetachedCommand, tmuxDetachedExpected);
+    await sendText(page, 'tasks', tmuxDetachedCommand);
+    await waitForOutput(page, 'tasks', tmuxDetachedExpected);
+    await sendText(page, 'tasks', `tmux -L '${tmuxSocket}' kill-session -t '${tmuxSession}'\n`);
+  }
+
+  if (nvimResult.includes('present')) {
+    const nvimPath = `/tmp/neoncode-nvim-${runToken}.txt`;
+    const nvimContent = `editor-${runToken}`;
+    await sendText(page, 'tasks', `nvim -u NONE -n '${nvimPath}'\n`);
+    await page.waitForTimeout(500);
+    await sendText(page, 'tasks', `i${nvimContent}`);
+    await sendText(page, 'tasks', '\x1b:w!\n:qa!\n');
+    await page.waitForTimeout(500);
+    const nvimExpected = `nvim-file-${nvimContent}`;
+    const nvimVerifyCommand = `printf 'nvim-file-'; cat '${nvimPath}'; printf '\\n'; rm -f '${nvimPath}'\n`;
+    assertMarkerIsNotEchoed(nvimVerifyCommand, nvimExpected);
+    await sendText(page, 'tasks', nvimVerifyCommand);
+    await waitForOutput(page, 'tasks', nvimExpected);
+  }
 
   const beforeResize = await getState(page);
   await electronApp.evaluate(({ BrowserWindow }) => {

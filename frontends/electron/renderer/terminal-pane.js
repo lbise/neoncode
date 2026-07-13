@@ -231,6 +231,12 @@ class TerminalPane {
         return false;
       }
 
+      if ((event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'c')
+          || (event.ctrlKey && !event.shiftKey && !event.altKey && event.key === 'Insert')) {
+        this.copySelection();
+        return false;
+      }
+
       if ((event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'v')
           || (event.shiftKey && !event.ctrlKey && !event.altKey && event.key === 'Insert')) {
         this.pasteClipboardText('key_paste');
@@ -300,6 +306,20 @@ class TerminalPane {
       this.state.suppressedPasteText = normalized;
     }
     return sent;
+  }
+
+  async copySelection() {
+    const text = this.state.terminal.getSelection();
+    if (!text) {
+      return false;
+    }
+    try {
+      await window.neoncodeDesktop.writeClipboardText(text);
+      return true;
+    } catch (error) {
+      this.setLifecycle('error', `Clipboard write failed: ${error.message}`);
+      return false;
+    }
   }
 
   async pasteClipboardText(reason = 'clipboard') {
