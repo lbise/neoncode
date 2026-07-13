@@ -4,10 +4,13 @@ const { FitAddon } = require('@xterm/addon-fit');
 const { HubClient, base64ToBytes, decoder, encoder } = require('./hub-client');
 
 const CLOSE_ACK_TIMEOUT_MS = 1500;
+const RECONNECT_INITIAL_DELAY_MS = 250;
+const RECONNECT_MAX_DELAY_MS = 5000;
 const LIFECYCLE_LABELS = {
   attached: 'Attached',
   attaching: 'Attaching',
   connecting: 'Connecting',
+  reconnecting: 'Reconnecting',
   detached: 'Detached',
   detaching: 'Detaching',
   disconnected: 'Disconnected',
@@ -81,6 +84,9 @@ class TerminalPane {
     this.activationFallbackUsed = false;
     this.pendingClose = undefined;
     this.closed = false;
+    this.connectionGeneration = 0;
+    this.reconnectTimer = undefined;
+    this.reconnectAttempts = 0;
   }
 
   start() {
@@ -133,6 +139,8 @@ class TerminalPane {
       return;
     }
     this.closed = true;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
     this.resizeObserver?.disconnect();
     this.hubClient?.close();
     this.resolvePendingClose();
@@ -147,6 +155,8 @@ class TerminalPane {
   }
 
   requestClose(action) {
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
     if (this.pendingClose) {
       return this.pendingClose.promise;
     }
@@ -331,23 +341,27 @@ class TerminalPane {
   }
 
   connect() {
+    const generation = ++this.connectionGeneration;
     this.hubClient = new HubClient({
       endpoint: this.endpoint,
       capabilityToken: this.capabilityToken,
       sessionId: this.sessionId,
-      onOpen: () => this.handleHubOpen(),
-      onMessage: (message) => this.handleHubMessage(message),
-      onInvalidMessage: (error) => this.handleInvalidHubMessage(error),
-      onClose: () => this.handleHubClose(),
-      onError: () => this.handleHubError(),
+      onOpen: (welcome) => generation === this.connectionGeneration && this.handleHubOpen(welcome),
+      onMessage: (message) => generation === this.connectionGeneration && this.handleHubMessage(message),
+      onInvalidMessage: (error) => generation === this.connectionGeneration && this.handleInvalidHubMessage(error),
+      onClose: () => generation === this.connectionGeneration && this.handleHubClose(),
+      onError: () => generation === this.connectionGeneration && this.handleHubError(),
     });
     this.hubClient.connect();
   }
 
-  handleHubOpen() {
+  handleHubOpen(welcome) {
     console.log(`hub_connected ${this.index}`);
+    this.sessionModel.beginHubBoot(this.state, welcome.boot_id);
     this.setStatus(`Connected to ${this.endpoint}`);
-    this.activate(this.activationMode);
+    const recovering = this.reconnectAttempts > 0;
+    this.activationFallbackUsed = false;
+    this.activate(recovering ? 'attach' : this.activationMode);
   }
 
   activate(mode) {
@@ -360,6 +374,7 @@ class TerminalPane {
         command: this.launchProfile.command,
         args: this.launchProfile.args,
         cwd: this.launchProfile.cwd,
+        persistent: true,
         rows: this.state.terminal.rows || 30,
         cols: this.state.terminal.cols || 120,
       });
@@ -416,6 +431,8 @@ class TerminalPane {
     this.state.started = true;
     this.sessionModel.setPublicStarted(this.state, true);
     this.setLifecycle(lifecycle);
+    this.reconnectAttempts = 0;
+    this.sessionModel.clearReconnect(this.state);
     console.log(`hub_${lifecycle} ${this.index}`);
     this.state.terminal.writeln(`\r\n\x1b[32mHub session ${lifecycle}\x1b[0m`);
     this.scheduleFitAndResize();
@@ -457,9 +474,32 @@ class TerminalPane {
     }
 
     console.log(`hub_closed ${this.index}`);
-    this.setLifecycle('disconnected');
-    this.state.terminal.writeln('\r\n\x1b[33mDisconnected from neoncode-hub\x1b[0m');
-    this.setStatus('Disconnected from neoncode-hub');
+    this.state.terminal.writeln('\r\n\x1b[33mDisconnected from neoncode-hub; reconnecting\x1b[0m');
+    this.scheduleReconnect();
+  }
+
+  scheduleReconnect() {
+    if (this.closed || this.pendingClose || this.reconnectTimer) {
+      return;
+    }
+    this.reconnectAttempts += 1;
+    const delay = Math.min(
+      RECONNECT_INITIAL_DELAY_MS * (2 ** (this.reconnectAttempts - 1)),
+      RECONNECT_MAX_DELAY_MS,
+    );
+    this.setLifecycle('reconnecting');
+    this.setStatus(`Reconnecting to neoncode-hub in ${delay}ms`);
+    this.sessionModel.recordReconnect(this.state, this.reconnectAttempts, delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      if (!this.closed && !this.pendingClose) {
+        this.connect();
+      }
+    }, delay);
+  }
+
+  forceDisconnectForTest() {
+    this.hubClient?.close();
   }
 
   handleHubError() {

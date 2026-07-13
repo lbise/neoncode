@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Persisted desktop configuration baseline ready for manual preview
+Stage: Protocol identity and resilient pane reconnect ready for manual preview
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: evaluate configured launch profiles/state restoration, then add protocol identity and reconnect
+Next focus: evaluate crash/reconnect continuity, then terminal interaction correctness
 ```
 
 The Windows tech stack is now:
@@ -211,6 +211,20 @@ Before treating hostile native local accounts/processes as in-scope or enabling 
 
 - [ ] Add a non-relayable authenticated/encrypted transport (pinned TLS, OS-protected IPC, or per-message authenticated encryption).
 
+### Milestone: protocol identity and resilient reconnect
+
+Status: complete and ready for manual preview.
+
+- [x] Require authenticated `welcome` with protocol version and per-boot hub identity.
+- [x] Add backward-compatible persistent session starts for Electron panes.
+- [x] Add visible capped exponential pane reconnect.
+- [x] Reattach persistent sessions after unexpected socket loss, preserving PTY state and replay sequence continuity.
+- [x] Fall back from attach to persistent start when a hub reboot removes the old session.
+- [x] Suppress reconnect during graceful detach/kill close.
+- [x] Cover welcome, persistent disconnect, and real Electron forced-socket continuity.
+
+Manual preview: set shell state, force-close Electron rather than closing its window, reopen, and confirm the same PTY state remains. Start Electron with the hub stopped, then start the hub and observe panes recover. A hub restart intentionally creates fresh sessions after reconnect.
+
 ### 3. Terminal correctness
 
 Already validated:
@@ -255,7 +269,7 @@ Still needed:
 
 Inspired by wmux/cmux/t3code analysis:
 
-- [ ] Add `server.welcome` with protocol version and hub `boot_id`.
+- [x] Add authenticated `welcome` with protocol version and hub `boot_id`.
 - [ ] Add ordered event sequence numbers.
 - [ ] Add snapshot/resync flow.
 - [ ] Add attachment IDs and per-attachment resize semantics.

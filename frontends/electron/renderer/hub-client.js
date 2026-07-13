@@ -66,7 +66,9 @@ class HubClient {
     this.onError = onError;
     this.socket = undefined;
     this.authenticated = false;
+    this.ready = false;
     this.clientNonce = undefined;
+    this.welcome = undefined;
   }
 
   connect() {
@@ -115,7 +117,6 @@ class HubClient {
             }
             this.clientNonce = undefined;
             this.authenticated = true;
-            this.onOpen?.();
           } catch (error) {
             this.onInvalidMessage?.(error, event.data);
             socket.close();
@@ -127,12 +128,28 @@ class HubClient {
         return;
       }
 
+      if (!this.ready) {
+        if (message.type === 'welcome'
+            && message.protocol_version === 1
+            && /^[0-9a-f]{64}$/.test(message.boot_id || '')) {
+          this.welcome = message;
+          this.ready = true;
+          this.onOpen?.(message);
+          return;
+        }
+        this.onInvalidMessage?.(new Error('Invalid or unsupported hub welcome'), event.data);
+        socket.close();
+        return;
+      }
+
       this.onMessage?.(message);
     });
 
     socket.addEventListener('close', (event) => {
       this.authenticated = false;
+      this.ready = false;
       this.clientNonce = undefined;
+      this.welcome = undefined;
       this.onClose?.(event);
     });
 
@@ -142,7 +159,7 @@ class HubClient {
   }
 
   isOpen() {
-    return this.authenticated && this.socket?.readyState === WebSocket.OPEN;
+    return this.ready && this.socket?.readyState === WebSocket.OPEN;
   }
 
   send(message) {
@@ -167,13 +184,14 @@ class HubClient {
     });
   }
 
-  start({ command = 'bash', args = [], cwd = null, rows = 30, cols = 120 }) {
+  start({ command = 'bash', args = [], cwd = null, rows = 30, cols = 120, persistent = false }) {
     return this.send({
       type: 'start',
       session_id: this.sessionId,
       command,
       args,
       cwd,
+      persistent,
       rows,
       cols,
     });

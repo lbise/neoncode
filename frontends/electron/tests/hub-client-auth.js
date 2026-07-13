@@ -82,6 +82,14 @@ async function validMutualAuthentication() {
       hmac: hmac(`server:${response.client_nonce}`),
     }),
   });
+  assert.equal(opened, 0, 'client opened before welcome');
+  await socket.emit('message', {
+    data: JSON.stringify({
+      type: 'welcome',
+      protocol_version: 1,
+      boot_id: 'ab'.repeat(32),
+    }),
+  });
 
   assert.equal(opened, 1);
   assert.equal(invalid, 0);

@@ -76,7 +76,8 @@ Respond to the server's challenge before sending any session operation:
   "args": [],
   "cwd": "/home/me/src/project",
   "rows": 30,
-  "cols": 120
+  "cols": 120,
+  "persistent": true
 }
 ```
 
@@ -87,6 +88,7 @@ Fields:
 - `args`: optional argument list; at most 128 arguments and 4 KiB per argument.
 - `cwd`: optional working directory, at most 4 KiB.
 - `rows`, `cols`: optional terminal size in the range 1–1,000. Defaults to `24x80`.
+- `persistent`: optional boolean, default `false`. Persistent sessions survive an unexpected creating-WebSocket disconnect; explicit `kill` still removes them.
 
 ### List active sessions
 
@@ -173,7 +175,19 @@ The first server message on every WebSocket:
 }
 ```
 
-The client verifies this server proof and may then send session operations.
+The client verifies this server proof, then waits for `welcome` before sending session operations.
+
+### Welcome
+
+```json
+{
+  "type": "welcome",
+  "protocol_version": 1,
+  "boot_id": "<64-hex-character hub boot identity>"
+}
+```
+
+`boot_id` is stable for one hub process and changes after restart. Clients must reject unsupported protocol versions.
 
 ### Session started
 

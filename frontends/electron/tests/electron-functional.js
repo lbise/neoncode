@@ -127,6 +127,10 @@ async function pasteText(page, paneId, text) {
   );
 }
 
+async function disconnectPaneSocket(page, paneId) {
+  await page.evaluate((targetPaneId) => window.neoncodeTest.disconnectPaneSocket(targetPaneId), paneId);
+}
+
 async function waitForOutput(page, paneId, expected) {
   await page.waitForFunction(
     ({ targetPaneId, output }) => {
@@ -394,6 +398,23 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   assertMarkerIsNotEchoed(seedCommand, seedExpected);
   await sendText(page, 'shell', seedCommand);
   await waitForOutput(page, 'shell', seedExpected);
+
+  const beforeReconnect = await getState(page);
+  const beforeReconnectEvents = beforeReconnect.panes.find((pane) => pane.paneId === 'shell').reconnectEvents;
+  await disconnectPaneSocket(page, 'shell');
+  await page.waitForFunction(
+    ({ previousEvents }) => {
+      const pane = window.neoncodeTest.getState().panes.find((candidate) => candidate.paneId === 'shell');
+      return pane?.lifecycle === 'attached' && pane.reconnectEvents > previousEvents;
+    },
+    { previousEvents: beforeReconnectEvents },
+    { timeout },
+  );
+  const reconnectExpected = `reconnected-${runToken}`;
+  const reconnectCommand = `printf 'reconnected-%s\\n' "$NEONCODE_TEST_PERSIST"\n`;
+  assertMarkerIsNotEchoed(reconnectCommand, reconnectExpected);
+  await sendText(page, 'shell', reconnectCommand);
+  await waitForOutput(page, 'shell', reconnectExpected);
 
   log('tools', { tmux: tmuxResult, nvim: nvimResult });
 }

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub const PROTOCOL_VERSION: u32 = 1;
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ClientMessage {
@@ -14,6 +16,8 @@ pub enum ClientMessage {
         cwd: Option<String>,
         rows: Option<u16>,
         cols: Option<u16>,
+        #[serde(default)]
+        persistent: bool,
     },
     ListSessions,
     Attach {
@@ -44,6 +48,10 @@ pub enum ServerMessage {
     },
     Authenticated {
         hmac: String,
+    },
+    Welcome {
+        protocol_version: u32,
+        boot_id: String,
     },
     Started {
         session_id: String,

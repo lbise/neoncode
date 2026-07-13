@@ -74,6 +74,8 @@ On startup, Electron main loads `%APPDATA%\\NeonCode\\config.json`, validates co
 
 Window content size is stored atomically in `%APPDATA%\\NeonCode\\state.json`. Valid backups and visible recovery diagnostics protect malformed configuration. See [`docs/configuration.md`](../../docs/configuration.md) for the schema, launch-profile examples, and manual preview workflow.
 
+After authenticated protocol-version/boot-ID negotiation, panes start persistent hub sessions. Unexpected socket loss shows `Reconnecting` with capped exponential backoff, then attaches the same PTY and replay stream. If the hub rebooted, attach falls back once to a fresh persistent session. Graceful window close still follows the configured detach/kill policy.
+
 Default panes use stable frontend session keys instead of deriving session identity from UI indexes:
 
 ```text

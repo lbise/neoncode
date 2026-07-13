@@ -36,6 +36,8 @@ Current coverage:
 - a new WebSocket can list, attach, resize, send input, receive ordered output, and kill a detached session;
 - missing/foreign WebSocket origins are rejected;
 - missing/incorrect capability challenge responses are rejected without sending the token;
+- authenticated connections receive a versioned, per-boot hub welcome;
+- persistent sessions retain PTY state across unexpected WebSocket disconnect and remain explicitly killable;
 - invalid/overlong session IDs, invalid sizes, oversized decoded input, and oversized transport messages are rejected;
 - non-loopback bind addresses and excess WebSocket permits are rejected by unit tests;
 - replay is bounded by both raw bytes and entry count;
@@ -136,6 +138,6 @@ Then assert `result-token`. Other options are base64-decoding a random token in 
 - [x] Add close/reopen/reattach coverage using a stable session prefix and a real test hub.
 - [x] Verify pre-close output is replayed with contiguous output sequence numbers after reattach.
 - [x] Use an isolated desktop config directory for every Electron test run.
-- [x] Verify configured pane titles and process cwd, detach/kill close policies, single-instance storage ownership, atomic window-size restoration, malformed-config backup recovery, and visible unrecoverable-config errors.
+- [x] Verify configured pane titles and process cwd, detach/kill close policies, forced-socket reconnect with PTY-state continuity, single-instance storage ownership, atomic window-size restoration, malformed-config backup recovery, and visible unrecoverable-config errors.
 - [ ] Add renderer tests with a fake hub for errors, timeouts, and reconnect state transitions.
 - [ ] Add a narrow PowerShell window-launch/desktop compatibility smoke when installer/DPI/multi-monitor work begins.

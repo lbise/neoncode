@@ -104,7 +104,8 @@ main {
 .pane-status[data-state="attaching"],
 .pane-status[data-state="starting"],
 .pane-status[data-state="detaching"],
-.pane-status[data-state="killing"] {
+.pane-status[data-state="killing"],
+.pane-status[data-state="reconnecting"] {
   color: #facc15;
 }
 

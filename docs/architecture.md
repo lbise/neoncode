@@ -84,7 +84,7 @@ Detailed docs:
 
 ### Protocol
 
-Current protocol is JSON over WebSocket with base64 terminal bytes.
+Current protocol is authenticated JSON over WebSocket with base64 terminal bytes. An authenticated `welcome` supplies protocol version 1 and a per-process hub `boot_id` before session operations begin.
 
 Important current messages:
 
@@ -95,7 +95,7 @@ Server: started, session_list, attached, detached, output, exit, killed, error
 
 This protocol is intentionally simple. Product work should evolve it toward:
 
-- server welcome with protocol version and hub boot ID;
+- richer welcome/capability negotiation beyond the current version and boot ID;
 - stable session/workspace/machine IDs;
 - ordered events with sequence numbers;
 - snapshot + event resync;
@@ -207,7 +207,7 @@ Current prototype has working but incomplete session lifecycle:
 - detached sessions survive normal Electron app close and can be reattached on the next launch;
 - attach replays up to 2 MiB of ordered raw terminal output before live output continues;
 - startup reattach is automatic for stable configured session IDs and restores recent terminal output;
-- reconnect after an unexpected live connection loss is not automatic yet.
+- panes automatically reconnect with bounded exponential backoff, attach persistent sessions first, and start a replacement after a hub reboot when attach reports the session missing.
 
 Target direction:
 

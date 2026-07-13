@@ -31,7 +31,7 @@ const MAX_INPUT_BYTES: usize = 32 * 1024;
 const MAX_ATTACHMENTS_PER_CONNECTION: usize = 64;
 
 use crate::{
-    protocol::{ClientMessage, ServerMessage},
+    protocol::{ClientMessage, PROTOCOL_VERSION, ServerMessage},
     session::{SessionEvent, SessionSubscription},
     state::{AppState, StartSessionRequest},
 };
@@ -166,7 +166,19 @@ async fn handle_socket(
         let _ = socket.send(Message::Close(None)).await;
         return;
     }
-    info!(%peer_id, "websocket authenticated");
+    if let Err(err) = send_direct(
+        &mut socket,
+        &ServerMessage::Welcome {
+            protocol_version: PROTOCOL_VERSION,
+            boot_id: state.boot_id().to_string(),
+        },
+    )
+    .await
+    {
+        warn!(%peer_id, %err, "failed to send websocket welcome");
+        return;
+    }
+    info!(%peer_id, boot_id = state.boot_id(), "websocket authenticated");
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<ServerMessage>(OUTGOING_MESSAGE_BUFFER);
@@ -284,6 +296,7 @@ async fn handle_client_text(
             cwd,
             rows,
             cols,
+            persistent,
         } => {
             if session_forwarders.len() >= MAX_ATTACHMENTS_PER_CONNECTION {
                 return Err(anyhow!("connection attachment limit reached"));
@@ -297,6 +310,7 @@ async fn handle_client_text(
                     cwd,
                     rows,
                     cols,
+                    persistent,
                 },
             )?;
             outgoing

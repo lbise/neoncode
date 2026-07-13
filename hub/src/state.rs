@@ -27,15 +27,20 @@ const MAX_WEBSOCKET_CONNECTIONS: usize = 128;
 pub struct AppState {
     registry: Arc<SessionRegistry>,
     capability_token: Arc<str>,
+    boot_id: Arc<str>,
     websocket_connections: Arc<Semaphore>,
 }
 
 impl AppState {
     pub fn new(capability_token: String) -> Result<Self> {
         validate_capability_token(&capability_token)?;
+        let mut boot_id = [0_u8; 32];
+        getrandom::fill(&mut boot_id)
+            .map_err(|error| anyhow!("failed to generate boot id: {error}"))?;
         Ok(Self {
             registry: Arc::new(SessionRegistry::default()),
             capability_token: capability_token.into(),
+            boot_id: hex::encode(boot_id).into(),
             websocket_connections: Arc::new(Semaphore::new(MAX_WEBSOCKET_CONNECTIONS)),
         })
     }
@@ -46,6 +51,10 @@ impl AppState {
 
     pub fn capability_token(&self) -> &str {
         &self.capability_token
+    }
+
+    pub fn boot_id(&self) -> &str {
+        &self.boot_id
     }
 
     pub fn try_acquire_websocket(&self) -> Result<OwnedSemaphorePermit> {
@@ -102,7 +111,8 @@ impl SessionRegistry {
         sessions.insert(
             request.session_id,
             SessionEntry {
-                owner_connection_id: Some(owner_connection_id.to_string()),
+                owner_connection_id: (!request.persistent).then(|| owner_connection_id.to_string()),
+                persistent: request.persistent,
                 session,
             },
         );
@@ -160,6 +170,7 @@ impl SessionRegistry {
         if entry.owner_connection_id.as_deref() == Some(owner_connection_id) {
             debug!(%session_id, %owner_connection_id, "detaching session from owning websocket");
             entry.owner_connection_id = None;
+            entry.persistent = true;
         }
 
         Ok(())
@@ -215,7 +226,8 @@ impl SessionRegistry {
             let session_ids = sessions
                 .iter()
                 .filter(|(_, entry)| {
-                    entry.owner_connection_id.as_deref() == Some(owner_connection_id)
+                    !entry.persistent
+                        && entry.owner_connection_id.as_deref() == Some(owner_connection_id)
                 })
                 .map(|(session_id, _)| session_id.clone())
                 .collect::<Vec<_>>();
@@ -278,6 +290,7 @@ pub struct StartSessionRequest {
     pub cwd: Option<String>,
     pub rows: Option<u16>,
     pub cols: Option<u16>,
+    pub persistent: bool,
 }
 
 impl StartSessionRequest {
@@ -321,6 +334,7 @@ impl StartSessionRequest {
 
 struct SessionEntry {
     owner_connection_id: Option<String>,
+    persistent: bool,
     session: Session,
 }
 

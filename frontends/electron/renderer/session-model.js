@@ -61,6 +61,9 @@ class SessionModel {
       lastRows: terminal.rows,
       lastCols: terminal.cols,
       suppressedPasteText: '',
+      hubBootId: '',
+      reconnectAttempts: 0,
+      reconnectEvents: 0,
     };
 
     this.publicState.panes[index] = {
@@ -80,6 +83,10 @@ class SessionModel {
       recentOutput: '',
       rows: terminal.rows,
       cols: terminal.cols,
+      hubBootId: '',
+      reconnectAttempts: 0,
+      reconnectEvents: 0,
+      reconnectDelayMs: 0,
     };
 
     return state;
@@ -110,6 +117,35 @@ class SessionModel {
     const pane = this.pane(state);
     pane.rows = rows;
     pane.cols = cols;
+  }
+
+  beginHubBoot(state, bootId) {
+    if (state.hubBootId && state.hubBootId !== bootId) {
+      state.firstOutputSeq = 0;
+      state.lastOutputSeq = 0;
+      const pane = this.pane(state);
+      pane.firstOutputSeq = 0;
+      pane.lastOutputSeq = 0;
+      pane.outputGap = '';
+    }
+    state.hubBootId = bootId;
+    this.pane(state).hubBootId = bootId;
+  }
+
+  recordReconnect(state, attempts, delayMs) {
+    state.reconnectAttempts = attempts;
+    state.reconnectEvents += 1;
+    const pane = this.pane(state);
+    pane.reconnectAttempts = attempts;
+    pane.reconnectEvents = state.reconnectEvents;
+    pane.reconnectDelayMs = delayMs;
+  }
+
+  clearReconnect(state) {
+    state.reconnectAttempts = 0;
+    const pane = this.pane(state);
+    pane.reconnectAttempts = 0;
+    pane.reconnectDelayMs = 0;
   }
 
   recordInput(state) {

@@ -61,6 +61,10 @@ impl TestHub {
             .expect("connect to test hub");
         let response = authenticate(&mut socket, TEST_CAPABILITY_TOKEN).await;
         assert_eq!(response["type"], "authenticated");
+        let welcome = next_json_before(&mut socket, Instant::now() + MESSAGE_TIMEOUT).await;
+        assert_eq!(welcome["type"], "welcome");
+        assert_eq!(welcome["protocol_version"], 1);
+        assert_eq!(welcome["boot_id"].as_str().unwrap().len(), 64);
         socket
     }
 
@@ -238,6 +242,22 @@ async fn start_shell(socket: &mut TestSocket, session_id: &str) {
             "command": "sh",
             "rows": 24,
             "cols": 80
+        }),
+    )
+    .await;
+    wait_for_session_type(socket, "started", session_id).await;
+}
+
+async fn start_persistent_shell(socket: &mut TestSocket, session_id: &str) {
+    send_json(
+        socket,
+        json!({
+            "type": "start",
+            "session_id": session_id,
+            "command": "sh",
+            "rows": 24,
+            "cols": 80,
+            "persistent": true
         }),
     )
     .await;
@@ -498,6 +518,54 @@ async fn fast_command_preserves_output_reports_exit_and_reuses_id() {
     .await;
     wait_for_session_type(&mut socket, "started", session_id).await;
     wait_for_output(&mut socket, session_id, "reused-id").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn persistent_session_survives_unexpected_websocket_disconnect() {
+    let hub = TestHub::start().await;
+    let session_id = "persistent-disconnect";
+    let mut owner = hub.connect().await;
+    start_persistent_shell(&mut owner, session_id).await;
+    send_input(
+        &mut owner,
+        session_id,
+        "PERSIST_VALUE=still-here; printf 'persistent-seeded\\n'\n",
+    )
+    .await;
+    wait_for_output(&mut owner, session_id, "persistent-seeded").await;
+    owner.close(None).await.expect("close persistent owner");
+
+    let mut attached = hub.connect().await;
+    let deadline = Instant::now() + MESSAGE_TIMEOUT;
+    loop {
+        if list_session_ids(&mut attached)
+            .await
+            .contains(&session_id.to_string())
+        {
+            break;
+        }
+        assert!(Instant::now() < deadline, "persistent session disappeared");
+        sleep(Duration::from_millis(25)).await;
+    }
+    send_json(
+        &mut attached,
+        json!({ "type": "attach", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut attached, "attached", session_id).await;
+    send_input(
+        &mut attached,
+        session_id,
+        "printf 'persistent-%s\\n' \"$PERSIST_VALUE\"\n",
+    )
+    .await;
+    wait_for_output(&mut attached, session_id, "persistent-still-here").await;
+    send_json(
+        &mut attached,
+        json!({ "type": "kill", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut attached, "killed", session_id).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

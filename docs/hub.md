@@ -24,7 +24,7 @@ Current capabilities:
 
 - health endpoint;
 - WebSocket endpoint;
-- start PTY session;
+- start connection-scoped or persistent PTY sessions;
 - send terminal input;
 - stream terminal output through a session-owned event broadcaster;
 - resize PTY;
@@ -41,7 +41,7 @@ Current capabilities:
 
 Current limitations:
 
-- reconnect is not automatic yet; clients must explicitly `list_sessions` and `attach`;
+- Electron panes automatically reconnect/attach with bounded exponential backoff; other clients still manage reconnect explicitly;
 - output replay is bounded to 2 MiB per session and is raw terminal bytes, not a canonical screen snapshot;
 - the session registry is in-process only and does not persist across hub restarts;
 - session IDs are currently frontend-provided;
@@ -208,7 +208,7 @@ See [`protocol.md`](protocol.md) for exact JSON examples.
 
 ### Start
 
-Frontend sends `start` with a frontend-owned `session_id`.
+Frontend sends `start` with a frontend-owned `session_id`. `persistent: true` keeps the session across unexpected WebSocket loss; omitted/false retains connection-scoped cleanup compatibility.
 
 The hub:
 
