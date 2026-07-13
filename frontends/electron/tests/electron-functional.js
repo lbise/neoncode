@@ -167,6 +167,28 @@ function assertMarkerIsNotEchoed(command, expected) {
   assert(!command.includes(expected), `test command contains expected output marker: ${expected}`);
 }
 
+async function verifyKeyboardPaste(instance, paneId, shortcut, label, token) {
+  const expected = `${label}-${token}`;
+  const command = `printf '${label}-%s\\n' '${token}'\n`;
+  assertMarkerIsNotEchoed(command, expected);
+  const previousClipboard = await instance.electronApp.evaluate(({ clipboard }) => clipboard.readText());
+  const before = await getState(instance.page);
+  const beforeInputs = before.panes.find((pane) => pane.paneId === paneId).inputEvents;
+  try {
+    await instance.electronApp.evaluate(({ clipboard }, text) => clipboard.writeText(text), command);
+    await instance.page.evaluate(
+      ({ targetPaneId, text }) => window.neoncodeTest.simulatePasteShortcutRace(targetPaneId, text),
+      { targetPaneId: paneId, text: command },
+    );
+    await waitForOutput(instance.page, paneId, expected);
+    const after = await getState(instance.page);
+    const afterInputs = after.panes.find((pane) => pane.paneId === paneId).inputEvents;
+    assert(afterInputs === beforeInputs + 1, `${shortcut} pasted ${afterInputs - beforeInputs} times in ${paneId}`);
+  } finally {
+    await instance.electronApp.evaluate(({ clipboard }, text) => clipboard.writeText(text), previousClipboard);
+  }
+}
+
 async function verifyExecutedCommand(page, paneId, label, token) {
   const expected = `${label}-${token}`;
   const command = `printf '${label}-%s\\n' '${token}'\n`;
@@ -350,6 +372,8 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   assertMarkerIsNotEchoed(pasteCommand, pasteExpected);
   await pasteText(page, 'shell', pasteCommand);
   await waitForOutput(page, 'shell', pasteExpected);
+  await verifyKeyboardPaste(instance, 'shell', 'Control+Shift+v', 'shortcut-paste-shell', runToken);
+  await verifyKeyboardPaste(instance, 'tasks', 'Shift+Insert', 'shortcut-paste-tasks', runToken);
 
   const armedExpected = `armed-${runToken}`;
   const signalExpected = `signal-${runToken}`;

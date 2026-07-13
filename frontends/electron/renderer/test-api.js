@@ -41,6 +41,18 @@ function installRendererTestApi(app) {
     selectAll(paneId) {
       findPane(app, paneId).state.terminal.selectAll();
     },
+
+    simulatePasteShortcutRace(paneId, text) {
+      const pane = findPane(app, paneId);
+      pane.handlePasteShortcut();
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text/plain', text);
+      pane.container.dispatchEvent(new ClipboardEvent('paste', {
+        bubbles: true,
+        cancelable: true,
+        clipboardData,
+      }));
+    },
   });
 
   app.window.neoncodeTest = api;

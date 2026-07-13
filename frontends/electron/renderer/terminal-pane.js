@@ -87,6 +87,9 @@ class TerminalPane {
     this.connectionGeneration = 0;
     this.reconnectTimer = undefined;
     this.reconnectAttempts = 0;
+    this.pasteShortcutActive = false;
+    this.pasteShortcutTimer = undefined;
+    this.suppressedPasteTimer = undefined;
   }
 
   start() {
@@ -140,6 +143,8 @@ class TerminalPane {
     }
     this.closed = true;
     clearTimeout(this.reconnectTimer);
+    clearTimeout(this.pasteShortcutTimer);
+    clearTimeout(this.suppressedPasteTimer);
     this.reconnectTimer = undefined;
     this.resizeObserver?.disconnect();
     this.hubClient?.close();
@@ -195,6 +200,8 @@ class TerminalPane {
     this.sessionModel.setPublicStarted(this.state, false);
     this.setLifecycle(lifecycle, error);
     this.closed = true;
+    clearTimeout(this.pasteShortcutTimer);
+    clearTimeout(this.suppressedPasteTimer);
     this.resizeObserver?.disconnect();
     this.hubClient?.close();
     this.resolvePendingClose();
@@ -239,7 +246,7 @@ class TerminalPane {
 
       if ((event.ctrlKey && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'v')
           || (event.shiftKey && !event.ctrlKey && !event.altKey && event.key === 'Insert')) {
-        this.pasteClipboardText('key_paste');
+        this.handlePasteShortcut();
         return false;
       }
 
@@ -253,6 +260,11 @@ class TerminalPane {
     });
 
     this.container.addEventListener('paste', (event) => {
+      if (this.pasteShortcutActive) {
+        console.log(`terminal_input_suppressed ${this.index} duplicate_dom_paste`);
+        event.preventDefault();
+        return;
+      }
       const text = event.clipboardData?.getData('text/plain');
       if (text) {
         this.pasteText(text, 'dom_paste');
@@ -281,6 +293,19 @@ class TerminalPane {
     return this.sendTerminalBytes(encoder.encode(text), reason);
   }
 
+  handlePasteShortcut() {
+    if (this.pasteShortcutActive) {
+      return;
+    }
+    this.pasteShortcutActive = true;
+    clearTimeout(this.pasteShortcutTimer);
+    this.pasteClipboardText('key_paste').finally(() => {
+      this.pasteShortcutTimer = setTimeout(() => {
+        this.pasteShortcutActive = false;
+      }, 150);
+    });
+  }
+
   shouldSuppressDuplicatePaste(data) {
     if (!this.state.suppressedPasteText) {
       return false;
@@ -304,6 +329,10 @@ class TerminalPane {
     const sent = this.sendTerminalText(normalized, reason);
     if (sent) {
       this.state.suppressedPasteText = normalized;
+      clearTimeout(this.suppressedPasteTimer);
+      this.suppressedPasteTimer = setTimeout(() => {
+        this.state.suppressedPasteText = '';
+      }, 250);
     }
     return sent;
   }
