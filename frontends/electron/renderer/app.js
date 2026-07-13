@@ -213,8 +213,8 @@ class NeonCodeApp {
   }
 }
 
-function startRendererApp() {
-  const app = new NeonCodeApp();
+function startRendererApp(options = {}) {
+  const app = new NeonCodeApp(options);
   window.addEventListener('DOMContentLoaded', () => {
     app.start().catch((error) => {
       console.error('app_start_failed', error);

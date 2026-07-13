@@ -1,17 +1,33 @@
-const { app, BrowserWindow, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, clipboard, ipcMain, session } = require('electron');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const fs = require('node:fs');
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-gpu-compositing');
-app.commandLine.appendSwitch('disable-gpu-sandbox');
 
 let mainWindow;
 let logFilePath;
 let allowWindowClose = false;
 let closeRequestInFlight = false;
 let closeTimeout;
+
+function rendererConfig() {
+  return {
+    NEONCODE_HUB_ENDPOINT: process.env.NEONCODE_HUB_ENDPOINT,
+    NEONCODE_PERSIST_SESSIONS: process.env.NEONCODE_PERSIST_SESSIONS,
+    NEONCODE_SESSION_PREFIX: process.env.NEONCODE_SESSION_PREFIX,
+    NEONCODE_TERMINAL_COUNT: process.env.NEONCODE_TERMINAL_COUNT,
+    NEONCODE_TEST_MODE: process.env.NEONCODE_TEST_MODE,
+  };
+}
+
+ipcMain.on('neoncode:get-renderer-config', (event) => {
+  event.returnValue = rendererConfig();
+});
+
+ipcMain.handle('neoncode:read-clipboard-text', () => clipboard.readText());
 
 function finishWindowClose(sender) {
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -52,9 +68,18 @@ function log(message, details) {
   }
 }
 
+function configureSessionSecurity() {
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(false);
+  });
+}
+
 function createWindow() {
   Menu.setApplicationMenu(null);
   const testMode = process.env.NEONCODE_TEST_MODE === '1';
+  const indexPath = path.join(__dirname, 'index.html');
+  const appUrl = pathToFileURL(indexPath).toString();
   allowWindowClose = false;
   closeRequestInFlight = false;
 
@@ -66,12 +91,29 @@ function createWindow() {
     show: !testMode,
     webPreferences: {
       backgroundThrottling: !testMode,
-      contextIsolation: false,
-      nodeIntegration: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      preload: path.join(__dirname, 'preload.js'),
+      sandbox: true,
     },
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url !== appUrl) {
+      event.preventDefault();
+      log('navigation.blocked', { url });
+    }
+  });
+  mainWindow.webContents.on('will-redirect', (event, url) => {
+    if (url !== appUrl) {
+      event.preventDefault();
+      log('redirect.blocked', { url });
+    }
+  });
+
+  mainWindow.loadFile(indexPath);
   log('window.create');
 
   mainWindow.webContents.once('did-finish-load', () => {
@@ -120,6 +162,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  configureSessionSecurity();
   createWindow();
 });
 

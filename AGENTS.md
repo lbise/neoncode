@@ -17,7 +17,7 @@ Previous Windows Terminal/WPF embedding POCs are obsolete. Do not build new work
 
 ```text
 hub/                              Rust neoncode-hub backend
-frontends/electron/               Electron + xterm.js app
+frontends/electron/               Electron + xterm.js app, preload, renderer bundle source
 docs/product-requirements.md      Product requirements / PRD
 docs/architecture.md              Current technical architecture
 docs/development-plan.md          Roadmap and progress tracker

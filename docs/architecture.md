@@ -111,8 +111,9 @@ hub/src/state.rs                   app state and session registry
 hub/src/ws.rs                      WebSocket handling and protocol dispatch
 hub/tests/                         real WebSocket and PTY integration tests
 
-frontends/electron/main.js          Electron main process
-frontends/electron/renderer.js      renderer bootstrap entrypoint
+frontends/electron/main.js          Electron main process and security policy
+frontends/electron/preload.js       narrow context-isolated desktop bridge
+frontends/electron/renderer.js      browser-bundle bootstrap entrypoint
 frontends/electron/renderer/        renderer modules:
   app.js                            app/bootstrap and pane grid wiring
   hub-client.js                     WebSocket protocol client helpers
@@ -120,9 +121,23 @@ frontends/electron/renderer/        renderer modules:
   terminal-pane.js                  xterm.js pane, input, resize, output handling
   test-api.js                       test-mode structured renderer API
 frontends/electron/tests/           hidden-window Playwright functional tests
-scripts/electron-app.ps1            Windows-local publish/start helper
+scripts/electron-app.ps1            npm ci, renderer build, Windows publish/start
 scripts/electron-test.ps1           Windows wrapper for Playwright tests
 ```
+
+## Electron security boundary
+
+The Electron renderer runs with:
+
+```text
+contextIsolation: true
+nodeIntegration: false
+sandbox: true
+```
+
+The browser-world renderer is bundled with `esbuild-wasm` and receives only a narrow preload API for sanitized startup configuration, clipboard reads, and graceful-close coordination. The app applies a restrictive CSP and denies unexpected navigation, new windows, webviews, and permission requests.
+
+Playwright asserts the effective BrowserWindow preferences, absence of renderer `process`/`require`, exact preload API keys, denied window creation, and denied notification permission.
 
 ## Validation commands
 

@@ -1,19 +1,13 @@
-const { ipcRenderer } = require('electron');
-
 const { startRendererApp } = require('./renderer/app');
 
-const rendererApp = startRendererApp();
-let closePreparation;
+const rendererApp = startRendererApp({
+  env: window.neoncodeDesktop.config,
+});
 
-ipcRenderer.on('neoncode:prepare-close', () => {
-  if (!closePreparation) {
-    closePreparation = rendererApp.prepareToClose();
+window.neoncodeDesktop.onPrepareClose(async () => {
+  try {
+    await rendererApp.prepareToClose();
+  } catch (error) {
+    console.error('prepare_close_failed', error);
   }
-  closePreparation
-    .catch((error) => {
-      console.error('prepare_close_failed', error);
-    })
-    .finally(() => {
-      ipcRenderer.send('neoncode:close-ready');
-    });
 });

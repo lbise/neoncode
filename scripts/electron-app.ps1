@@ -58,7 +58,7 @@ function Copy-ElectronAppFiles {
     )
 
     New-Item -ItemType Directory -Force -Path $DestinationDirectory | Out-Null
-    foreach ($file in @("package.json", "package-lock.json", "main.js", "index.html", "styles.css", "renderer.js")) {
+    foreach ($file in @("package.json", "package-lock.json", "main.js", "preload.js", "index.html", "styles.css", "renderer.js")) {
         $source = Join-Path $SourceDirectory $file
         if (Test-Path -LiteralPath $source -PathType Leaf) {
             Copy-Item -LiteralPath $source -Destination (Join-Path $DestinationDirectory $file) -Force
@@ -99,13 +99,16 @@ switch ($Command) {
         Copy-ElectronAppFiles -SourceDirectory $sourceDir -DestinationDirectory $publishedDir
         Invoke-Npm -WorkingDirectory $publishedDir -Arguments "ci"
         Invoke-Npm -WorkingDirectory $publishedDir -Arguments "exec -- install-electron"
+        Invoke-Npm -WorkingDirectory $publishedDir -Arguments "run build:renderer"
 
         $packageJson = Join-Path $publishedDir "package.json"
         $electronBin = Join-Path $publishedDir "node_modules\electron\dist\electron.exe"
+        $preload = Join-Path $publishedDir "preload.js"
+        $rendererBundle = Join-Path $publishedDir "renderer.bundle.js"
         $xtermPackage = Join-Path $publishedDir "node_modules\@xterm\xterm\package.json"
         $fitPackage = Join-Path $publishedDir "node_modules\@xterm\addon-fit\package.json"
 
-        foreach ($required in @($packageJson, $electronBin, $xtermPackage, $fitPackage)) {
+        foreach ($required in @($packageJson, $electronBin, $preload, $rendererBundle, $xtermPackage, $fitPackage)) {
             if (-not (Test-Path -LiteralPath $required)) {
                 throw "Published Electron app file missing: $required"
             }

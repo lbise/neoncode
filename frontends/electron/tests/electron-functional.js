@@ -176,9 +176,39 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   const { electronApp, page } = instance;
   const windowState = await electronApp.evaluate(({ BrowserWindow }) => {
     const window = BrowserWindow.getAllWindows()[0];
-    return { visible: window.isVisible(), contentSize: window.getContentSize() };
+    return {
+      visible: window.isVisible(),
+      contentSize: window.getContentSize(),
+      webPreferences: window.webContents.getLastWebPreferences(),
+    };
   });
   assert(windowState.visible === false, 'test-mode Electron window should remain hidden');
+  assert(windowState.webPreferences.contextIsolation === true, 'context isolation is not enabled');
+  assert(windowState.webPreferences.nodeIntegration === false, 'renderer Node integration is enabled');
+  assert(windowState.webPreferences.sandbox === true, 'renderer sandbox is not enabled');
+
+  const rendererSecurity = await page.evaluate(async () => {
+    const permission = await navigator.permissions.query({ name: 'notifications' });
+    const opened = window.open('https://example.com');
+    return {
+      desktopKeys: Object.keys(window.neoncodeDesktop).sort(),
+      nodeProcessType: typeof window.process,
+      nodeRequireType: typeof window.require,
+      openedWindow: Boolean(opened),
+      permission: permission.state,
+    };
+  });
+  assert(rendererSecurity.nodeProcessType === 'undefined', 'renderer exposes Node process');
+  assert(rendererSecurity.nodeRequireType === 'undefined', 'renderer exposes Node require');
+  assert(rendererSecurity.openedWindow === false, 'renderer opened an external window');
+  assert(rendererSecurity.permission === 'denied', `notification permission was ${rendererSecurity.permission}`);
+  assert(
+    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'onPrepareClose', 'readClipboardText']),
+    `unexpected preload API surface: ${rendererSecurity.desktopKeys.join(',')}`,
+  );
+
+  const windowCount = await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
+  assert(windowCount === 1, `unexpected Electron window count after denied window.open: ${windowCount}`);
 
   const initialState = await getState(page);
   log('state.first-launch', summarizeState(initialState));

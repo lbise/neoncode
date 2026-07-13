@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: bounded terminal replay baseline complete
+Stage: Electron renderer security boundary hardened
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: preview replay, then app state/config and security hardening
+Next focus: local hub security and resource limits
 ```
 
 The Windows tech stack is now:
@@ -152,7 +152,23 @@ Limitations:
 - [ ] Add config storage under `%APPDATA%\NeonCode`.
 - [ ] Load terminal font/theme from app config.
 
-### 2. Terminal correctness
+### 2. Security hardening
+
+Release-blocking baseline:
+
+- [x] Pin current Electron/Playwright versions and require a zero-high-severity dependency audit.
+- [x] Enable Electron context isolation, disable renderer Node integration, and run the renderer sandboxed.
+- [x] Move privileged clipboard/config/close coordination behind a narrow preload bridge.
+- [x] Bundle renderer code so browser-world code does not depend on Node `require`.
+- [x] Add a restrictive Content Security Policy.
+- [x] Deny unexpected navigation, new windows, and renderer permission requests.
+- [ ] Define a local hub threat model and authentication/capability-token lifecycle.
+- [ ] Validate WebSocket `Origin` and authenticate hub control connections.
+- [ ] Refuse non-loopback hub binding unless an explicitly secure remote mode is configured.
+- [ ] Add bounded WebSocket queues plus frame/session/attachment/process limits.
+- [ ] Add security integration tests for unauthorized origins/connections and oversized inputs.
+
+### 3. Terminal correctness
 
 Already validated:
 
@@ -174,7 +190,7 @@ Still needed:
 - [ ] heavy output/performance soak;
 - [ ] long-session stability.
 
-### 3. Workspace model
+### 4. Workspace model
 
 - [ ] Define workspace schema.
 - [ ] Define launch profiles:
@@ -192,7 +208,7 @@ Still needed:
   - session status;
   - latest notification/error.
 
-### 4. Hub protocol evolution
+### 5. Hub protocol evolution
 
 Inspired by wmux/cmux/t3code analysis:
 
@@ -204,7 +220,7 @@ Inspired by wmux/cmux/t3code analysis:
 - [ ] Add session exit status/reason.
 - [ ] Decide backend-generated vs frontend-provided IDs.
 
-### 5. CLI/API
+### 6. CLI/API
 
 - [ ] Add minimal `neoncode` CLI or local API client.
 - [ ] Support session list/status.

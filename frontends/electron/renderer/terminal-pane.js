@@ -1,4 +1,3 @@
-const { clipboard } = require('electron');
 const { Terminal } = require('@xterm/xterm');
 const { FitAddon } = require('@xterm/addon-fit');
 
@@ -234,8 +233,12 @@ class TerminalPane {
     });
 
     this.container.addEventListener('paste', (event) => {
-      const text = event.clipboardData?.getData('text/plain') || clipboard.readText();
-      this.pasteText(text, 'dom_paste');
+      const text = event.clipboardData?.getData('text/plain');
+      if (text) {
+        this.pasteText(text, 'dom_paste');
+      } else {
+        this.pasteClipboardText('dom_paste');
+      }
       event.preventDefault();
     });
   }
@@ -285,8 +288,14 @@ class TerminalPane {
     return sent;
   }
 
-  pasteClipboardText(reason = 'clipboard') {
-    return this.pasteText(clipboard.readText(), reason);
+  async pasteClipboardText(reason = 'clipboard') {
+    try {
+      const text = await window.neoncodeDesktop.readClipboardText();
+      return this.pasteText(text, reason);
+    } catch (error) {
+      this.setLifecycle('error', `Clipboard read failed: ${error.message}`);
+      return false;
+    }
   }
 
   scheduleFitAndResize() {

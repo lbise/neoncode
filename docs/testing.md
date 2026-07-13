@@ -120,6 +120,7 @@ Then assert `result-token`. Other options are base64-decoding a random token in 
 
 - [x] Add the test-only structured renderer API behind `NEONCODE_TEST_MODE=1`.
 - [x] Run functional Playwright tests in a hidden Electron window.
+- [x] Assert context isolation, renderer sandboxing, absent Node globals, exact preload API surface, denied new windows, and denied permissions.
 - [x] Rewrite command, paste, Ctrl+C, tool, and resize assertions in Playwright.
 - [x] Replace literal echoed markers with markers constructed only by executed commands.
 - [x] Remove core functional dependencies on `%TEMP%\NeonCode\electron-app-main.log`, global clipboard state, and `SendKeys`.

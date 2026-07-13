@@ -5,6 +5,7 @@
   "description": "NeonCode Electron app rendering neoncode-hub PTYs with xterm.js.",
   "main": "main.js",
   "scripts": {
+    "build:renderer": "esbuild renderer.js --bundle --platform=browser --format=iife --outfile=renderer.bundle.js",
     "start": "electron .",
     "test": "node tests/electron-functional.js"
   },
@@ -14,6 +15,7 @@
   },
   "devDependencies": {
     "electron": "43.1.0",
+    "esbuild-wasm": "0.28.1",
     "playwright": "1.61.1"
   }
 }

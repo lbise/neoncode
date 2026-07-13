@@ -20,7 +20,17 @@ Electron 43.1.0
 Playwright 1.61.1
 ```
 
-Electron 43 uses an explicit `install-electron` executable rather than a package lifecycle script. The publish helper runs that exact installer after `npm ci`.
+Electron 43 uses an explicit `install-electron` executable rather than a package lifecycle script. The publish helper runs that exact installer after `npm ci`, then bundles the browser-world renderer with `esbuild-wasm`.
+
+Renderer security defaults:
+
+```text
+contextIsolation: true
+nodeIntegration: false
+sandbox: true
+```
+
+The preload exposes only sanitized configuration, clipboard reads, and graceful-close coordination. CSP, navigation, new-window, webview, and permission restrictions are enforced by the Electron main process.
 
 ## Run
 
@@ -41,8 +51,9 @@ Explicit commands:
 ## Source layout
 
 ```text
-main.js              Electron main process
-renderer.js          renderer bootstrap entrypoint
+main.js              Electron main process and security policy
+preload.js           narrow context-isolated desktop bridge
+renderer.js          browser-bundle bootstrap entrypoint
 renderer/app.js      app/bootstrap and pane grid wiring
 renderer/hub-client.js
                      WebSocket protocol client helpers
