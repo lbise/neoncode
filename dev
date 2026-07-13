@@ -89,6 +89,8 @@ ensure_hub_token() {
     mv -fT "$temporary" "$path"
   fi
   chmod 600 "$path"
+  flock -u "$lock_fd"
+  exec {lock_fd}>&-
   export NEONCODE_HUB_TOKEN="$token"
 }
 
