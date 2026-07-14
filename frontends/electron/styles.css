@@ -159,7 +159,8 @@ header span,
 }
 
 .workspace-status[data-state="detached"],
-.workspace-status[data-state="available"] {
+.workspace-status[data-state="available"],
+.workspace-status[data-state="in_use"] {
   color: #67e8f9;
 }
 

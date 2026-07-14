@@ -36,7 +36,7 @@ Current role:
 - renders 1–8 panes for the active configured workspace and opens one WebSocket per pane/session;
 - switches named workspaces by detaching the old panes and attaching/starting the selected panes;
 - restores the active workspace from app-owned state;
-- summarizes configured WSL launch locations and aggregate pane lifecycle in the workspace sidebar;
+- summarizes hub-owned WSL launch metadata and aggregate pane lifecycle in the workspace sidebar, falling back to configured locations for sessions not yet created;
 - attaches known sessions and starts missing sessions;
 - sends `input`, `resize`, and acknowledgement-based `detach` before normal app close;
 - provides smoke-test state for Playwright and PowerShell validation.
@@ -88,6 +88,8 @@ Detailed docs:
 ### Protocol
 
 Current protocol is authenticated JSON over WebSocket with base64 terminal bytes. An authenticated `welcome` supplies protocol version 1 and a per-process hub `boot_id` before session operations begin.
+
+`session_list` includes additive hub-owned effective-command, configured-cwd, persistence, and attachment-count metadata while remaining protocol v1 compatible with ID-only clients.
 
 Important current messages:
 
@@ -239,7 +241,7 @@ sessions:
     command: ./andromeda test --hil
 ```
 
-The current Electron sidebar switches these configured workspaces, restores the active choice, and derives status from configured WSL launch locations plus frontend-observed pane lifecycle. This is not yet live shell cwd/git metadata because the protocol has no canonical session metadata feed. Layout is currently a simple column count; free-form splits and external workspace files remain future work.
+The current Electron sidebar switches these configured workspaces, restores the active choice, and derives status from hub-owned effective command/configured launch cwd/attachment metadata plus frontend-observed pane lifecycle. It falls back to configured launch locations before a session exists. This is not yet live shell cwd/git metadata because configured launch cwd does not track later shell changes. Layout is currently a simple column count; free-form splits and external workspace files remain future work.
 
 The hub should eventually own:
 

@@ -42,13 +42,58 @@ class MockWebSocket {
 
 global.WebSocket = MockWebSocket;
 
-const { HubClient } = require('../renderer/hub-client');
+const { HubClient, normalizeSessionSummaries } = require('../renderer/hub-client');
 
 const TOKEN = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const SERVER_NONCE = 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
 
 function hmac(payload) {
   return createHmac('sha256', Buffer.from(TOKEN, 'hex')).update(payload).digest('hex');
+}
+
+function validatesSessionSummaries() {
+  const complete = normalizeSessionSummaries([{
+    session_id: 'shell',
+    command: 'bash',
+    cwd: '/tmp',
+    persistent: true,
+    attachment_count: 2,
+  }]);
+  assert.deepEqual(complete, [{
+    sessionId: 'shell',
+    command: 'bash',
+    cwd: '/tmp',
+    persistent: true,
+    attachmentCount: 2,
+    metadataComplete: true,
+  }]);
+
+  assert.deepEqual(normalizeSessionSummaries([{ session_id: 'legacy' }]), [{
+    sessionId: 'legacy',
+    command: null,
+    cwd: null,
+    persistent: null,
+    attachmentCount: null,
+    metadataComplete: false,
+  }]);
+  assert.throws(
+    () => normalizeSessionSummaries([{ session_id: 'duplicate' }, { session_id: 'duplicate' }]),
+    /duplicate session_id/,
+  );
+  assert.throws(
+    () => normalizeSessionSummaries([{ session_id: 'partial', command: 'bash' }]),
+    /metadata is incomplete/,
+  );
+  assert.throws(
+    () => normalizeSessionSummaries([{
+      session_id: 'bad-count',
+      command: 'bash',
+      cwd: null,
+      persistent: true,
+      attachment_count: -1,
+    }]),
+    /attachment_count/,
+  );
 }
 
 async function validMutualAuthentication() {
@@ -122,6 +167,7 @@ async function rejectsFakeHubProof() {
 }
 
 Promise.resolve()
+  .then(validatesSessionSummaries)
   .then(validMutualAuthentication)
   .then(rejectsFakeHubProof)
   .then(() => console.log('hub-client mutual authentication tests passed'))

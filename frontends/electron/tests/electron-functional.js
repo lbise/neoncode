@@ -526,10 +526,9 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   );
   await assertWorkspaceStatus(page, 'default', 'running', '2 running');
   await assertWorkspaceStatus(page, 'review', 'idle', 'Not started');
-  assert(
-    await page.getByTestId('workspace-default').locator('.workspace-location').textContent() === 'WSL · 2 paths',
-    'workspace location summary was not rendered',
-  );
+  const initialLocation = page.getByTestId('workspace-default').locator('.workspace-location');
+  assert(await initialLocation.textContent() === 'WSL · 2 paths', 'workspace location summary was not rendered');
+  assert(await initialLocation.getAttribute('data-source') === 'hub', 'started workspace location was not hub-backed');
   assert(initialState.configuration.terminal.fontSize === 16, 'configured terminal appearance was not exposed');
   for (const pane of initialState.panes) {
     assert(pane.fontFamily === 'Consolas, monospace', `${pane.paneId} font family was not applied`);
@@ -822,6 +821,24 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
   );
   assert(state.workspace.activeWorkspaceId === 'review', 'persisted active workspace was not restored');
   assert(state.panes.length === 3, 'restored review workspace did not contain three panes');
+  const summaries = state.sessionDiscovery.sessionSummaries;
+  assert(summaries.length === 5, `expected five hub session summaries, got ${summaries.length}`);
+  for (const summary of summaries) {
+    assert(summary.metadataComplete === true, `${summary.sessionId} metadata was incomplete`);
+    assert(summary.command === 'bash', `${summary.sessionId} command metadata was not bash`);
+    assert(summary.persistent === true, `${summary.sessionId} was not reported persistent`);
+    assert(summary.attachmentCount === 0, `${summary.sessionId} was unexpectedly attached during discovery`);
+  }
+  assert(
+    summaries.find((summary) => summary.sessionId === `${sessionPrefix}-shell`).cwd === null,
+    'hub did not preserve the original default cwd metadata',
+  );
+  assert(
+    state.configuration.workspaces[0].sessions[0].launchProfile.cwd === '/changed-after-start',
+    'recovered frontend configuration did not contain the changed cwd',
+  );
+  const restoredLocation = instance.page.getByTestId('workspace-default').locator('.workspace-location');
+  assert(await restoredLocation.getAttribute('data-source') === 'hub', 'restored workspace location was not hub-backed');
   await assertWorkspaceStatus(instance.page, 'default', 'available', '2 available');
   await assertWorkspaceStatus(instance.page, 'review', 'running', '3 running');
   const expectedSessionIds = [
@@ -937,6 +954,10 @@ async function main() {
     );
     assert(persistedState.schemaVersion === 2, 'workspace state schema was not persisted');
     assert(persistedState.activeWorkspaceId === 'review', 'active workspace was not persisted');
+    const configBackupPath = path.join(configDirectory, 'config.json.bak');
+    const changedBackup = JSON.parse(fs.readFileSync(configBackupPath, 'utf8'));
+    changedBackup.launchProfiles['default-shell'].cwd = '/changed-after-start';
+    fs.writeFileSync(configBackupPath, `${JSON.stringify(changedBackup, null, 2)}\n`);
     fs.writeFileSync(path.join(configDirectory, 'config.json'), '{ intentionally invalid');
 
     instance = await launchApp(sessionPrefix, configDirectory);

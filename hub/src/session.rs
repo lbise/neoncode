@@ -57,7 +57,7 @@ impl Session {
     #[allow(clippy::too_many_arguments)]
     pub fn spawn(
         id: String,
-        command: Option<String>,
+        command: String,
         args: Vec<String>,
         cwd: Option<String>,
         rows: u16,
@@ -79,7 +79,6 @@ impl Session {
             })
             .context("failed to open PTY")?;
 
-        let command = command.unwrap_or_else(default_shell);
         let mut cmd = CommandBuilder::new(&command);
         remove_control_environment(&mut cmd);
         for arg in args {
@@ -325,7 +324,7 @@ fn remove_control_environment(command: &mut CommandBuilder) {
     command.env_remove("NEONCODE_HUB_TOKEN");
 }
 
-fn default_shell() -> String {
+pub(crate) fn default_shell() -> String {
     env::var("SHELL").unwrap_or_else(|_| "bash".to_string())
 }
 

@@ -217,12 +217,17 @@ async fn wait_for_output(socket: &mut TestSocket, session_id: &str, expected: &s
     }
 }
 
-async fn list_session_ids(socket: &mut TestSocket) -> Vec<String> {
+async fn list_session_summaries(socket: &mut TestSocket) -> Vec<Value> {
     send_json(socket, json!({ "type": "list_sessions" })).await;
-    let message = wait_for_type(socket, "session_list").await;
-    message["sessions"]
+    wait_for_type(socket, "session_list").await["sessions"]
         .as_array()
         .expect("sessions array")
+        .clone()
+}
+
+async fn list_session_ids(socket: &mut TestSocket) -> Vec<String> {
+    list_session_summaries(socket)
+        .await
         .iter()
         .map(|session| {
             session["session_id"]
@@ -521,6 +526,100 @@ async fn fast_command_preserves_output_reports_exit_and_reuses_id() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn session_metadata_tracks_persistence_and_attachments() {
+    let hub = TestHub::start().await;
+    let session_id = "metadata-attachments";
+    let mut owner = hub.connect().await;
+    send_json(
+        &mut owner,
+        json!({
+            "type": "start",
+            "session_id": session_id,
+            "command": "sh",
+            "cwd": "/tmp",
+            "rows": 24,
+            "cols": 80
+        }),
+    )
+    .await;
+    wait_for_session_type(&mut owner, "started", session_id).await;
+
+    let initial = list_session_summaries(&mut owner).await;
+    assert_eq!(initial.len(), 1);
+    assert_eq!(initial[0]["session_id"], session_id);
+    assert_eq!(initial[0]["command"], "sh");
+    assert_eq!(initial[0]["cwd"], "/tmp");
+    assert_eq!(initial[0]["persistent"], false);
+    assert_eq!(initial[0]["attachment_count"], 1);
+
+    send_json(
+        &mut owner,
+        json!({ "type": "detach", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut owner, "detached", session_id).await;
+    let detached = list_session_summaries(&mut owner).await;
+    assert_eq!(detached[0]["persistent"], true);
+    assert_eq!(detached[0]["attachment_count"], 0);
+    assert_eq!(detached[0]["command"], "sh");
+    assert_eq!(detached[0]["cwd"], "/tmp");
+
+    send_json(
+        &mut owner,
+        json!({ "type": "attach", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut owner, "attached", session_id).await;
+    assert_eq!(
+        list_session_summaries(&mut owner).await[0]["attachment_count"],
+        1
+    );
+
+    let mut second = hub.connect().await;
+    send_json(
+        &mut second,
+        json!({ "type": "attach", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut second, "attached", session_id).await;
+    assert_eq!(
+        list_session_summaries(&mut owner).await[0]["attachment_count"],
+        2
+    );
+
+    second.close(None).await.expect("close second attachment");
+    let deadline = Instant::now() + MESSAGE_TIMEOUT;
+    loop {
+        let summaries = list_session_summaries(&mut owner).await;
+        if summaries[0]["attachment_count"] == 1 {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "attachment count did not decrement"
+        );
+        sleep(Duration::from_millis(25)).await;
+    }
+
+    send_json(
+        &mut owner,
+        json!({ "type": "detach", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut owner, "detached", session_id).await;
+    assert_eq!(
+        list_session_summaries(&mut owner).await[0]["attachment_count"],
+        0
+    );
+    send_json(
+        &mut owner,
+        json!({ "type": "kill", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut owner, "killed", session_id).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn persistent_session_survives_unexpected_websocket_disconnect() {
     let hub = TestHub::start().await;
     let session_id = "persistent-disconnect";
@@ -538,10 +637,13 @@ async fn persistent_session_survives_unexpected_websocket_disconnect() {
     let mut attached = hub.connect().await;
     let deadline = Instant::now() + MESSAGE_TIMEOUT;
     loop {
-        if list_session_ids(&mut attached)
-            .await
-            .contains(&session_id.to_string())
+        let summaries = list_session_summaries(&mut attached).await;
+        if let Some(summary) = summaries
+            .iter()
+            .find(|summary| summary["session_id"] == session_id)
         {
+            assert_eq!(summary["persistent"], true);
+            assert_eq!(summary["attachment_count"], 0);
             break;
         }
         assert!(Instant::now() < deadline, "persistent session disappeared");

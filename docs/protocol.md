@@ -1,7 +1,7 @@
 # NeonCode hub protocol
 
 This is the current WebSocket protocol for `neoncode-hub`.
-It is intentionally simple and optimized for getting Electron/xterm frontends talking to WSL/Linux PTYs quickly.
+It is intentionally simple and optimized for getting Electron/xterm frontends talking to WSL/Linux PTYs quickly. Protocol v1 is extensible: clients must ignore unknown object fields. Additive response metadata does not require a version bump; incompatible semantics or required fields do.
 
 For hub run commands, logging, lifecycle, and source layout, see [`hub.md`](hub.md).
 
@@ -98,7 +98,7 @@ Fields:
 }
 ```
 
-Returns `session_list` with active session IDs.
+Returns `session_list` with active session IDs plus hub-owned launch/lifecycle metadata.
 
 ### Attach to an existing session
 
@@ -205,11 +205,25 @@ The client verifies this server proof, then waits for `welcome` before sending s
   "type": "session_list",
   "sessions": [
     {
-      "session_id": "shell-1"
+      "session_id": "shell-1",
+      "command": "bash",
+      "cwd": "/home/me/src/project",
+      "persistent": true,
+      "attachment_count": 0
     }
   ]
 }
 ```
+
+Summary fields:
+
+- `session_id`: stable active-session ID.
+- `command`: effective executable launched by the hub. Arguments are deliberately omitted because they can contain sensitive values.
+- `cwd`: configured launch cwd, or `null` for the hub/default inherited cwd. It is not the shell's current working directory after launch.
+- `persistent`: whether the session survives its creating connection disappearing.
+- `attachment_count`: number of authenticated WebSocket connections currently forwarding this session. `start` counts as one attachment; `detach` and socket disconnect decrement it.
+
+These four metadata fields are emitted as one atomic additive bundle within protocol v1. Updated clients accept legacy ID-only summaries and treat their metadata as unavailable, but reject partially populated bundles as malformed.
 
 ### Session attached
 

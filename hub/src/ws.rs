@@ -301,6 +301,11 @@ async fn handle_client_text(
             if session_forwarders.len() >= MAX_ATTACHMENTS_PER_CONNECTION {
                 return Err(anyhow!("connection attachment limit reached"));
             }
+            if session_forwarders.contains_key(&session_id) {
+                return Err(anyhow!(
+                    "session already attached on this websocket: {session_id}"
+                ));
+            }
             let subscription = state.registry().start_session(
                 connection_id,
                 StartSessionRequest {
@@ -313,12 +318,28 @@ async fn handle_client_text(
                     persistent,
                 },
             )?;
-            outgoing
+            if let Err(err) = outgoing
                 .send(ServerMessage::Started {
                     session_id: session_id.clone(),
                 })
-                .await?;
-            attach_subscription(session_id, subscription, outgoing, session_forwarders).await?;
+                .await
+            {
+                let _ = state.registry().kill_session(&session_id);
+                return Err(err.into());
+            }
+            if let Err(err) = attach_subscription(
+                session_id.clone(),
+                subscription,
+                outgoing,
+                state,
+                connection_id,
+                session_forwarders,
+            )
+            .await
+            {
+                let _ = state.registry().kill_session(&session_id);
+                return Err(err);
+            }
         }
         ClientMessage::ListSessions => {
             let sessions = state.registry().list_sessions()?;
@@ -336,13 +357,35 @@ async fn handle_client_text(
                 ));
             }
 
-            let subscription = state.registry().subscribe_session(&session_id)?;
-            outgoing
+            let subscription = state
+                .registry()
+                .subscribe_session(&session_id, connection_id)?;
+            if let Err(err) = outgoing
                 .send(ServerMessage::Attached {
                     session_id: session_id.clone(),
                 })
-                .await?;
-            attach_subscription(session_id, subscription, outgoing, session_forwarders).await?;
+                .await
+            {
+                let _ = state
+                    .registry()
+                    .remove_attachment(&session_id, connection_id);
+                return Err(err.into());
+            }
+            if let Err(err) = attach_subscription(
+                session_id.clone(),
+                subscription,
+                outgoing,
+                state,
+                connection_id,
+                session_forwarders,
+            )
+            .await
+            {
+                let _ = state
+                    .registry()
+                    .remove_attachment(&session_id, connection_id);
+                return Err(err);
+            }
         }
         ClientMessage::Detach { session_id } => {
             let forwarder = session_forwarders.remove(&session_id).ok_or_else(|| {
@@ -351,7 +394,7 @@ async fn handle_client_text(
             forwarder.abort();
             state
                 .registry()
-                .release_owner_if_matches(&session_id, connection_id)?;
+                .detach_session(&session_id, connection_id)?;
             outgoing
                 .send(ServerMessage::Detached { session_id })
                 .await?;
@@ -391,6 +434,8 @@ async fn attach_subscription(
     session_id: String,
     subscription: SessionSubscription,
     outgoing: &mpsc::Sender<ServerMessage>,
+    state: &AppState,
+    connection_id: &str,
     session_forwarders: &mut HashMap<String, JoinHandle<()>>,
 ) -> Result<()> {
     if session_forwarders.contains_key(&session_id) {
@@ -405,8 +450,13 @@ async fn attach_subscription(
             .await?;
     }
 
-    let forwarder =
-        spawn_session_event_forwarder(session_id.clone(), subscription.events, outgoing.clone());
+    let forwarder = spawn_session_event_forwarder(
+        session_id.clone(),
+        subscription.events,
+        outgoing.clone(),
+        state.clone(),
+        connection_id.to_string(),
+    );
     session_forwarders.insert(session_id, forwarder);
     Ok(())
 }
@@ -415,6 +465,8 @@ fn spawn_session_event_forwarder(
     session_id: String,
     mut events: broadcast::Receiver<SessionEvent>,
     outgoing: mpsc::Sender<ServerMessage>,
+    state: AppState,
+    connection_id: String,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         loop {
@@ -437,6 +489,9 @@ fn spawn_session_event_forwarder(
                 break;
             }
         }
+        let _ = state
+            .registry()
+            .remove_attachment(&session_id, &connection_id);
     })
 }
 

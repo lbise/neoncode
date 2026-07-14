@@ -22,6 +22,7 @@ class SessionModel {
         status: 'idle',
         sessionListEvents: 0,
         sessions: [],
+        sessionSummaries: [],
         error: '',
       },
     };
@@ -57,10 +58,11 @@ class SessionModel {
     this.publicState.sessionDiscovery.error = error;
   }
 
-  recordSessionList(sessions) {
+  recordSessionList(summaries) {
     this.publicState.sessionDiscovery.status = 'ready';
     this.publicState.sessionDiscovery.sessionListEvents += 1;
-    this.publicState.sessionDiscovery.sessions = sessions;
+    this.publicState.sessionDiscovery.sessions = summaries.map((summary) => summary.sessionId);
+    this.publicState.sessionDiscovery.sessionSummaries = JSON.parse(JSON.stringify(summaries));
     this.publicState.sessionDiscovery.error = '';
   }
 

@@ -3,7 +3,7 @@
 ## Current stage
 
 ```text
-Stage: Workspace status baseline ready for manual preview
+Stage: Hub-owned session metadata ready for manual preview
 Supported Windows app: Electron + xterm.js + neoncode-hub
 Next focus: extended stability soaking, then richer workspace status and snapshot/resync
 ```
@@ -319,9 +319,24 @@ Inspired by wmux/cmux/t3code analysis:
 - [ ] Add ordered event sequence numbers.
 - [ ] Add snapshot/resync flow.
 - [ ] Add attachment IDs and per-attachment resize semantics.
-- [ ] Add session metadata/status.
+- [x] Add hub-owned effective command, configured cwd, persistence, and attachment-count metadata.
 - [ ] Add session exit status/reason.
 - [ ] Decide backend-generated vs frontend-provided IDs.
+
+### Milestone: hub-owned session metadata
+
+Status: complete and ready for manual preview.
+
+- [x] Extend additive protocol-v1 `session_list` summaries without breaking ID-only clients.
+- [x] Store effective command and configured cwd in the hub session registry.
+- [x] Track authenticated attachment membership across start/attach/detach/disconnect.
+- [x] Expose persistence and attachment counts while omitting potentially sensitive arguments.
+- [x] Validate complete and legacy summaries at the Electron protocol boundary.
+- [x] Prefer hub launch metadata in restored workspace locations with configured fallback.
+- [x] Cover metadata stability and two-client attachment counts with real WebSocket/PTYS.
+- [x] Verify hub-authoritative cwd despite changed frontend configuration in real Electron tests.
+
+Manual preview: start workspaces, close NeonCode with detach, alter a matching launch profile cwd, and reopen. Existing sessions continue to show the hub's original configured launch cwd; new sessions use the edited profile.
 
 ### 6. CLI/API
 

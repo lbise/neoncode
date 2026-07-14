@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
 };
 
@@ -9,7 +9,7 @@ use tracing::debug;
 
 use crate::{
     protocol::SessionSummary,
-    session::{Session, SessionSubscription},
+    session::{Session, SessionSubscription, default_shell},
 };
 
 const DEFAULT_ROWS: u16 = 24;
@@ -99,11 +99,13 @@ impl SessionRegistry {
             return Err(anyhow!("session limit reached"));
         }
 
+        let command = request.command.unwrap_or_else(default_shell);
+        let cwd = request.cwd;
         let (session, events) = Session::spawn(
             request.session_id.clone(),
-            request.command,
+            command.clone(),
             request.args.unwrap_or_default(),
-            request.cwd,
+            cwd.clone(),
             request.rows.unwrap_or(DEFAULT_ROWS),
             request.cols.unwrap_or(DEFAULT_COLS),
         )?;
@@ -113,6 +115,9 @@ impl SessionRegistry {
             SessionEntry {
                 owner_connection_id: (!request.persistent).then(|| owner_connection_id.to_string()),
                 persistent: request.persistent,
+                command,
+                cwd,
+                attachments: HashSet::from([owner_connection_id.to_string()]),
                 session,
             },
         );
@@ -128,16 +133,24 @@ impl SessionRegistry {
         prune_exited_sessions(&mut sessions);
 
         let mut summaries = sessions
-            .keys()
-            .map(|session_id| SessionSummary {
+            .iter()
+            .map(|(session_id, entry)| SessionSummary {
                 session_id: session_id.clone(),
+                command: entry.command.clone(),
+                cwd: entry.cwd.clone(),
+                persistent: entry.persistent,
+                attachment_count: u32::try_from(entry.attachments.len()).unwrap_or(u32::MAX),
             })
             .collect::<Vec<_>>();
         summaries.sort_by(|a, b| a.session_id.cmp(&b.session_id));
         Ok(summaries)
     }
 
-    pub fn subscribe_session(&self, session_id: &str) -> Result<SessionSubscription> {
+    pub fn subscribe_session(
+        &self,
+        session_id: &str,
+        connection_id: &str,
+    ) -> Result<SessionSubscription> {
         validate_session_id(session_id)?;
         let mut sessions = self
             .sessions
@@ -146,16 +159,38 @@ impl SessionRegistry {
         prune_exited_sessions(&mut sessions);
 
         let entry = sessions
-            .get(session_id)
+            .get_mut(session_id)
             .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
-        entry.session.subscribe()
+        if entry.attachments.contains(connection_id) {
+            return Err(anyhow!(
+                "session already attached by this connection: {session_id}"
+            ));
+        }
+        let subscription = entry.session.subscribe()?;
+        entry.attachments.insert(connection_id.to_string());
+        Ok(subscription)
     }
 
-    pub fn release_owner_if_matches(
-        &self,
-        session_id: &str,
-        owner_connection_id: &str,
-    ) -> Result<()> {
+    pub fn remove_attachment(&self, session_id: &str, connection_id: &str) -> Result<()> {
+        validate_session_id(session_id)?;
+        let mut sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+        prune_exited_sessions(&mut sessions);
+
+        let entry = sessions
+            .get_mut(session_id)
+            .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
+        if !entry.attachments.remove(connection_id) {
+            return Err(anyhow!(
+                "session is not attached by this connection: {session_id}"
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn detach_session(&self, session_id: &str, owner_connection_id: &str) -> Result<()> {
         validate_session_id(session_id)?;
         let mut sessions = self
             .sessions
@@ -167,6 +202,11 @@ impl SessionRegistry {
             .get_mut(session_id)
             .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
 
+        if !entry.attachments.remove(owner_connection_id) {
+            return Err(anyhow!(
+                "session is not attached by this connection: {session_id}"
+            ));
+        }
         if entry.owner_connection_id.as_deref() == Some(owner_connection_id) {
             debug!(%session_id, %owner_connection_id, "detaching session from owning websocket");
             entry.owner_connection_id = None;
@@ -223,6 +263,10 @@ impl SessionRegistry {
                 .sessions
                 .lock()
                 .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+            prune_exited_sessions(&mut sessions);
+            for entry in sessions.values_mut() {
+                entry.attachments.remove(owner_connection_id);
+            }
             let session_ids = sessions
                 .iter()
                 .filter(|(_, entry)| {
@@ -335,6 +379,9 @@ impl StartSessionRequest {
 struct SessionEntry {
     owner_connection_id: Option<String>,
     persistent: bool,
+    command: String,
+    cwd: Option<String>,
+    attachments: HashSet<String>,
     session: Session,
 }
 

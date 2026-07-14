@@ -86,4 +86,8 @@ pub enum ServerMessage {
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionSummary {
     pub session_id: String,
+    pub command: String,
+    pub cwd: Option<String>,
+    pub persistent: bool,
+    pub attachment_count: u32,
 }

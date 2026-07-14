@@ -82,6 +82,7 @@ class NeonCodeApp {
     });
     this.sessionDiscoveryClient = undefined;
     this.discoveredSessionIds = new Set();
+    this.hubSessionsById = new Map();
     this.visitedSessionIds = new Set();
     this.workspaceSessionStates = new Map(
       this.config.workspaces.flatMap((workspace) => workspace.panes.map((pane) => [
@@ -127,9 +128,20 @@ class NeonCodeApp {
   }
 
   workspaceLocation(workspace) {
-    const paths = new Set(workspace.panes.map((pane) => pane.launchProfile.cwd || '~'));
-    if (paths.size === 1) return `WSL · ${[...paths][0]}`;
-    return `WSL · ${paths.size} paths`;
+    let hubMetadataCount = 0;
+    const paths = new Set(workspace.panes.map((pane) => {
+      const hubSession = this.hubSessionsById.get(pane.sessionId);
+      if (hubSession?.metadataComplete) {
+        hubMetadataCount += 1;
+        return hubSession.cwd || 'default cwd';
+      }
+      return pane.launchProfile.cwd || 'default cwd';
+    }));
+    const location = paths.size === 1 ? [...paths][0] : `${paths.size} paths`;
+    const source = hubMetadataCount === workspace.panes.length
+      ? 'hub'
+      : hubMetadataCount > 0 ? 'mixed' : 'config';
+    return { label: `WSL · ${location}`, source };
   }
 
   workspaceSummary(workspace) {
@@ -160,6 +172,10 @@ class NeonCodeApp {
     if (detached > 0) {
       return { state: 'detached', label: `${detached} detached`, detail: `${detached} sessions detached` };
     }
+    const inUse = count(['in_use']);
+    if (inUse > 0) {
+      return { state: 'in_use', label: `${inUse} in use`, detail: `${inUse} sessions attached elsewhere` };
+    }
     const available = count(['available']);
     if (available > 0) {
       return { state: 'available', label: `${available} available`, detail: `${available} hub sessions available` };
@@ -168,20 +184,49 @@ class NeonCodeApp {
   }
 
   updateWorkspaceStatuses() {
-    const summaries = this.config.workspaces.map((workspace) => ({
-      id: workspace.id,
-      location: this.workspaceLocation(workspace),
-      ...this.workspaceSummary(workspace),
-    }));
+    const summaries = this.config.workspaces.map((workspace) => {
+      const location = this.workspaceLocation(workspace);
+      return {
+        id: workspace.id,
+        location: location.label,
+        locationSource: location.source,
+        ...this.workspaceSummary(workspace),
+      };
+    });
     this.sessionModel.setWorkspaceSummaries(summaries);
     for (const summary of summaries) {
       const button = this.workspaceList.querySelector(`[data-workspace-id="${summary.id}"]`);
       const status = button?.querySelector('.workspace-status');
-      if (!button || !status) continue;
+      const location = button?.querySelector('.workspace-location');
+      if (!button || !status || !location) continue;
       button.dataset.state = summary.state;
       button.title = `${summary.location} — ${summary.detail}`;
+      location.textContent = summary.location;
+      location.dataset.source = summary.locationSource;
       status.dataset.state = summary.state;
       status.textContent = summary.label;
+    }
+  }
+
+  updateHubSessionMetadata(descriptor, lifecycle) {
+    if (lifecycle === 'started') {
+      this.hubSessionsById.set(descriptor.sessionId, {
+        sessionId: descriptor.sessionId,
+        command: descriptor.launchProfile.command,
+        cwd: descriptor.launchProfile.cwd,
+        persistent: true,
+        attachmentCount: 1,
+        metadataComplete: true,
+      });
+      this.discoveredSessionIds.add(descriptor.sessionId);
+    } else if (lifecycle === 'detached') {
+      const metadata = this.hubSessionsById.get(descriptor.sessionId);
+      if (metadata?.metadataComplete) {
+        this.hubSessionsById.set(descriptor.sessionId, { ...metadata, attachmentCount: 0 });
+      }
+    } else if (lifecycle === 'killed' || lifecycle === 'exited') {
+      this.hubSessionsById.delete(descriptor.sessionId);
+      this.discoveredSessionIds.delete(descriptor.sessionId);
     }
   }
 
@@ -210,7 +255,7 @@ class NeonCodeApp {
       name.textContent = workspace.name;
       const location = this.document.createElement('span');
       location.className = 'workspace-location';
-      location.textContent = this.workspaceLocation(workspace);
+      location.textContent = this.workspaceLocation(workspace).label;
       identity.append(name, location);
       const status = this.document.createElement('span');
       status.className = 'workspace-status';
@@ -244,11 +289,14 @@ class NeonCodeApp {
     }
 
     this.renderWorkspaceSelector();
-    this.discoveredSessionIds = new Set(await this.discoverSessions());
-    for (const sessionId of this.discoveredSessionIds) {
-      if (this.workspaceSessionStates.has(sessionId)) {
-        const current = this.workspaceSessionStates.get(sessionId);
-        this.workspaceSessionStates.set(sessionId, { ...current, lifecycle: 'available', error: '' });
+    const discoveredSessions = await this.discoverSessions();
+    this.discoveredSessionIds = new Set(discoveredSessions.map((session) => session.sessionId));
+    this.hubSessionsById = new Map(discoveredSessions.map((session) => [session.sessionId, session]));
+    for (const session of discoveredSessions) {
+      if (this.workspaceSessionStates.has(session.sessionId)) {
+        const current = this.workspaceSessionStates.get(session.sessionId);
+        const lifecycle = session.metadataComplete && session.attachmentCount > 0 ? 'in_use' : 'available';
+        this.workspaceSessionStates.set(session.sessionId, { ...current, lifecycle, error: '' });
       }
     }
     this.updateWorkspaceStatuses();
@@ -292,10 +340,8 @@ class NeonCodeApp {
         },
         onMessage: (message) => {
           if (message.type === 'session_list') {
-            const sessions = (message.sessions || [])
-              .map((session) => session.session_id)
-              .filter((sessionId) => typeof sessionId === 'string' && sessionId.length > 0);
-            console.log(`hub_session_list ${sessions.length} ${sessions.join(',')}`);
+            const sessions = message.sessions || [];
+            console.log(`hub_session_list ${sessions.length} ${sessions.map((session) => session.sessionId).join(',')}`);
             this.sessionModel.recordSessionList(sessions);
             finish(sessions);
           } else if (message.type === 'error') {
@@ -443,6 +489,7 @@ class NeonCodeApp {
       sessionModel: this.sessionModel,
       setStatus: (text) => this.setStatus(text),
       onLifecycleChange: (lifecycle, error) => {
+        this.updateHubSessionMetadata(descriptor, lifecycle);
         this.recordWorkspaceSessionState(descriptor.sessionId, lifecycle, error);
       },
     });

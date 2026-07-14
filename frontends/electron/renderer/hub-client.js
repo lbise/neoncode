@@ -45,6 +45,67 @@ async function verifyAuthenticationHmac(capabilityToken, payload, hmac) {
   return crypto.subtle.verify('HMAC', key, hexToBytes(hmac), encoder.encode(payload));
 }
 
+function normalizeSessionSummaries(sessions) {
+  if (!Array.isArray(sessions) || sessions.length > 64) {
+    throw new Error('session_list.sessions must contain at most 64 entries');
+  }
+  const seen = new Set();
+  return sessions.map((summary) => {
+    if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+      throw new Error('session_list summary must be an object');
+    }
+    const sessionId = summary.session_id;
+    if (typeof sessionId !== 'string'
+        || !/^[A-Za-z0-9_.-]{1,128}$/.test(sessionId)
+        || seen.has(sessionId)) {
+      throw new Error('session_list contains an invalid or duplicate session_id');
+    }
+    seen.add(sessionId);
+
+    const metadataKeys = ['command', 'cwd', 'persistent', 'attachment_count'];
+    const metadataFields = metadataKeys.filter((key) => Object.hasOwn(summary, key)).length;
+    if (metadataFields !== 0 && metadataFields !== metadataKeys.length) {
+      throw new Error(`session_list metadata is incomplete for ${sessionId}`);
+    }
+    if (metadataFields === 0) {
+      return {
+        sessionId,
+        command: null,
+        cwd: null,
+        persistent: null,
+        attachmentCount: null,
+        metadataComplete: false,
+      };
+    }
+
+    if (typeof summary.command !== 'string'
+        || summary.command.length < 1
+        || encoder.encode(summary.command).length > 4096) {
+      throw new Error(`session_list command is invalid for ${sessionId}`);
+    }
+    if (summary.cwd !== null
+        && (typeof summary.cwd !== 'string' || encoder.encode(summary.cwd).length > 4096)) {
+      throw new Error(`session_list cwd is invalid for ${sessionId}`);
+    }
+    if (typeof summary.persistent !== 'boolean') {
+      throw new Error(`session_list persistent flag is invalid for ${sessionId}`);
+    }
+    if (!Number.isInteger(summary.attachment_count)
+        || summary.attachment_count < 0
+        || summary.attachment_count > 128) {
+      throw new Error(`session_list attachment_count is invalid for ${sessionId}`);
+    }
+    return {
+      sessionId,
+      command: summary.command,
+      cwd: summary.cwd,
+      persistent: summary.persistent,
+      attachmentCount: summary.attachment_count,
+      metadataComplete: true,
+    };
+  });
+}
+
 function base64ToBytes(data) {
   const binary = atob(data);
   const bytes = new Uint8Array(binary.length);
@@ -142,6 +203,15 @@ class HubClient {
         return;
       }
 
+      if (message.type === 'session_list') {
+        try {
+          message = { ...message, sessions: normalizeSessionSummaries(message.sessions) };
+        } catch (error) {
+          this.onInvalidMessage?.(error, event.data);
+          socket.close();
+          return;
+        }
+      }
       this.onMessage?.(message);
     });
 
@@ -240,4 +310,5 @@ module.exports = {
   base64ToBytes,
   decoder,
   encoder,
+  normalizeSessionSummaries,
 };

@@ -30,7 +30,7 @@ Current capabilities:
 - resize PTY;
 - kill PTY session;
 - maintain sessions in a shared in-process session registry;
-- list active sessions;
+- list active sessions with effective command, configured cwd, persistence, and attachment count;
 - attach a WebSocket with bounded recent terminal-output replay followed by live events;
 - detach a WebSocket from a session;
 - require the Electron `file://` origin and a per-user capability challenge-response on WebSockets;
@@ -233,11 +233,11 @@ Default size:
 
 ### List
 
-Frontend sends `list_sessions` to get active session IDs from the in-process registry. Naturally exited sessions are pruned and are not returned; their IDs can be reused.
+Frontend sends `list_sessions` to get active session IDs and hub-owned metadata from the in-process registry: effective command, configured launch cwd, persistence, and current attachment count. Arguments are not exposed because they may contain sensitive values. Configured cwd is launch metadata, not the shell's later live cwd. Naturally exited sessions are pruned and are not returned; their IDs can be reused.
 
 ### Attach
 
-Frontend sends `attach` with a `session_id` to subscribe the current WebSocket to that session.
+Frontend sends `attach` with a `session_id` to subscribe the current WebSocket to that session. The registry records the authenticated connection as an attachment so later session lists report the count accurately.
 
 The hub atomically captures a live broadcast receiver and the session's bounded output history. It sends `attached`, queues replayed output in sequence order, and then forwards live events. Holding the same event-state lock while subscribing and snapshotting prevents gaps or duplicates at the replay/live boundary.
 
@@ -247,7 +247,7 @@ The replay buffer retains up to 2 MiB of raw terminal output per session. This r
 
 Frontend sends `detach` with a `session_id` to stop forwarding that session's events to the current WebSocket.
 
-If the detaching WebSocket originally created the session, the hub releases that session from the WebSocket lifetime. Closing the WebSocket after detach will not kill that session.
+Detach removes the current connection from the session's attachment set. If the detaching WebSocket originally created the session, the hub also releases that session from the WebSocket lifetime and marks it persistent. Closing the WebSocket after detach will not kill that session.
 
 ### Input
 
@@ -285,9 +285,9 @@ The creating WebSocket subscribes automatically on `start`. Additional/new WebSo
 
 ### WebSocket disconnect
 
-Sessions still owned by that WebSocket are removed from the shared registry and killed when the WebSocket disconnects.
+The registry removes the disconnected connection from every attachment set. Nonpersistent sessions still owned by that WebSocket are then removed from the shared registry and killed.
 
-Sessions explicitly detached before disconnect are left running in the registry and can be discovered with `list_sessions` and reattached with `attach`.
+Persistent sessions and sessions explicitly detached before disconnect are left running, report zero/fewer attachments through `list_sessions`, and can be reattached with `attach`.
 
 ## Manual smoke test
 
