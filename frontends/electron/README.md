@@ -73,13 +73,13 @@ renderer/test-api.js
 tests/               Node config/auth tests and hidden-window Playwright functional tests
 ```
 
-On startup, Electron main loads `%APPDATA%\\NeonCode\\config.json`, validates configured sessions/process profiles, and sends a deeply frozen bootstrap object to the renderer. The renderer calls `list_sessions`, attaches matching stable sessions, and starts missing sessions with configured command/args/cwd. The close policy waits for `detached` or `killed` acknowledgements. Attach replays up to 2 MiB of recent ordered terminal output before live output continues, so normal shell history and prompts reappear.
+On startup, Electron main loads `%APPDATA%\\NeonCode\\config.json`, validates configured workspaces/sessions/process profiles, and sends a deeply frozen bootstrap object to the renderer. The renderer calls `list_sessions`, restores the active workspace, attaches matching stable sessions, and starts missing sessions with configured command/args/cwd. The sidebar switches workspaces through detach/reattach, and the close policy waits for `detached` or `killed` acknowledgements. Attach replays up to 2 MiB of recent ordered terminal output before live output continues, so normal shell history and prompts reappear.
 
-Schema version 3 applies validated font family/size, cursor blink, core theme colors, and a 16-color ANSI table to every xterm pane. Window content size is stored atomically in `%APPDATA%\\NeonCode\\state.json`. Valid backups and visible recovery diagnostics protect malformed configuration. See [`docs/configuration.md`](../../docs/configuration.md) for the schema, launch-profile examples, and manual preview workflow.
+Schema version 4 supports 1–16 named workspaces with 1–8 dynamically rendered panes and simple grid columns, while applying validated font family/size, cursor blink, core theme colors, and a named 16-color ANSI scheme to every xterm pane. Window content size and active workspace are stored atomically in `%APPDATA%\\NeonCode\\state.json`. Valid backups and visible recovery diagnostics protect malformed configuration. See [`docs/configuration.md`](../../docs/configuration.md) for the schema, launch-profile examples, and manual preview workflow.
 
 After authenticated protocol-version/boot-ID negotiation, panes start persistent hub sessions. Unexpected socket loss shows `Reconnecting` with capped exponential backoff, then attaches the same PTY and replay stream. If the hub rebooted, attach falls back once to a fresh persistent session. Graceful window close still follows the configured detach/kill policy.
 
-Default panes use stable frontend session keys instead of deriving session identity from UI indexes:
+Configured panes use stable frontend session keys instead of deriving session identity from UI indexes:
 
 ```text
 Pane key: shell  -> session id: <NEONCODE_SESSION_PREFIX>-shell
@@ -100,7 +100,7 @@ With the hub running:
 ./dev electron-test
 ```
 
-The test launches a hidden Electron window and uses structured renderer/Electron APIs, restoring clipboard state after copy checks rather than relying on it for terminal/session correctness. It does not use foreground-window automation, `SendKeys`, or log scraping. It closes/reopens the real Electron app and verifies the same shell state survives reattachment.
+The test launches a hidden Electron window and uses structured renderer/Electron APIs, restoring clipboard state after copy checks rather than relying on it for terminal/session correctness. It does not use foreground-window automation, `SendKeys`, or log scraping. It switches between two- and three-pane workspaces, verifies detach/reattach state continuity, and closes/reopens the real Electron app to verify active-workspace restoration.
 
 Automated terminal coverage includes navigation/function keys, Ctrl+C/D/Z, selection copy and paste-race handling, interactive tmux/Neovim workflows, SGR mouse reports, tmux split/copy-mode mouse handling, Neovim click/wheel handling, Unicode, and a 20,000-line output soak.
 

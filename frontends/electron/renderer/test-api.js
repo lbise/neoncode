@@ -34,6 +34,10 @@ function installRendererTestApi(app) {
       await findPane(app, paneId).killAndClose();
     },
 
+    async switchWorkspace(workspaceId) {
+      await app.switchWorkspace(workspaceId);
+    },
+
     disconnectPaneSocket(paneId) {
       findPane(app, paneId).forceDisconnectForTest();
     },

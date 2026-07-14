@@ -1,11 +1,13 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const CONFIG_SCHEMA_VERSION = 3;
-const STATE_SCHEMA_VERSION = 1;
+const CONFIG_SCHEMA_VERSION = 4;
+const STATE_SCHEMA_VERSION = 2;
 const MAX_CONFIG_BYTES = 64 * 1024;
 const MAX_STATE_BYTES = 16 * 1024;
-const MAX_SESSIONS = 2;
+const MAX_WORKSPACES = 16;
+const MAX_PANES_PER_WORKSPACE = 8;
+const MAX_CONFIGURED_SESSIONS = 64;
 const MIN_WINDOW_WIDTH = 800;
 const MIN_WINDOW_HEIGHT = 600;
 const MAX_WINDOW_DIMENSION = 10000;
@@ -79,16 +81,23 @@ function defaultConfig() {
         cwd: null,
       },
     },
-    sessions: [
+    workspaces: [
       {
-        id: 'shell',
-        title: 'Shell',
-        launchProfile: 'default-shell',
-      },
-      {
-        id: 'tasks',
-        title: 'Tasks',
-        launchProfile: 'default-shell',
+        id: 'default',
+        name: 'Default',
+        layout: { columns: 2 },
+        sessions: [
+          {
+            id: 'shell',
+            title: 'Shell',
+            launchProfile: 'default-shell',
+          },
+          {
+            id: 'tasks',
+            title: 'Tasks',
+            launchProfile: 'default-shell',
+          },
+        ],
       },
     ],
   };
@@ -101,6 +110,7 @@ function defaultState() {
       width: 1200,
       height: 800,
     },
+    activeWorkspaceId: null,
   };
 }
 
@@ -203,6 +213,26 @@ function migrateSchemaTwoTerminal(terminal) {
   return appearance;
 }
 
+function requireLegacyDesktopConfigKeys(document, { terminal }) {
+  const keys = ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'launchProfiles', 'sessions'];
+  if (terminal) keys.push('terminal');
+  requireExactKeys(document, keys, `schema ${document.schemaVersion} config`);
+}
+
+function migrateSchemaThreeConfig(document) {
+  const { sessions, ...rest } = document;
+  return {
+    ...rest,
+    schemaVersion: CONFIG_SCHEMA_VERSION,
+    workspaces: [{
+      id: 'default',
+      name: 'Default',
+      layout: { columns: Math.min(2, sessions.length) },
+      sessions,
+    }],
+  };
+}
+
 function migrateConfig(raw, legacyTerminal) {
   requireObject(raw, 'config');
   if (raw.schemaVersion === CONFIG_SCHEMA_VERSION) {
@@ -219,20 +249,32 @@ function migrateConfig(raw, legacyTerminal) {
       migrationSource: 'legacy_terminal',
     };
   }
-  if (raw.schemaVersion === 2) {
+  if (raw.schemaVersion === 3) {
+    requireLegacyDesktopConfigKeys(raw, { terminal: true });
     return {
-      document: { ...raw, schemaVersion: CONFIG_SCHEMA_VERSION, terminal: migrateSchemaTwoTerminal(raw.terminal) },
+      document: migrateSchemaThreeConfig(raw),
+      migrated: true,
+      migrationSource: 'schema_3',
+    };
+  }
+  if (raw.schemaVersion === 2) {
+    requireLegacyDesktopConfigKeys(raw, { terminal: true });
+    const schemaThree = { ...raw, schemaVersion: 3, terminal: migrateSchemaTwoTerminal(raw.terminal) };
+    return {
+      document: migrateSchemaThreeConfig(schemaThree),
       migrated: true,
       migrationSource: 'schema_2',
     };
   }
   if (raw.schemaVersion === 1) {
+    requireLegacyDesktopConfigKeys(raw, { terminal: false });
+    const schemaThree = {
+      ...raw,
+      schemaVersion: 3,
+      terminal: legacyTerminal ? migrateLegacyTerminal(legacyTerminal) : defaultTerminalAppearance(),
+    };
     return {
-      document: {
-        ...raw,
-        schemaVersion: CONFIG_SCHEMA_VERSION,
-        terminal: legacyTerminal ? migrateLegacyTerminal(legacyTerminal) : defaultTerminalAppearance(),
-      },
+      document: migrateSchemaThreeConfig(schemaThree),
       migrated: true,
       migrationSource: legacyTerminal ? 'schema_1_legacy_terminal' : 'schema_1',
     };
@@ -244,7 +286,7 @@ function migrateConfig(raw, legacyTerminal) {
     );
   }
   if (raw.schemaVersion !== 0) {
-    throw new ConfigurationError('config.schemaVersion must be 0, 1, 2, or 3');
+    throw new ConfigurationError('config.schemaVersion must be 0, 1, 2, 3, or 4');
   }
 
   requireExactKeys(
@@ -255,15 +297,16 @@ function migrateConfig(raw, legacyTerminal) {
   if (typeof raw.persistSessions !== 'boolean') {
     throw new ConfigurationError('legacy persistSessions must be boolean');
   }
-  if (!Number.isInteger(raw.terminalCount) || raw.terminalCount < 1 || raw.terminalCount > MAX_SESSIONS) {
-    throw new ConfigurationError(`legacy terminalCount must be between 1 and ${MAX_SESSIONS}`);
+  if (!Number.isInteger(raw.terminalCount) || raw.terminalCount < 1 || raw.terminalCount > 2) {
+    throw new ConfigurationError('legacy terminalCount must be between 1 and 2');
   }
 
   const migrated = defaultConfig();
   migrated.hub.endpoint = raw.endpoint;
   migrated.sessionPrefix = raw.sessionPrefix;
   migrated.persistence.onWindowClose = raw.persistSessions ? 'detach' : 'kill';
-  migrated.sessions = migrated.sessions.slice(0, raw.terminalCount);
+  migrated.workspaces[0].sessions = migrated.workspaces[0].sessions.slice(0, raw.terminalCount);
+  migrated.workspaces[0].layout.columns = raw.terminalCount;
   return { document: migrated, migrated: true, migrationSource: 'schema_0' };
 }
 
@@ -271,7 +314,7 @@ function validateConfig(raw, { legacyTerminal } = {}) {
   const { document, migrated, migrationSource } = migrateConfig(raw, legacyTerminal);
   requireExactKeys(
     document,
-    ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'terminal', 'launchProfiles', 'sessions'],
+    ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'terminal', 'launchProfiles', 'workspaces'],
     'config',
   );
   if (document.schemaVersion !== CONFIG_SCHEMA_VERSION) {
@@ -340,32 +383,57 @@ function validateConfig(raw, { legacyTerminal } = {}) {
     return [profileId, { type: 'process', command, args, cwd }];
   }));
 
-  if (!Array.isArray(document.sessions)
-      || document.sessions.length < 1
-      || document.sessions.length > MAX_SESSIONS) {
-    throw new ConfigurationError(`config.sessions must contain 1-${MAX_SESSIONS} sessions`);
+  if (!Array.isArray(document.workspaces)
+      || document.workspaces.length < 1
+      || document.workspaces.length > MAX_WORKSPACES) {
+    throw new ConfigurationError(`config.workspaces must contain 1-${MAX_WORKSPACES} workspaces`);
   }
+  const seenWorkspaceIds = new Set();
   const seenSessionIds = new Set();
-  const sessions = document.sessions.map((rawSession, index) => {
-    requireExactKeys(rawSession, ['id', 'title', 'launchProfile'], `config.sessions[${index}]`);
-    const id = requireIdentifier(rawSession.id, `config.sessions[${index}].id`, 64);
-    if (seenSessionIds.has(id)) {
-      throw new ConfigurationError(`duplicate session id: ${id}`);
+  let configuredSessionCount = 0;
+  const workspaces = document.workspaces.map((rawWorkspace, workspaceIndex) => {
+    const workspaceLabel = `config.workspaces[${workspaceIndex}]`;
+    requireExactKeys(rawWorkspace, ['id', 'name', 'layout', 'sessions'], workspaceLabel);
+    const id = requireIdentifier(rawWorkspace.id, `${workspaceLabel}.id`, 64);
+    if (seenWorkspaceIds.has(id)) {
+      throw new ConfigurationError(`duplicate workspace id: ${id}`);
     }
-    seenSessionIds.add(id);
-    const title = requireBoundedString(rawSession.title, `config.sessions[${index}].title`, { max: 64 });
-    const launchProfile = requireIdentifier(
-      rawSession.launchProfile,
-      `config.sessions[${index}].launchProfile`,
-      64,
-    );
-    if (!Object.hasOwn(launchProfiles, launchProfile)) {
-      throw new ConfigurationError(`unknown launch profile '${launchProfile}' for session '${id}'`);
+    seenWorkspaceIds.add(id);
+    const name = requireBoundedString(rawWorkspace.name, `${workspaceLabel}.name`, { max: 64 });
+    requireExactKeys(rawWorkspace.layout, ['columns'], `${workspaceLabel}.layout`);
+    if (!Array.isArray(rawWorkspace.sessions)
+        || rawWorkspace.sessions.length < 1
+        || rawWorkspace.sessions.length > MAX_PANES_PER_WORKSPACE) {
+      throw new ConfigurationError(`${workspaceLabel}.sessions must contain 1-${MAX_PANES_PER_WORKSPACE} sessions`);
     }
-    if (Buffer.byteLength(`${sessionPrefix}-${id}`, 'utf8') > 128) {
-      throw new ConfigurationError(`combined hub session id exceeds 128 bytes: ${sessionPrefix}-${id}`);
+    configuredSessionCount += rawWorkspace.sessions.length;
+    if (configuredSessionCount > MAX_CONFIGURED_SESSIONS) {
+      throw new ConfigurationError(`config.workspaces may contain at most ${MAX_CONFIGURED_SESSIONS} sessions in total`);
     }
-    return { id, title, launchProfile };
+    if (!Number.isInteger(rawWorkspace.layout.columns)
+        || rawWorkspace.layout.columns < 1
+        || rawWorkspace.layout.columns > rawWorkspace.sessions.length) {
+      throw new ConfigurationError(`${workspaceLabel}.layout.columns must be between 1 and the session count`);
+    }
+    const sessions = rawWorkspace.sessions.map((rawSession, sessionIndex) => {
+      const sessionLabel = `${workspaceLabel}.sessions[${sessionIndex}]`;
+      requireExactKeys(rawSession, ['id', 'title', 'launchProfile'], sessionLabel);
+      const sessionId = requireIdentifier(rawSession.id, `${sessionLabel}.id`, 64);
+      if (seenSessionIds.has(sessionId)) {
+        throw new ConfigurationError(`duplicate session id across workspaces: ${sessionId}`);
+      }
+      seenSessionIds.add(sessionId);
+      const title = requireBoundedString(rawSession.title, `${sessionLabel}.title`, { max: 64 });
+      const launchProfile = requireIdentifier(rawSession.launchProfile, `${sessionLabel}.launchProfile`, 64);
+      if (!Object.hasOwn(launchProfiles, launchProfile)) {
+        throw new ConfigurationError(`unknown launch profile '${launchProfile}' for session '${sessionId}'`);
+      }
+      if (Buffer.byteLength(`${sessionPrefix}-${sessionId}`, 'utf8') > 128) {
+        throw new ConfigurationError(`combined hub session id exceeds 128 bytes: ${sessionPrefix}-${sessionId}`);
+      }
+      return { id: sessionId, title, launchProfile };
+    });
+    return { id, name, layout: { columns: rawWorkspace.layout.columns }, sessions };
   });
 
   return {
@@ -376,7 +444,7 @@ function validateConfig(raw, { legacyTerminal } = {}) {
       persistence: { onWindowClose: document.persistence.onWindowClose },
       terminal,
       launchProfiles,
-      sessions,
+      workspaces,
     },
     migrated,
     migrationSource,
@@ -384,23 +452,33 @@ function validateConfig(raw, { legacyTerminal } = {}) {
 }
 
 function validateState(raw) {
-  requireExactKeys(raw, ['schemaVersion', 'window'], 'state');
-  if (raw.schemaVersion !== STATE_SCHEMA_VERSION) {
+  requireObject(raw, 'state');
+  let document = raw;
+  if (raw.schemaVersion === 1) {
+    requireExactKeys(raw, ['schemaVersion', 'window'], 'state');
+    document = { ...raw, schemaVersion: STATE_SCHEMA_VERSION, activeWorkspaceId: null };
+  }
+  requireExactKeys(document, ['schemaVersion', 'window', 'activeWorkspaceId'], 'state');
+  if (document.schemaVersion !== STATE_SCHEMA_VERSION) {
     throw new ConfigurationError(`state.schemaVersion must be ${STATE_SCHEMA_VERSION}`);
   }
-  requireExactKeys(raw.window, ['width', 'height'], 'state.window');
+  requireExactKeys(document.window, ['width', 'height'], 'state.window');
   for (const dimension of ['width', 'height']) {
-    const value = raw.window[dimension];
+    const value = document.window[dimension];
     if (!Number.isInteger(value) || value < 1 || value > MAX_WINDOW_DIMENSION) {
       throw new ConfigurationError(`state.window.${dimension} must be an integer between 1 and ${MAX_WINDOW_DIMENSION}`);
     }
   }
+  const activeWorkspaceId = document.activeWorkspaceId === null
+    ? null
+    : requireIdentifier(document.activeWorkspaceId, 'state.activeWorkspaceId', 64);
   return {
     schemaVersion: STATE_SCHEMA_VERSION,
     window: {
-      width: Math.max(MIN_WINDOW_WIDTH, raw.window.width),
-      height: Math.max(MIN_WINDOW_HEIGHT, raw.window.height),
+      width: Math.max(MIN_WINDOW_WIDTH, document.window.width),
+      height: Math.max(MIN_WINDOW_HEIGHT, document.window.height),
     },
+    activeWorkspaceId,
   };
 }
 
@@ -414,10 +492,14 @@ function applyEnvironmentOverrides(config, env) {
   }
   if (env.NEONCODE_TERMINAL_COUNT) {
     const count = Number.parseInt(env.NEONCODE_TERMINAL_COUNT, 10);
-    if (!Number.isInteger(count) || count < 1 || count > MAX_SESSIONS) {
-      throw new ConfigurationError(`NEONCODE_TERMINAL_COUNT must be between 1 and ${MAX_SESSIONS}`);
+    if (!Number.isInteger(count) || count < 1 || count > MAX_PANES_PER_WORKSPACE) {
+      throw new ConfigurationError(`NEONCODE_TERMINAL_COUNT must be between 1 and ${MAX_PANES_PER_WORKSPACE}`);
     }
-    effective.sessions = effective.sessions.slice(0, count);
+    effective.workspaces = effective.workspaces.map((workspace) => ({
+      ...workspace,
+      layout: { columns: Math.min(workspace.layout.columns, count, workspace.sessions.length) },
+      sessions: workspace.sessions.slice(0, count),
+    }));
   }
   if (env.NEONCODE_PERSIST_SESSIONS) {
     effective.persistence.onWindowClose = env.NEONCODE_PERSIST_SESSIONS === '0' ? 'kill' : 'detach';
@@ -656,19 +738,30 @@ class ConfigStore {
     const warnings = [];
     if (fs.existsSync(this.statePath)) {
       let state;
+      let stateMigrated = false;
       try {
-        state = validateState(readJsonFile(this.statePath, MAX_STATE_BYTES));
+        const rawState = readJsonFile(this.statePath, MAX_STATE_BYTES);
+        stateMigrated = rawState.schemaVersion !== STATE_SCHEMA_VERSION;
+        state = validateState(rawState);
       } catch (error) {
         this.preserveInvalidSafely(this.statePath, warnings, 'invalid state.json');
         warnings.push(`state.json will be recovered or reset: ${error.message}`);
       }
       if (state) {
+        if (stateMigrated) {
+          try {
+            writeJsonAtomic(this.statePath, state);
+            warnings.push(`state.json was migrated to schema ${STATE_SCHEMA_VERSION}`);
+          } catch (error) {
+            warnings.push(`migrated state.json could not be persisted: ${error.message}`);
+          }
+        }
         try {
           writeJsonAtomic(this.stateBackupPath, state);
         } catch (error) {
           warnings.push(`state.json.bak could not be refreshed: ${error.message}`);
         }
-        return { state, status: 'loaded', warnings };
+        return { state, status: stateMigrated ? 'migrated' : 'loaded', warnings };
       }
     }
 

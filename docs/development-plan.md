@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Protocol identity and resilient pane reconnect ready for manual preview
+Stage: Dynamic workspace and pane baseline ready for manual preview
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: evaluate crash/reconnect continuity, then terminal interaction correctness
+Next focus: extended stability soaking, then richer workspace status and snapshot/resync
 ```
 
 The Windows tech stack is now:
@@ -176,19 +176,49 @@ Acceptance criteria:
 Limitations:
 
 - configuration is user-edited JSON with restart-to-apply; no settings UI/live reload yet;
-- version 1 exposes at most two static panes;
-- live appearance reload, font discovery, and workspace/layout persistence remain future work;
+- schema 4 supports simple column grids rather than free-form splits;
+- live appearance reload, font discovery, and external workspace files remain future work;
 - changing a configured ID does not automatically kill an old detached hub session.
+
+### Milestone: dynamic configured workspaces
+
+Status: complete and ready for manual preview.
+
+Goal:
+
+```text
+Switch between named workspaces with dynamic pane grids while hub-owned sessions continue running and reattach on return.
+```
+
+Tasks:
+
+- [x] Add schema-version-4 named workspaces with stable IDs, 1–8 sessions, and validated grid columns.
+- [x] Migrate schema-version-3 top-level sessions without changing their hub session IDs.
+- [x] Replace two static pane surfaces with dynamic xterm pane creation/disposal.
+- [x] Add a visible workspace selector and serialized detach/reattach switching.
+- [x] Persist and restore the active workspace in state schema 2.
+- [x] Keep `kill` close scoped to workspaces visited by the current app instance.
+- [x] Cover two-/three-pane switching, shell-state continuity, relaunch restoration, and kill cleanup in real Electron tests.
+
+Acceptance criteria:
+
+- [x] A configured three-pane workspace renders without hard-coded pane DOM.
+- [x] Switching away and back reattaches the same PTYs with replay and environment continuity.
+- [x] Closing on a non-default workspace restores it on relaunch.
+- [x] Unrelated hub sessions are never included in close-policy cleanup.
+- [x] `./dev check`, publish, audit, and authenticated `./dev electron-test` pass.
+
+Manual preview: add a second workspace using `docs/configuration.md`, reopen NeonCode, set shell variables in both workspaces, switch between them, and confirm each workspace retains its PTY state. Close while the second workspace is active and confirm it reopens selected.
 
 ## Near-term product foundation
 
 ### 1. App architecture
 
 - [x] Move Electron app to product path `frontends/electron`.
-- [ ] Introduce a small state model for panes/sessions/workspaces.
+- [x] Introduce a small state model for panes/sessions/workspaces.
 - [x] Add app-level error display for hub disconnect/session exit/protocol errors.
 - [x] Add config storage under `%APPDATA%\NeonCode`.
-- [x] Load validated font, cursor, and 16-color terminal appearance from schema-version-3 app config with named Windows-Terminal-style colors.
+- [x] Load validated font, cursor, and 16-color terminal appearance from schema-version-4 app config with named Windows-Terminal-style colors.
 
 ### 2. Security hardening
 
@@ -253,16 +283,17 @@ Still needed:
 
 ### 4. Workspace model
 
-- [ ] Define workspace schema.
+- [x] Define versioned workspace schema with stable IDs, names, sessions, and grid columns.
 - [x] Define user-level process launch profiles supporting:
   - local WSL shell;
   - project cwd shell;
   - custom command;
   - SSH shell;
   - tmux attach/create.
-- [ ] Persist recent workspaces.
-- [ ] Restore layout.
-- [ ] Add workspace sidebar/status metadata:
+- [x] Persist and restore the active configured workspace.
+- [x] Restore configured dynamic pane grids.
+- [x] Add a workspace selector sidebar with pane counts and active state.
+- [ ] Add richer workspace status metadata:
   - cwd;
   - host;
   - git branch;
@@ -301,7 +332,7 @@ Inspired by wmux/cmux/t3code analysis:
 ### Workspace cockpit UI
 
 - [ ] Tabs/panes/splits.
-- [ ] Sidebar workspace list.
+- [x] Sidebar workspace list.
 - [ ] Command palette.
 - [ ] Status/attention indicators.
 - [ ] Notifications panel.

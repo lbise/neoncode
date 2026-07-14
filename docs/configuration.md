@@ -13,13 +13,13 @@ Electron main owns all filesystem access. The sandboxed renderer receives only a
 
 Configuration is read at startup. There is no settings UI or live reload yet; close and reopen NeonCode after editing `config.json`.
 
-## Version 3 schema
+## Version 4 schema
 
 The first launch creates:
 
 ```json
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "hub": {
     "endpoint": "ws://127.0.0.1:44777/ws"
   },
@@ -63,30 +63,58 @@ The first launch creates:
       "cwd": null
     }
   },
-  "sessions": [
+  "workspaces": [
     {
-      "id": "shell",
-      "title": "Shell",
-      "launchProfile": "default-shell"
-    },
-    {
-      "id": "tasks",
-      "title": "Tasks",
-      "launchProfile": "default-shell"
+      "id": "default",
+      "name": "Default",
+      "layout": {
+        "columns": 2
+      },
+      "sessions": [
+        {
+          "id": "shell",
+          "title": "Shell",
+          "launchProfile": "default-shell"
+        },
+        {
+          "id": "tasks",
+          "title": "Tasks",
+          "launchProfile": "default-shell"
+        }
+      ]
     }
   ]
 }
 ```
 
-Version 3 intentionally supports one or two sessions because the current Electron layout has two static pane surfaces.
+Version 4 supports 1–16 named workspaces and at most 64 configured sessions in total. Each workspace has 1–8 sessions and a simple grid layout whose `columns` value is between 1 and that workspace's session count. The sidebar switches workspaces immediately: the old workspace detaches, the selected workspace starts or reattaches, and the active workspace is restored after relaunch.
 
-A hub session ID is:
+Session IDs are currently unique across the complete configuration. A hub session ID is:
 
 ```text
-<sessionPrefix>-<sessions[].id>
+<sessionPrefix>-<workspaces[].sessions[].id>
 ```
 
 Changing/removing a configured ID does not kill an already detached hub session with the old ID. Restart the in-memory hub if you intentionally want to clear all such sessions.
+
+## Workspaces and layout
+
+A second workspace can reuse global launch profiles but must use distinct session IDs:
+
+```json
+{
+  "id": "review",
+  "name": "Review",
+  "layout": { "columns": 2 },
+  "sessions": [
+    { "id": "review-shell", "title": "Shell", "launchProfile": "project-shell" },
+    { "id": "review-tests", "title": "Tests", "launchProfile": "project-command" },
+    { "id": "review-remote", "title": "Remote", "launchProfile": "remote-shell" }
+  ]
+}
+```
+
+With three sessions and two columns, NeonCode renders a two-column/two-row grid. Switching always detaches the old workspace so its PTYs continue running. Window close still follows `persistence.onWindowClose`; `kill` also cleans up previously visited inactive workspaces.
 
 ## Launch profiles
 
@@ -157,7 +185,7 @@ User-level launch profiles are trusted configuration. Project-local configuratio
 ```
 
 - `detach`: normal window close detaches each pane; hub-owned sessions survive and reattach on the next launch.
-- `kill`: normal window close asks the hub to kill each configured session before Electron exits.
+- `kill`: normal window close asks the hub to kill sessions from every workspace visited by this app instance before Electron exits. Unvisited and unrelated hub sessions are not touched.
 
 Unexpected renderer/process termination cannot perform the graceful detach/kill handshake.
 
@@ -168,8 +196,8 @@ Current validation includes:
 - schema and exact known keys;
 - loopback endpoint `ws://127.0.0.1:<port>/ws` only;
 - hub-compatible IDs and combined session-ID length;
-- unique session IDs and valid launch-profile references;
-- one or two sessions;
+- unique workspace IDs, globally unique session IDs, and valid launch-profile references;
+- 1–16 workspaces, 1–8 sessions per workspace, at most 64 sessions total, and valid grid column counts;
 - bounded commands, arguments, working directories, titles, and file sizes;
 - `detach` or `kill` close policy.
 
@@ -181,9 +209,9 @@ On every valid load, NeonCode updates `config.json.bak`. If `config.json` later 
 
 An unsupported future schema is preserved and is not downgraded automatically. If neither the primary nor backup is usable, NeonCode opens with a visible configuration error and launches no terminal sessions.
 
-Known pre-schema NeonCode files containing only a `terminal` object are preserved as `config.json.pre-migration-<timestamp>` and their compatible font, cursor, and color-table settings are imported into version 3. Schema versions 0, 1, and 2 are migrated automatically. Version 2 positional `ansi` arrays are converted losslessly to named colors. When a preserved terminal-only file is available, schema 1 imports its appearance while retaining current pane/profile edits; otherwise it receives the default appearance.
+Known pre-schema NeonCode files containing only a `terminal` object are preserved as `config.json.pre-migration-<timestamp>` and their compatible font, cursor, and color-table settings are imported into version 4. Schema versions 0, 1, 2, and 3 are migrated automatically. Version 2 positional `ansi` arrays are converted losslessly to named colors; version 3 top-level sessions become the `default` workspace without changing their IDs. When a preserved terminal-only file is available, schema 1 imports its appearance while retaining current pane/profile edits; otherwise it receives the default appearance.
 
-App-owned `state.json` currently stores only content width and height. Invalid state is preserved and reset safely. Window position is deliberately not persisted yet to avoid reopening off-screen.
+App-owned state schema 2 stores content width/height and the active workspace ID. State schema 1 migrates automatically. Invalid state is preserved and reset safely. Window position is deliberately not persisted yet to avoid reopening off-screen.
 
 Writes use same-directory temporary files, flush, and atomic rename. Electron also uses a single-instance lock to avoid competing state writers.
 
@@ -205,10 +233,12 @@ NEONCODE_PERSIST_SESSIONS
 1. Run `./dev hub` and `./dev app` once.
 2. Close NeonCode normally.
 3. Open `%APPDATA%\NeonCode\config.json`.
-4. Change pane titles and give one profile a project `cwd`.
+4. Add a second workspace, change pane titles, and give one profile a project `cwd`.
 5. Reopen with `./dev electron`.
-6. Confirm configured titles/cwd, run a command, resize the window, and close it.
-7. Reopen again and confirm window size, session reattachment, and output replay.
-8. Optionally switch `onWindowClose` to `kill`; after closing/reopening, the panes should start new sessions rather than attach.
+6. Switch between workspaces in the sidebar and confirm configured pane counts/titles/cwd.
+7. Set shell state in both workspaces, switch away and back, and confirm reattachment/output replay.
+8. Resize and close while the second workspace is active.
+9. Reopen and confirm window size and active workspace restoration.
+10. Optionally switch `onWindowClose` to `kill`; after closing/reopening, previously visited workspace sessions should start fresh.
 
-Dynamic pane counts/layouts, workspace files, live appearance reload, font discovery, and a settings UI are later milestones.
+External workspace files, free-form split layouts, live appearance reload, font discovery, and a settings UI are later milestones.

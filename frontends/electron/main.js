@@ -81,19 +81,29 @@ function processIntegrityLevel() {
 
 function rendererConfig() {
   const config = bootstrapResult.config;
+  const configuredWorkspaceIds = new Set((config?.workspaces || []).map((workspace) => workspace.id));
+  const activeWorkspaceId = configuredWorkspaceIds.has(desktopState.activeWorkspaceId)
+    ? desktopState.activeWorkspaceId
+    : config?.workspaces[0]?.id || null;
   return {
-    schemaVersion: config?.schemaVersion || 3,
+    schemaVersion: config?.schemaVersion || 4,
     configurationValid: Boolean(config),
     endpoint: config?.hub.endpoint || '',
     capabilityToken: hubCapabilityToken,
     sessionPrefix: config?.sessionPrefix || '',
     persistencePolicy: config?.persistence.onWindowClose || 'detach',
     terminal: config ? JSON.parse(JSON.stringify(config.terminal)) : null,
-    sessions: config
-      ? config.sessions.map((configuredSession) => ({
-        id: configuredSession.id,
-        title: configuredSession.title,
-        launchProfile: { ...config.launchProfiles[configuredSession.launchProfile] },
+    activeWorkspaceId,
+    workspaces: config
+      ? config.workspaces.map((workspace) => ({
+        id: workspace.id,
+        name: workspace.name,
+        layout: { ...workspace.layout },
+        sessions: workspace.sessions.map((configuredSession) => ({
+          id: configuredSession.id,
+          title: configuredSession.title,
+          launchProfile: { ...config.launchProfiles[configuredSession.launchProfile] },
+        })),
       }))
       : [],
     diagnostics: {
@@ -111,6 +121,16 @@ ipcMain.on('neoncode:get-renderer-config', (event) => {
 });
 
 ipcMain.handle('neoncode:read-clipboard-text', () => clipboard.readText());
+ipcMain.handle('neoncode:set-active-workspace', (_event, workspaceId) => {
+  const workspaces = bootstrapResult.config?.workspaces || [];
+  if (typeof workspaceId !== 'string' || !workspaces.some((workspace) => workspace.id === workspaceId)) {
+    throw new Error('active workspace must reference a configured workspace');
+  }
+  desktopState = configStore.saveState({ ...desktopState, activeWorkspaceId: workspaceId });
+  log('state.active-workspace', { workspaceId });
+  return workspaceId;
+});
+
 ipcMain.handle('neoncode:write-clipboard-text', (_event, text) => {
   if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > 1024 * 1024) {
     throw new Error('clipboard text must be a string no larger than 1 MiB');
@@ -148,7 +168,8 @@ function saveWindowState() {
   const [width, height] = mainWindow.getContentSize();
   try {
     desktopState = configStore.saveState({
-      schemaVersion: 1,
+      ...desktopState,
+      schemaVersion: 2,
       window: { width, height },
     });
     log('state.saved', desktopState.window);
@@ -280,7 +301,7 @@ function createWindow() {
     closeTimeout = setTimeout(() => {
       log('window.prepare-close-timeout');
       finishWindowClose();
-    }, 3000);
+    }, 5000);
     if (mainWindow.webContents.isDestroyed()) {
       finishWindowClose();
     } else {

@@ -24,6 +24,13 @@ function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+function schemaThreeConfig() {
+  const current = defaultConfig();
+  const [workspace] = current.workspaces;
+  const { workspaces, ...legacy } = current;
+  return { ...legacy, schemaVersion: 3, sessions: workspace.sessions };
+}
+
 function testFirstRunCreation() {
   withStore((store) => {
     const result = store.load({});
@@ -47,12 +54,12 @@ function testEnvironmentOverridesAreNotPersisted() {
     });
     assert.equal(result.config.hub.endpoint, 'ws://127.0.0.1:45555/ws');
     assert.equal(result.config.sessionPrefix, 'override-prefix');
-    assert.equal(result.config.sessions.length, 1);
+    assert.equal(result.config.workspaces[0].sessions.length, 1);
     assert.equal(result.config.persistence.onWindowClose, 'kill');
 
     const persisted = readJson(store.configPath);
     assert.equal(persisted.hub.endpoint, 'ws://127.0.0.1:44777/ws');
-    assert.equal(persisted.sessions.length, 2);
+    assert.equal(persisted.workspaces[0].sessions.length, 2);
     assert.equal(persisted.persistence.onWindowClose, 'detach');
   });
 }
@@ -73,7 +80,7 @@ function testUnversionedTerminalConfigMigration() {
     assert.equal(result.diagnostics.configStatus, 'migrated');
     assert.equal(result.config.terminal.fontFamily, 'FiraCode Nerd Font Mono');
     assert.equal(result.config.terminal.theme.background, '#0c0c0c');
-    assert.equal(readJson(store.configPath).schemaVersion, 3);
+    assert.equal(readJson(store.configPath).schemaVersion, 4);
     assert(result.diagnostics.warnings.some((warning) => warning.includes('were imported')));
     const preserved = fs.readdirSync(directory)
       .find((name) => name.startsWith('config.json.pre-migration-'));
@@ -85,7 +92,7 @@ function testUnversionedTerminalConfigMigration() {
 function testSchemaTwoColorArrayMigration() {
   withStore((store) => {
     fs.mkdirSync(store.directory, { recursive: true });
-    const schemaTwo = defaultConfig();
+    const schemaTwo = schemaThreeConfig();
     const named = schemaTwo.terminal.theme;
     schemaTwo.schemaVersion = 2;
     schemaTwo.terminal.theme = {
@@ -103,7 +110,7 @@ function testSchemaTwoColorArrayMigration() {
     fs.writeFileSync(store.configPath, `${JSON.stringify(schemaTwo)}\n`);
 
     const result = store.load({});
-    assert.equal(result.config.schemaVersion, 3);
+    assert.equal(result.config.schemaVersion, 4);
     assert.equal(result.config.terminal.theme.purple, named.purple);
     assert.equal(result.config.terminal.theme.brightPurple, named.brightPurple);
     assert.equal(result.config.terminal.theme.name, 'NeonCode Default');
@@ -114,7 +121,7 @@ function testSchemaTwoColorArrayMigration() {
 function testSchemaOneImportsPreservedLegacyAppearance() {
   withStore((store) => {
     fs.mkdirSync(store.directory, { recursive: true });
-    const schemaOne = defaultConfig();
+    const schemaOne = schemaThreeConfig();
     schemaOne.schemaVersion = 1;
     schemaOne.sessions[0].title = 'Keep Me';
     delete schemaOne.terminal;
@@ -124,8 +131,8 @@ function testSchemaOneImportsPreservedLegacyAppearance() {
     }));
 
     const result = store.load({});
-    assert.equal(result.config.schemaVersion, 3);
-    assert.equal(result.config.sessions[0].title, 'Keep Me');
+    assert.equal(result.config.schemaVersion, 4);
+    assert.equal(result.config.workspaces[0].sessions[0].title, 'Keep Me');
     assert.equal(result.config.terminal.fontFamily, 'Legacy Font');
     assert.equal(result.config.terminal.fontSize, 17);
     assert.equal(result.config.terminal.theme.background, '#112233');
@@ -144,11 +151,11 @@ function testLegacyMigration() {
     }));
     const result = store.load({});
     assert.equal(result.diagnostics.configStatus, 'migrated');
-    assert.equal(result.config.schemaVersion, 3);
+    assert.equal(result.config.schemaVersion, 4);
     assert.equal(result.config.hub.endpoint, 'ws://127.0.0.1:45000/ws');
     assert.equal(result.config.persistence.onWindowClose, 'kill');
-    assert.equal(result.config.sessions.length, 1);
-    assert.equal(readJson(store.configPath).schemaVersion, 3);
+    assert.equal(result.config.workspaces[0].sessions.length, 1);
+    assert.equal(readJson(store.configPath).schemaVersion, 4);
   });
 }
 
@@ -156,13 +163,13 @@ function testInvalidPrimaryRecoversBackup() {
   withStore((store, directory) => {
     store.load({});
     const backup = defaultConfig();
-    backup.sessions[0].title = 'Recovered Shell';
+    backup.workspaces[0].sessions[0].title = 'Recovered Shell';
     fs.writeFileSync(store.configBackupPath, `${JSON.stringify(backup)}\n`);
     fs.writeFileSync(store.configPath, '{ invalid json');
 
     const result = store.load({});
     assert.equal(result.diagnostics.configStatus, 'recovered');
-    assert.equal(result.config.sessions[0].title, 'Recovered Shell');
+    assert.equal(result.config.workspaces[0].sessions[0].title, 'Recovered Shell');
     assert(result.diagnostics.warnings.some((warning) => warning.includes('preserved')));
     assert(fs.readdirSync(directory).some((name) => name.startsWith('config.json.invalid-')));
   });
@@ -185,7 +192,7 @@ function testBackupWriteFailureKeepsValidatedPrimary() {
   withStore((store, directory) => {
     store.load({});
     const edited = defaultConfig();
-    edited.sessions[0].title = 'Still Valid';
+    edited.workspaces[0].sessions[0].title = 'Still Valid';
     fs.writeFileSync(store.configPath, `${JSON.stringify(edited)}\n`);
 
     const originalRename = fs.renameSync;
@@ -204,7 +211,7 @@ function testBackupWriteFailureKeepsValidatedPrimary() {
       fs.renameSync = originalRename;
     }
 
-    assert.equal(result.config.sessions[0].title, 'Still Valid');
+    assert.equal(result.config.workspaces[0].sessions[0].title, 'Still Valid');
     assert.equal(result.diagnostics.configStatus, 'loaded');
     assert(result.diagnostics.warnings.some((warning) => warning.includes('could not be refreshed')));
     assert(!fs.readdirSync(directory).some((name) => name.startsWith('config.json.invalid-')));
@@ -223,7 +230,79 @@ function testFutureSchemaIsPreservedAndFatal() {
   });
 }
 
+function testSchemaThreeWorkspaceMigration() {
+  const legacy = schemaThreeConfig();
+  legacy.sessions[0].title = 'Migrated Shell';
+  const result = validateConfig(legacy);
+  assert.equal(result.value.schemaVersion, 4);
+  assert.equal(result.value.workspaces[0].id, 'default');
+  assert.equal(result.value.workspaces[0].layout.columns, 2);
+  assert.equal(result.value.workspaces[0].sessions[0].title, 'Migrated Shell');
+  assert.equal(result.migrationSource, 'schema_3');
+}
+
+function testWorkspaceValidationAndEightPanes() {
+  const config = defaultConfig();
+  config.workspaces.push({
+    id: 'project',
+    name: 'Project',
+    layout: { columns: 4 },
+    sessions: Array.from({ length: 8 }, (_, index) => ({
+      id: `project-${index + 1}`,
+      title: `Project ${index + 1}`,
+      launchProfile: 'default-shell',
+    })),
+  });
+  const validated = validateConfig(config).value;
+  assert.equal(validated.workspaces[1].sessions.length, 8);
+  assert.equal(validated.workspaces[1].layout.columns, 4);
+
+  const badColumns = structuredClone(config);
+  badColumns.workspaces[1].layout.columns = 9;
+  assert.throws(() => validateConfig(badColumns), /layout\.columns/);
+
+  const duplicateWorkspace = structuredClone(config);
+  duplicateWorkspace.workspaces[1].id = 'default';
+  assert.throws(() => validateConfig(duplicateWorkspace), /duplicate workspace id/);
+
+  const duplicateSession = structuredClone(config);
+  duplicateSession.workspaces[1].sessions[0].id = 'shell';
+  assert.throws(() => validateConfig(duplicateSession), /duplicate session id across workspaces/);
+
+  const tooManySessions = defaultConfig();
+  tooManySessions.workspaces = Array.from({ length: 9 }, (_, workspaceIndex) => ({
+    id: `workspace-${workspaceIndex}`,
+    name: `Workspace ${workspaceIndex}`,
+    layout: { columns: 4 },
+    sessions: Array.from({ length: 8 }, (_, sessionIndex) => ({
+      id: `workspace-${workspaceIndex}-session-${sessionIndex}`,
+      title: `Session ${sessionIndex}`,
+      launchProfile: 'default-shell',
+    })),
+  }));
+  assert.throws(() => validateConfig(tooManySessions), /at most 64 sessions/);
+}
+
+function testStateSchemaOneMigration() {
+  withStore((store) => {
+    store.load({});
+    fs.writeFileSync(store.statePath, JSON.stringify({
+      schemaVersion: 1,
+      window: { width: 1000, height: 700 },
+    }));
+    const result = store.load({});
+    assert.equal(result.diagnostics.stateStatus, 'migrated');
+    assert.equal(result.state.schemaVersion, 2);
+    assert.equal(result.state.activeWorkspaceId, null);
+    assert.equal(readJson(store.statePath).schemaVersion, 2);
+  });
+}
+
 function testStrictValidation() {
+  const legacyUnknownKey = schemaThreeConfig();
+  legacyUnknownKey.workspaces = [];
+  assert.throws(() => validateConfig(legacyUnknownKey), /keys must be exactly/);
+
   const unknownKey = defaultConfig();
   unknownKey.unexpected = true;
   assert.throws(() => validateConfig(unknownKey), /keys must be exactly/);
@@ -233,12 +312,12 @@ function testStrictValidation() {
   assert.throws(() => validateConfig(remoteEndpoint), /127\.0\.0\.1/);
 
   const duplicate = defaultConfig();
-  duplicate.sessions[1].id = duplicate.sessions[0].id;
+  duplicate.workspaces[0].sessions[1].id = duplicate.workspaces[0].sessions[0].id;
   assert.throws(() => validateConfig(duplicate), /duplicate session id/);
 
   assert.throws(
-    () => applyEnvironmentOverrides(defaultConfig(), { NEONCODE_TERMINAL_COUNT: '3' }),
-    /between 1 and 2/,
+    () => applyEnvironmentOverrides(defaultConfig(), { NEONCODE_TERMINAL_COUNT: '9' }),
+    /between 1 and 8/,
   );
 }
 
@@ -246,13 +325,19 @@ function testStateClampAndPersistence() {
   withStore((store) => {
     store.load({});
     const saved = store.saveState({
-      schemaVersion: 1,
+      schemaVersion: 2,
       window: { width: 300, height: 200 },
+      activeWorkspaceId: 'default',
     });
     assert.deepEqual(saved.window, { width: 800, height: 600 });
+    assert.equal(saved.activeWorkspaceId, 'default');
     const reloaded = store.load({});
     assert.deepEqual(reloaded.state.window, { width: 800, height: 600 });
     assert.deepEqual(validateState(readJson(store.statePath)), reloaded.state);
+    assert.throws(
+      () => validateState({ ...saved, activeWorkspaceId: 'invalid workspace' }),
+      /only ASCII letters/,
+    );
   });
 }
 
@@ -277,6 +362,9 @@ for (const test of [
   testMissingPrimaryWithUnusableBackupIsFatal,
   testBackupWriteFailureKeepsValidatedPrimary,
   testFutureSchemaIsPreservedAndFatal,
+  testSchemaThreeWorkspaceMigration,
+  testWorkspaceValidationAndEightPanes,
+  testStateSchemaOneMigration,
   testStrictValidation,
   testStateClampAndPersistence,
   testStaleTemporaryCleanup,

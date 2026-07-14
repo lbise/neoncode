@@ -33,7 +33,9 @@ Current role:
 - renders terminals with xterm.js;
 - loads validated user configuration and app-owned state from `%APPDATA%\\NeonCode`;
 - performs startup session discovery with `list_sessions`;
-- opens one WebSocket per configured pane/session for the current prototype;
+- renders 1–8 panes for the active configured workspace and opens one WebSocket per pane/session;
+- switches named workspaces by detaching the old panes and attaching/starting the selected panes;
+- restores the active workspace from app-owned state;
 - attaches known sessions and starts missing sessions;
 - sends `input`, `resize`, and acknowledgement-based `detach` before normal app close;
 - provides smoke-test state for Playwright and PowerShell validation.
@@ -147,7 +149,7 @@ Playwright asserts the effective BrowserWindow preferences, absence of renderer 
 
 Electron main exclusively owns `%APPDATA%\\NeonCode\\config.json` and `state.json`. Versioned strict validation produces a narrow bootstrap object containing the loopback endpoint, configured session IDs/titles, resolved process launch profiles, close policy, and diagnostics. The capability token remains environment-only.
 
-Version 1 supports one/two static panes and explicit process profiles (`command`, `args`, `cwd`). Normal close either detaches or kills configured sessions according to policy. Window content size is app-owned state; hub sessions remain authoritative backend state. Writes use same-directory temporary files and atomic rename, and valid backups support visible recovery from malformed JSON.
+Configuration schema 4 supports 1–16 named workspaces, 1–8 sessions per workspace (64 total), simple validated grid columns, named terminal appearance, and explicit process profiles (`command`, `args`, `cwd`). State schema 2 stores window content size and the active workspace. Normal close either detaches active panes or kills sessions visited by this app instance according to policy; runtime workspace switching always detaches. Hub sessions remain authoritative backend state. Writes use same-directory temporary files and atomic rename, and valid backups support visible recovery from malformed JSON.
 
 See [configuration.md](configuration.md) for the schema and manual workflow.
 
@@ -201,7 +203,7 @@ Still needs validation/hardening:
 Current prototype has working but incomplete session lifecycle:
 
 - session IDs are frontend-provided;
-- the Electron app uses stable default frontend session keys (`shell`, `tasks`) instead of deriving session identity from pane indexes;
+- configured workspaces and sessions use stable frontend IDs instead of deriving identity from pane indexes;
 - sessions live in an in-process hub registry;
 - detached sessions survive normal Electron app close and can be reattached on the next launch;
 - attach replays up to 2 MiB of ordered raw terminal output before live output continues;
@@ -222,9 +224,9 @@ frontend starts
 
 A terminal pane should be an attachment/surface for a session, not the session identity itself.
 
-## Workspace direction
+## Workspace model
 
-A future workspace should describe desired sessions/surfaces independently of UI runtime state:
+Configuration schema 4 describes desired sessions independently of UI runtime state:
 
 ```yaml
 name: audio-fw
@@ -235,6 +237,8 @@ sessions:
   - id: tests
     command: ./andromeda test --hil
 ```
+
+The current Electron sidebar switches these configured workspaces and restores the active choice. Layout is currently a simple column count; free-form splits and external workspace files remain future work.
 
 The hub should eventually own:
 

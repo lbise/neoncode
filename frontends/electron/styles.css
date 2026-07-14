@@ -56,11 +56,91 @@ header span,
   color: #f87171;
 }
 
-main {
+.workspace-shell {
   box-sizing: border-box;
   height: calc(100vh - 52px);
+  min-width: 0;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 184px minmax(0, 1fr);
+  background: #111827;
+}
+
+.workspace-sidebar {
+  min-width: 0;
+  padding: 10px 8px;
+  background: #0f172a;
+  border-right: 1px solid #374151;
+  user-select: none;
+}
+
+.workspace-sidebar-title {
+  padding: 0 8px 8px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.workspace-list {
+  display: grid;
+  gap: 4px;
+}
+
+.workspace-button {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  color: #cbd5e1;
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.workspace-button:hover {
+  background: #172033;
+}
+
+.workspace-button:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 1px;
+}
+
+.workspace-button[aria-current="true"] {
+  color: #ecfeff;
+  background: #164e63;
+  border-color: #0e7490;
+}
+
+.workspace-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.workspace-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-pane-count {
+  color: #64748b;
+  font-size: 11px;
+}
+
+main {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
   gap: 8px;
   padding: 8px;
   background: #111827;

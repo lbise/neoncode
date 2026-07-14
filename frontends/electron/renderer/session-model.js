@@ -14,6 +14,9 @@ class SessionModel {
         sessions: [],
       },
       panes: [],
+      workspace: {
+        activeWorkspaceId: null,
+      },
       sessionDiscovery: {
         status: 'idle',
         sessionListEvents: 0,
@@ -26,6 +29,22 @@ class SessionModel {
 
   setConfiguration(configuration) {
     this.publicState.configuration = JSON.parse(JSON.stringify(configuration));
+  }
+
+  addConfigurationWarning(warning) {
+    if (!this.publicState.configuration.warnings.includes(warning)) {
+      this.publicState.configuration.warnings.push(warning);
+    }
+  }
+
+  setActiveWorkspace(workspaceId) {
+    this.publicState.workspace.activeWorkspaceId = workspaceId;
+    this.publicState.configuration.activeWorkspaceId = workspaceId;
+  }
+
+  resetPanes(workspaceId) {
+    this.publicState.panes = [];
+    this.setActiveWorkspace(workspaceId);
   }
 
   setSessionDiscoveryStatus(status, error = '') {
@@ -66,7 +85,7 @@ class SessionModel {
       reconnectEvents: 0,
     };
 
-    this.publicState.panes[index] = {
+    const publicPane = {
       paneId,
       sessionKey,
       sessionId,
@@ -94,12 +113,14 @@ class SessionModel {
       magenta: terminal.options.theme.magenta,
       brightMagenta: terminal.options.theme.brightMagenta,
     };
+    this.publicState.panes[index] = publicPane;
+    state.publicPane = publicPane;
 
     return state;
   }
 
   pane(state) {
-    return this.publicState.panes[state.index];
+    return state.publicPane;
   }
 
   setPublicStarted(state, started) {

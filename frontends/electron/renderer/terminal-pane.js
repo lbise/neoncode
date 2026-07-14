@@ -93,6 +93,7 @@ class TerminalPane {
     this.pasteShortcutActive = false;
     this.pasteShortcutTimer = undefined;
     this.suppressedPasteTimer = undefined;
+    this.disposed = false;
   }
 
   start() {
@@ -145,6 +146,7 @@ class TerminalPane {
       return;
     }
     this.closed = true;
+    this.connectionGeneration += 1;
     clearTimeout(this.reconnectTimer);
     clearTimeout(this.pasteShortcutTimer);
     clearTimeout(this.suppressedPasteTimer);
@@ -152,6 +154,16 @@ class TerminalPane {
     this.resizeObserver?.disconnect();
     this.hubClient?.close();
     this.resolvePendingClose();
+  }
+
+  dispose() {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    this.close();
+    this.state?.terminal.dispose();
+    this.container.replaceChildren();
   }
 
   detachAndClose() {
@@ -203,6 +215,7 @@ class TerminalPane {
     this.sessionModel.setPublicStarted(this.state, false);
     this.setLifecycle(lifecycle, error);
     this.closed = true;
+    this.connectionGeneration += 1;
     clearTimeout(this.pasteShortcutTimer);
     clearTimeout(this.suppressedPasteTimer);
     this.resizeObserver?.disconnect();
@@ -347,9 +360,11 @@ class TerminalPane {
     }
     try {
       await window.neoncodeDesktop.writeClipboardText(text);
-      return true;
+      return !this.disposed;
     } catch (error) {
-      this.setLifecycle('error', `Clipboard write failed: ${error.message}`);
+      if (!this.disposed) {
+        this.setLifecycle('error', `Clipboard write failed: ${error.message}`);
+      }
       return false;
     }
   }
@@ -357,9 +372,11 @@ class TerminalPane {
   async pasteClipboardText(reason = 'clipboard') {
     try {
       const text = await window.neoncodeDesktop.readClipboardText();
-      return this.pasteText(text, reason);
+      return this.disposed ? false : this.pasteText(text, reason);
     } catch (error) {
-      this.setLifecycle('error', `Clipboard read failed: ${error.message}`);
+      if (!this.disposed) {
+        this.setLifecycle('error', `Clipboard read failed: ${error.message}`);
+      }
       return false;
     }
   }
@@ -371,6 +388,9 @@ class TerminalPane {
 
     this.state.resizePending = true;
     requestAnimationFrame(() => {
+      if (this.disposed) {
+        return;
+      }
       this.state.resizePending = false;
       try {
         this.state.fitAddon.fit();

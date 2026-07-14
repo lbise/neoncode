@@ -9,8 +9,6 @@ const { defaultConfig } = require('../config-store');
 const appRoot = path.resolve(__dirname, '..');
 const endpoint = process.env.NEONCODE_HUB_ENDPOINT || 'ws://127.0.0.1:44777/ws';
 const timeout = Number.parseInt(process.env.NEONCODE_PLAYWRIGHT_TIMEOUT || '20000', 10);
-const paneIds = ['shell', 'tasks'];
-
 function writeTestConfig(directory, { persistencePolicy = 'detach' } = {}) {
   const config = defaultConfig();
   config.sessionPrefix = 'config-file-prefix';
@@ -22,9 +20,26 @@ function writeTestConfig(directory, { persistencePolicy = 'detach' } = {}) {
   config.launchProfiles['tasks-in-tmp'] = {
     type: 'process', command: 'bash', args: [], cwd: '/tmp',
   };
-  config.sessions = [
-    { id: 'shell', title: 'Configured Shell', launchProfile: 'default-shell' },
-    { id: 'tasks', title: 'Configured Tasks', launchProfile: 'tasks-in-tmp' },
+  config.workspaces = [
+    {
+      id: 'default',
+      name: 'Development',
+      layout: { columns: 2 },
+      sessions: [
+        { id: 'shell', title: 'Configured Shell', launchProfile: 'default-shell' },
+        { id: 'tasks', title: 'Configured Tasks', launchProfile: 'tasks-in-tmp' },
+      ],
+    },
+    {
+      id: 'review',
+      name: 'Review',
+      layout: { columns: 2 },
+      sessions: [
+        { id: 'review-shell', title: 'Review Shell', launchProfile: 'default-shell' },
+        { id: 'review-tasks', title: 'Review Tasks', launchProfile: 'tasks-in-tmp' },
+        { id: 'review-agent', title: 'Review Agent', launchProfile: 'default-shell' },
+      ],
+    },
   ];
   fs.mkdirSync(directory, { recursive: true });
   fs.writeFileSync(path.join(directory, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
@@ -66,39 +81,44 @@ async function launchApp(sessionPrefix, configDirectory, { expectReady = true } 
     env: launchEnvironment,
   });
   const consoleMessages = [];
-  const page = await electronApp.firstWindow({ timeout });
-  page.on('console', (message) => {
-    consoleMessages.push(message.text());
-    if (consoleMessages.length > 200) {
-      consoleMessages.shift();
-    }
-  });
-
-  await page.waitForSelector('[data-testid="app-header"]', { state: 'attached', timeout });
-  await page.waitForFunction(() => Boolean(window.neoncodeTest), null, { timeout });
-  await page.waitForFunction(
-    (shouldBeReady) => {
-      const state = window.neoncodeTest?.getState();
-      if (!shouldBeReady) {
-        return state?.configuration?.valid === false
-          && state?.sessionDiscovery?.status === 'configuration_error';
+  try {
+    const page = await electronApp.firstWindow({ timeout });
+    page.on('console', (message) => {
+      consoleMessages.push(message.text());
+      if (consoleMessages.length > 200) {
+        consoleMessages.shift();
       }
-      return state?.configuration?.valid === true
-        && state?.sessionDiscovery?.status === 'ready'
-        && state.panes.length === 2
-        && state.panes.every((pane) => pane.started);
-    },
-    expectReady,
-    { timeout },
-  );
+    });
 
-  return {
-    electronApp,
-    page,
-    consoleMessages,
-    configDirectory,
-    launchEnvironment,
-  };
+    await page.waitForSelector('[data-testid="app-header"]', { state: 'attached', timeout });
+    await page.waitForFunction(() => Boolean(window.neoncodeTest), null, { timeout });
+    await page.waitForFunction(
+      (shouldBeReady) => {
+        const state = window.neoncodeTest?.getState();
+        if (!shouldBeReady) {
+          return state?.configuration?.valid === false
+            && state?.sessionDiscovery?.status === 'configuration_error';
+        }
+        return state?.configuration?.valid === true
+          && state?.sessionDiscovery?.status === 'ready'
+          && state.panes.length > 0
+          && state.panes.every((pane) => pane.started);
+      },
+      expectReady,
+      { timeout },
+    );
+
+    return {
+      electronApp,
+      page,
+      consoleMessages,
+      configDirectory,
+      launchEnvironment,
+    };
+  } catch (error) {
+    await electronApp.close().catch(() => {});
+    throw error;
+  }
 }
 
 async function getState(page) {
@@ -124,15 +144,13 @@ async function disconnectPaneSocket(page, paneId) {
 }
 
 async function pressTerminalKey(page, paneId, key) {
-  const paneIndex = paneIds.indexOf(paneId) + 1;
-  const textarea = page.locator(`#terminal-${paneIndex} .xterm-helper-textarea`);
+  const textarea = page.getByTestId(`terminal-${paneId}`).locator('.xterm-helper-textarea');
   await textarea.focus();
   await page.keyboard.press(key);
 }
 
 async function terminalPoint(page, paneId, { xFraction = 0.5, yFraction = 0.5 } = {}) {
-  const paneIndex = paneIds.indexOf(paneId) + 1;
-  const screen = page.locator(`#terminal-${paneIndex} .xterm-screen`);
+  const screen = page.getByTestId(`terminal-${paneId}`).locator('.xterm-screen');
   const box = await screen.boundingBox();
   assert(box, `xterm screen has no bounding box for ${paneId}`);
   return {
@@ -195,12 +213,16 @@ async function verifyMouseReporting(page, paneId, token) {
 }
 
 async function verifyTmuxMouseBehavior(page, paneId, token) {
-  const clickExpected = `tmux-click-0-${token}`;
+  const leftClickExpected = `tmux-click-0-${token}`;
   await clickTerminal(page, paneId, { xFraction: 0.25, yFraction: 0.35 });
-  const clickCommand = `v=$(tmux display-message -p '#{pane_index}'); printf 'tmux-click-%s-%s\\n' "$v" '${token}'\n`;
-  assertMarkerIsNotEchoed(clickCommand, clickExpected);
+  const clickCommand = `v=$(tmux display-message -p -t "$TMUX_PANE" '#{pane_index}'); printf 'tmux-click-%s-%s\\n' "$v" '${token}'\n`;
+  assertMarkerIsNotEchoed(clickCommand, leftClickExpected);
   await sendText(page, paneId, clickCommand);
-  await waitForOutput(page, paneId, clickExpected);
+  await waitForOutput(page, paneId, leftClickExpected);
+
+  const resultPath = `/tmp/neoncode-tmux-wheel-${token}`;
+  const wheelWatcher = `rm -f '${resultPath}'; (i=0; while [ "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_in_mode}')" != 1 ] && [ $i -lt 100 ]; do sleep 0.05; i=$((i+1)); done; [ "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_in_mode}')" = 1 ] && printf 1 > '${resultPath}') &\n`;
+  await sendText(page, paneId, wheelWatcher);
 
   const historyExpected = `tmux-history-${token}`;
   const historyCommand = `i=0; while [ $i -lt 120 ]; do printf 'tmux-line-%03d\\n' "$i"; i=$((i+1)); done; printf 'tmux-history-%s\\n' '${token}'\n`;
@@ -211,15 +233,16 @@ async function verifyTmuxMouseBehavior(page, paneId, token) {
   const leftPoint = await terminalPoint(page, paneId, { xFraction: 0.25, yFraction: 0.35 });
   await page.mouse.move(leftPoint.x, leftPoint.y);
   await page.mouse.wheel(0, -600);
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(1000);
+  await sendText(page, paneId, 'q');
+  await page.waitForTimeout(100);
+  await sendText(page, paneId, '\x03');
 
-  await clickTerminal(page, paneId, { xFraction: 0.75, yFraction: 0.35 });
   const wheelExpected = `tmux-wheel-1-${token}`;
-  const wheelCommand = `v=$(tmux display-message -p -t ':0.0' '#{pane_in_mode}'); printf 'tmux-wheel-%s-%s\\n' "$v" '${token}'\n`;
+  const wheelCommand = `printf 'tmux-wheel-'; cat '${resultPath}'; printf -- '-%s\\n' '${token}'; rm -f '${resultPath}'\n`;
   assertMarkerIsNotEchoed(wheelCommand, wheelExpected);
   await sendText(page, paneId, wheelCommand);
   await waitForOutput(page, paneId, wheelExpected);
-  await sendText(page, paneId, "tmux copy-mode -q -t ':0.0'\n");
 }
 
 async function verifyNeovimMouseBehavior(page, paneId, token) {
@@ -344,12 +367,38 @@ async function assertPaneLifecycles(instance, expectedLifecycle) {
   }
 }
 
+async function switchWorkspace(page, workspaceId) {
+  await page.evaluate((targetWorkspaceId) => window.neoncodeTest.switchWorkspace(targetWorkspaceId), workspaceId);
+  await page.waitForFunction(
+    (targetWorkspaceId) => {
+      const state = window.neoncodeTest.getState();
+      return state.workspace.activeWorkspaceId === targetWorkspaceId
+        && state.panes.length > 0
+        && state.panes.every((pane) => pane.started);
+    },
+    workspaceId,
+    { timeout },
+  );
+}
+
 async function killAllPanes(instance) {
-  await instance.page.evaluate(async (targets) => {
-    await Promise.all(targets.map((paneId) => window.neoncodeTest.killPane(paneId)));
-  }, paneIds);
+  const targets = (await getState(instance.page)).panes.map((pane) => pane.paneId);
+  await instance.page.evaluate(async (paneIds) => {
+    await Promise.all(paneIds.map((paneId) => window.neoncodeTest.killPane(paneId)));
+  }, targets);
   const state = await getState(instance.page);
   assert(state.panes.every((pane) => pane.lifecycle === 'killed'), 'test sessions were not killed');
+}
+
+async function killAllWorkspaces(instance) {
+  const workspaceIds = (await getState(instance.page)).configuration.workspaces.map((workspace) => workspace.id);
+  for (const workspaceId of workspaceIds) {
+    const state = await getState(instance.page);
+    if (state.workspace.activeWorkspaceId !== workspaceId) {
+      await switchWorkspace(instance.page, workspaceId);
+    }
+    await killAllPanes(instance);
+  }
 }
 
 async function closeInstance(instance) {
@@ -362,9 +411,11 @@ async function closeInstance(instance) {
 async function assertSecondInstanceDoesNotTouchConfig(instance) {
   const backupPath = path.join(instance.configDirectory, 'config.json.bak');
   const before = fs.statSync(backupPath);
+  const secondInstanceEnvironment = { ...instance.launchEnvironment };
+  delete secondInstanceEnvironment.NODE_OPTIONS;
   const child = spawn(electronExecutable, [appRoot], {
     cwd: appRoot,
-    env: instance.launchEnvironment,
+    env: secondInstanceEnvironment,
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -393,7 +444,7 @@ async function cleanupSessions(sessionPrefix, configDirectory) {
   let cleanupInstance;
   try {
     cleanupInstance = await launchApp(sessionPrefix, configDirectory);
-    await killAllPanes(cleanupInstance);
+    await killAllWorkspaces(cleanupInstance);
   } catch (error) {
     log('cleanup.failed', { message: error.message });
   } finally {
@@ -426,8 +477,8 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
     const opened = window.open('https://example.com');
     return {
       configDeepFrozen: Object.isFrozen(window.neoncodeDesktop.config)
-        && Object.isFrozen(window.neoncodeDesktop.config.sessions)
-        && Object.isFrozen(window.neoncodeDesktop.config.sessions[0].launchProfile),
+        && Object.isFrozen(window.neoncodeDesktop.config.workspaces)
+        && Object.isFrozen(window.neoncodeDesktop.config.workspaces[0].sessions[0].launchProfile),
       desktopKeys: Object.keys(window.neoncodeDesktop).sort(),
       nodeProcessType: typeof window.process,
       nodeRequireType: typeof window.require,
@@ -441,7 +492,7 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   assert(rendererSecurity.openedWindow === false, 'renderer opened an external window');
   assert(rendererSecurity.permission === 'denied', `notification permission was ${rendererSecurity.permission}`);
   assert(
-    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'onPrepareClose', 'readClipboardText', 'writeClipboardText']),
+    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'onPrepareClose', 'readClipboardText', 'setActiveWorkspace', 'writeClipboardText']),
     `unexpected preload API surface: ${rendererSecurity.desktopKeys.join(',')}`,
   );
 
@@ -454,6 +505,13 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   assert(initialState.configuration.valid === true, 'persisted configuration was not valid');
   assert(initialState.configuration.configStatus === 'loaded', `unexpected config status ${initialState.configuration.configStatus}`);
   assert(initialState.configuration.persistencePolicy === 'detach', 'configured close policy was not applied');
+  assert(initialState.workspace.activeWorkspaceId === 'default', 'default workspace was not activated');
+  assert(initialState.configuration.workspaces.length === 2, 'configured workspaces were not exposed');
+  assert(await page.getByTestId('workspace-list').getByRole('button').count() === 2, 'workspace selector was not rendered');
+  assert(
+    await page.getByTestId('workspace-default').getAttribute('aria-current') === 'true',
+    'default workspace was not visibly selected',
+  );
   assert(initialState.configuration.terminal.fontSize === 16, 'configured terminal appearance was not exposed');
   for (const pane of initialState.panes) {
     assert(pane.fontFamily === 'Consolas, monospace', `${pane.paneId} font family was not applied`);
@@ -602,7 +660,7 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
     const tmuxSocket = `neoncode-${runToken}`;
     await sendText(page, 'tasks', `tmux -f /dev/null -L '${tmuxSocket}' new-session -s '${tmuxSession}'\n`);
     await page.waitForTimeout(500);
-    await sendText(page, 'tasks', "tmux set-option -g mouse on; tmux split-window -h\n");
+    await sendText(page, 'tasks', "tmux set-option -g mouse on; tmux split-window -h; tmux select-pane -t ':0.1'\n");
     await page.waitForTimeout(300);
     await verifyTmuxMouseBehavior(page, 'tasks', runToken);
     const tmuxLiveExpected = `tmux-live-${runToken}`;
@@ -682,6 +740,38 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   await sendText(page, 'shell', reconnectCommand);
   await waitForOutput(page, 'shell', reconnectExpected);
 
+  await switchWorkspace(page, 'review');
+  let workspaceState = await getState(page);
+  assert(workspaceState.panes.length === 3, 'three-pane workspace did not render all panes');
+  assert(await page.getByTestId('terminal-grid').locator('.terminal-pane').count() === 3, 'dynamic pane DOM count was not three');
+  assert(
+    await page.getByTestId('workspace-review').getAttribute('aria-current') === 'true',
+    'review workspace was not visibly selected',
+  );
+  const reviewSeedExpected = `review-seed-${runToken}`;
+  const reviewSeedCommand = `export NEONCODE_REVIEW_PERSIST='${runToken}'; printf 'review-seed-%s\\n' "$NEONCODE_REVIEW_PERSIST"\n`;
+  assertMarkerIsNotEchoed(reviewSeedCommand, reviewSeedExpected);
+  await sendText(page, 'review-shell', reviewSeedCommand);
+  await waitForOutput(page, 'review-shell', reviewSeedExpected);
+
+  await switchWorkspace(page, 'default');
+  workspaceState = await getState(page);
+  assert(workspaceState.panes.length === 2, 'default workspace did not restore two panes');
+  await assertPaneLifecycles(instance, 'attached');
+  const switchedBackExpected = `workspace-return-${runToken}`;
+  const switchedBackCommand = `printf 'workspace-return-%s\\n' "$NEONCODE_TEST_PERSIST"\n`;
+  assertMarkerIsNotEchoed(switchedBackCommand, switchedBackExpected);
+  await sendText(page, 'shell', switchedBackCommand);
+  await waitForOutput(page, 'shell', switchedBackExpected);
+
+  await switchWorkspace(page, 'review');
+  await assertPaneLifecycles(instance, 'attached');
+  const reviewReturnExpected = `review-return-${runToken}`;
+  const reviewReturnCommand = `printf 'review-return-%s\\n' "$NEONCODE_REVIEW_PERSIST"\n`;
+  assertMarkerIsNotEchoed(reviewReturnCommand, reviewReturnExpected);
+  await sendText(page, 'review-shell', reviewReturnCommand);
+  await waitForOutput(page, 'review-shell', reviewReturnExpected);
+
   log('tools', { tmux: tmuxResult, nvim: nvimResult });
 }
 
@@ -694,10 +784,10 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
     `window size was not restored: ${restoredWindowSize.join('x')}`,
   );
 
-  const seedExpected = `seed-${runToken}`;
-  await waitForOutput(instance.page, 'shell', seedExpected);
+  const reviewSeedExpected = `review-seed-${runToken}`;
+  await waitForOutput(instance.page, 'review-shell', reviewSeedExpected);
 
-  const state = await getState(instance.page);
+  let state = await getState(instance.page);
   log('state.second-launch', summarizeState(state));
   assert(state.configuration.configStatus === 'recovered', `expected recovered config, got ${state.configuration.configStatus}`);
   assert(
@@ -708,7 +798,12 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
     await instance.page.getByTestId('configuration-status').getAttribute('data-state') === 'warning',
     'configuration recovery warning was not visible',
   );
-  const expectedSessionIds = [`${sessionPrefix}-shell`, `${sessionPrefix}-tasks`];
+  assert(state.workspace.activeWorkspaceId === 'review', 'persisted active workspace was not restored');
+  assert(state.panes.length === 3, 'restored review workspace did not contain three panes');
+  const expectedSessionIds = [
+    `${sessionPrefix}-shell`, `${sessionPrefix}-tasks`,
+    `${sessionPrefix}-review-shell`, `${sessionPrefix}-review-tasks`, `${sessionPrefix}-review-agent`,
+  ];
   for (const sessionId of expectedSessionIds) {
     assert(
       state.sessionDiscovery.sessions.includes(sessionId),
@@ -722,8 +817,17 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
     assert(pane.outputGap === '', `${pane.paneId} output sequence gap: ${pane.outputGap}`);
   }
   assert(
+    state.panes.find((pane) => pane.paneId === 'review-shell').recentOutput.includes(reviewSeedExpected),
+    'active review workspace output was not replayed after relaunch',
+  );
+
+  await switchWorkspace(instance.page, 'default');
+  state = await getState(instance.page);
+  await assertPaneLifecycles(instance, 'attached');
+  const seedExpected = `seed-${runToken}`;
+  assert(
     state.panes.find((pane) => pane.paneId === 'shell').recentOutput.includes(seedExpected),
-    'pre-close shell output was not replayed after attach',
+    'inactive default workspace output was not replayed after switching back',
   );
 
   const restoredExpected = `restored-${runToken}`;
@@ -742,6 +846,8 @@ async function runKillPolicyCheck(runToken) {
     instance = await launchApp(sessionPrefix, directory);
     const firstState = await getState(instance.page);
     assert(firstState.configuration.persistencePolicy === 'kill', 'kill close policy was not loaded');
+    await switchWorkspace(instance.page, 'review');
+    assert((await getState(instance.page)).panes.length === 3, 'kill test did not visit the second workspace');
     await closeInstance(instance);
     instance = undefined;
 
@@ -803,11 +909,13 @@ async function main() {
       persistedState.window.width === 1400 && persistedState.window.height === 900,
       `window state was not persisted: ${JSON.stringify(persistedState.window)}`,
     );
+    assert(persistedState.schemaVersion === 2, 'workspace state schema was not persisted');
+    assert(persistedState.activeWorkspaceId === 'review', 'active workspace was not persisted');
     fs.writeFileSync(path.join(configDirectory, 'config.json'), '{ intentionally invalid');
 
     instance = await launchApp(sessionPrefix, configDirectory);
     await runSecondLaunchChecks(instance, sessionPrefix, runToken);
-    await killAllPanes(instance);
+    await killAllWorkspaces(instance);
     sessionsCleaned = true;
 
     const finalState = await getState(instance.page);
@@ -824,7 +932,7 @@ async function main() {
     if (instance) {
       if (!sessionsCleaned) {
         try {
-          await killAllPanes(instance);
+          await killAllWorkspaces(instance);
           sessionsCleaned = true;
         } catch {
           // A fallback cleanup launch below will retry.

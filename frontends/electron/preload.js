@@ -23,6 +23,10 @@ contextBridge.exposeInMainWorld('neoncodeDesktop', Object.freeze({
     return ipcRenderer.invoke('neoncode:write-clipboard-text', text);
   },
 
+  setActiveWorkspace(workspaceId) {
+    return ipcRenderer.invoke('neoncode:set-active-workspace', workspaceId);
+  },
+
   onPrepareClose(callback) {
     ipcRenderer.on('neoncode:prepare-close', async () => {
       try {

@@ -3,22 +3,27 @@ const { SessionModel } = require('./session-model');
 const { TerminalPane } = require('./terminal-pane');
 const { installRendererTestApi } = require('./test-api');
 
-const MAX_STATIC_TERMINAL_PANES = 2;
 const STARTUP_SESSION_LIST_TIMEOUT_MS = 2000;
+const CONTROL_OPERATION_TIMEOUT_MS = 1500;
 
 function createSessionId(sessionPrefix, sessionKey) {
   return `${sessionPrefix}-${sessionKey}`;
 }
 
-function createPaneDescriptors(bootstrap) {
-  return (bootstrap.sessions || []).slice(0, MAX_STATIC_TERMINAL_PANES).map((session, index) => ({
-    index,
-    paneId: session.id,
-    sessionKey: session.id,
-    title: session.title,
-    terminalElementId: `terminal-${index + 1}`,
-    sessionId: createSessionId(bootstrap.sessionPrefix, session.id),
-    launchProfile: { ...session.launchProfile },
+function createWorkspaceDescriptors(bootstrap) {
+  return (bootstrap.workspaces || []).map((workspace) => ({
+    id: workspace.id,
+    name: workspace.name,
+    layout: { columns: workspace.layout.columns },
+    panes: workspace.sessions.map((session, index) => ({
+      index,
+      paneId: session.id,
+      sessionKey: session.id,
+      title: session.title,
+      terminalElementId: `terminal-${workspace.id}-${session.id}`,
+      sessionId: createSessionId(bootstrap.sessionPrefix, session.id),
+      launchProfile: { ...session.launchProfile },
+    })),
   }));
 }
 
@@ -32,13 +37,14 @@ function createAppConfig(bootstrap = {}) {
     persistencePolicy: bootstrap.persistencePolicy || 'detach',
     terminal: bootstrap.terminal ? JSON.parse(JSON.stringify(bootstrap.terminal)) : null,
     testMode: bootstrap.testMode === true,
+    activeWorkspaceId: bootstrap.activeWorkspaceId || null,
     diagnostics: {
       configStatus: bootstrap.diagnostics?.configStatus || 'error',
       stateStatus: bootstrap.diagnostics?.stateStatus || 'error',
       warnings: [...(bootstrap.diagnostics?.warnings || [])],
       errors: [...(bootstrap.diagnostics?.errors || [])],
     },
-    panes: createPaneDescriptors(bootstrap),
+    workspaces: createWorkspaceDescriptors(bootstrap),
   };
 }
 
@@ -49,6 +55,7 @@ class NeonCodeApp {
     this.config = createAppConfig(bootstrap);
     this.statusElement = this.document.getElementById('status');
     this.configurationStatusElement = this.document.getElementById('configuration-status');
+    this.workspaceList = this.document.getElementById('workspace-list');
     this.terminalGrid = this.document.getElementById('terminal-grid');
     this.sessionModel = new SessionModel({ windowRef: this.window });
     this.sessionModel.setConfiguration({
@@ -59,18 +66,28 @@ class NeonCodeApp {
       errors: this.config.diagnostics.errors,
       persistencePolicy: this.config.persistencePolicy,
       terminal: this.config.terminal,
-      sessions: this.config.panes.map(({ paneId, title, sessionId, launchProfile }) => ({
-        id: paneId,
-        title,
-        sessionId,
-        launchProfile,
+      activeWorkspaceId: this.config.activeWorkspaceId,
+      workspaces: this.config.workspaces.map((workspace) => ({
+        id: workspace.id,
+        name: workspace.name,
+        layout: workspace.layout,
+        sessions: workspace.panes.map(({ paneId, title, sessionId, launchProfile }) => ({
+          id: paneId,
+          title,
+          sessionId,
+          launchProfile,
+        })),
       })),
     });
     this.sessionDiscoveryClient = undefined;
-    this.knownSessionIds = new Set();
+    this.discoveredSessionIds = new Set();
+    this.visitedSessionIds = new Set();
     this.panes = [];
+    this.activeWorkspaceId = null;
     this.closed = false;
     this.closePromise = undefined;
+    this.switchPromise = Promise.resolve();
+    this.switching = false;
     if (this.config.testMode) {
       installRendererTestApi(this);
     }
@@ -78,6 +95,14 @@ class NeonCodeApp {
 
   setStatus(text) {
     this.statusElement.textContent = text;
+  }
+
+  addRuntimeWarning(warning) {
+    if (!this.config.diagnostics.warnings.includes(warning)) {
+      this.config.diagnostics.warnings.push(warning);
+    }
+    this.sessionModel.addConfigurationWarning(warning);
+    this.showConfigurationDiagnostics();
   }
 
   showConfigurationDiagnostics() {
@@ -94,31 +119,42 @@ class NeonCodeApp {
     }
   }
 
-  configureGrid() {
-    const count = this.config.panes.length;
-    this.terminalGrid.style.gridTemplateColumns = `repeat(${Math.max(1, count)}, minmax(0, 1fr))`;
+  renderWorkspaceSelector() {
+    this.workspaceList.replaceChildren();
+    for (const workspace of this.config.workspaces) {
+      const button = this.document.createElement('button');
+      button.type = 'button';
+      button.className = 'workspace-button';
+      button.dataset.workspaceId = workspace.id;
+      button.dataset.testid = `workspace-${workspace.id}`;
+      button.setAttribute('aria-current', workspace.id === this.activeWorkspaceId ? 'true' : 'false');
+      button.disabled = this.switching;
 
-    for (let index = 0; index < MAX_STATIC_TERMINAL_PANES; index += 1) {
-      const descriptor = this.config.panes[index];
-      const container = this.document.getElementById(`terminal-${index + 1}`);
-      const pane = container?.parentElement;
-      const title = this.document.getElementById(`pane-title-${index + 1}`);
-      const status = this.document.getElementById(`pane-status-${index + 1}`);
-      if (!pane) {
-        continue;
-      }
-      pane.style.display = descriptor ? 'grid' : 'none';
-      if (descriptor) {
-        pane.dataset.testid = `terminal-pane-${descriptor.paneId}`;
-        title.textContent = descriptor.title;
-        title.dataset.testid = `pane-title-${descriptor.paneId}`;
-        status.dataset.testid = `pane-status-${descriptor.paneId}`;
-      }
+      const name = this.document.createElement('span');
+      name.className = 'workspace-name';
+      name.textContent = workspace.name;
+      const count = this.document.createElement('span');
+      count.className = 'workspace-pane-count';
+      count.textContent = String(workspace.panes.length);
+      button.append(name, count);
+      button.addEventListener('click', () => {
+        this.switchWorkspace(workspace.id).catch((error) => {
+          console.error('workspace_switch_failed', error);
+          this.setStatus(`Workspace switch failed: ${error.message}`);
+        });
+      });
+      this.workspaceList.append(button);
+    }
+  }
+
+  updateWorkspaceSelector() {
+    for (const button of this.workspaceList.querySelectorAll('.workspace-button')) {
+      button.setAttribute('aria-current', button.dataset.workspaceId === this.activeWorkspaceId ? 'true' : 'false');
+      button.disabled = this.switching;
     }
   }
 
   async start() {
-    this.configureGrid();
     this.showConfigurationDiagnostics();
     if (!this.config.configurationValid) {
       const message = this.config.diagnostics.errors.join('; ') || 'Configuration is invalid';
@@ -127,13 +163,15 @@ class NeonCodeApp {
       return;
     }
 
-    this.knownSessionIds = new Set(await this.discoverSessions());
+    this.renderWorkspaceSelector();
+    this.discoveredSessionIds = new Set(await this.discoverSessions());
     if (this.closed) {
       return;
     }
-    for (const descriptor of this.config.panes) {
-      this.createPane(descriptor);
-    }
+    const initialWorkspace = this.config.workspaces.find(
+      (workspace) => workspace.id === this.config.activeWorkspaceId,
+    ) || this.config.workspaces[0];
+    await this.switchWorkspace(initialWorkspace.id, { initial: true });
   }
 
   discoverSessions() {
@@ -205,6 +243,98 @@ class NeonCodeApp {
     });
   }
 
+  switchWorkspace(workspaceId, { initial = false } = {}) {
+    const operation = this.switchPromise.then(() => this.performWorkspaceSwitch(workspaceId, { initial }));
+    this.switchPromise = operation.catch(() => {});
+    return operation;
+  }
+
+  async performWorkspaceSwitch(workspaceId, { initial = false } = {}) {
+    if (this.closed) {
+      throw new Error('application is closing');
+    }
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === workspaceId);
+    if (!workspace) {
+      throw new Error(`unknown workspace: ${workspaceId}`);
+    }
+    if (!initial && workspaceId === this.activeWorkspaceId) {
+      return;
+    }
+
+    this.switching = true;
+    this.updateWorkspaceSelector();
+    this.setStatus(`Switching to ${workspace.name}...`);
+    try {
+      try {
+        await this.window.neoncodeDesktop.setActiveWorkspace(workspaceId);
+      } catch (error) {
+        if (!initial) {
+          throw error;
+        }
+        this.addRuntimeWarning(`Active workspace could not be persisted: ${error.message}`);
+      }
+      if (this.panes.length > 0) {
+        await Promise.all(this.panes.map((pane) => pane.detachAndClose()));
+        for (const pane of this.panes) {
+          pane.dispose();
+        }
+      }
+      this.panes = [];
+      if (this.closed) {
+        return;
+      }
+      this.terminalGrid.replaceChildren();
+      this.sessionModel.resetPanes(workspaceId);
+      this.activeWorkspaceId = workspaceId;
+      this.configureWorkspaceGrid(workspace);
+      this.updateWorkspaceSelector();
+
+      for (const descriptor of workspace.panes) {
+        this.createPaneSurface(descriptor);
+        this.createPane(descriptor);
+        this.discoveredSessionIds.add(descriptor.sessionId);
+        this.visitedSessionIds.add(descriptor.sessionId);
+      }
+      this.sessionModel.setActiveWorkspace(workspaceId);
+      this.setStatus(`Workspace: ${workspace.name}`);
+    } finally {
+      this.switching = false;
+      this.updateWorkspaceSelector();
+    }
+  }
+
+  configureWorkspaceGrid(workspace) {
+    const rows = Math.ceil(workspace.panes.length / workspace.layout.columns);
+    this.terminalGrid.style.gridTemplateColumns = `repeat(${workspace.layout.columns}, minmax(0, 1fr))`;
+    this.terminalGrid.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+  }
+
+  createPaneSurface(descriptor) {
+    const pane = this.document.createElement('section');
+    pane.className = 'terminal-pane';
+    pane.dataset.testid = `terminal-pane-${descriptor.paneId}`;
+
+    const titleBar = this.document.createElement('div');
+    titleBar.className = 'pane-title';
+    const title = this.document.createElement('span');
+    title.textContent = descriptor.title;
+    title.dataset.testid = `pane-title-${descriptor.paneId}`;
+    const status = this.document.createElement('span');
+    status.id = `pane-status-${descriptor.paneId}`;
+    status.className = 'pane-status';
+    status.dataset.state = 'connecting';
+    status.dataset.testid = `pane-status-${descriptor.paneId}`;
+    status.textContent = 'Connecting';
+    titleBar.append(title, status);
+
+    const terminal = this.document.createElement('div');
+    terminal.id = descriptor.terminalElementId;
+    terminal.className = 'terminal';
+    terminal.dataset.testid = `terminal-${descriptor.paneId}`;
+    pane.append(titleBar, terminal);
+    this.terminalGrid.append(pane);
+  }
+
   createPane(descriptor) {
     const container = this.document.getElementById(descriptor.terminalElementId);
     if (!container) {
@@ -216,18 +346,50 @@ class NeonCodeApp {
       paneId: descriptor.paneId,
       sessionKey: descriptor.sessionKey,
       sessionId: descriptor.sessionId,
-      activationMode: this.knownSessionIds.has(descriptor.sessionId) ? 'attach' : 'start',
+      activationMode: this.discoveredSessionIds.has(descriptor.sessionId) ? 'attach' : 'start',
       endpoint: this.config.endpoint,
       capabilityToken: this.config.capabilityToken,
       launchProfile: descriptor.launchProfile,
       terminalAppearance: this.config.terminal,
       container,
-      statusElement: this.document.getElementById(`pane-status-${descriptor.index + 1}`),
+      statusElement: this.document.getElementById(`pane-status-${descriptor.paneId}`),
       sessionModel: this.sessionModel,
       setStatus: (text) => this.setStatus(text),
     });
     this.panes.push(pane);
     pane.start();
+  }
+
+  killDetachedSession(sessionId) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutHandle);
+        client.close();
+        resolve();
+      };
+      const timeoutHandle = setTimeout(finish, CONTROL_OPERATION_TIMEOUT_MS);
+      const client = new HubClient({
+        endpoint: this.config.endpoint,
+        capabilityToken: this.config.capabilityToken,
+        sessionId,
+        onOpen: () => {
+          if (!client.kill()) finish();
+        },
+        onMessage: (message) => {
+          if ((message.type === 'killed' && message.session_id === sessionId)
+              || (message.type === 'error' && (!message.session_id || message.session_id === sessionId))) {
+            finish();
+          }
+        },
+        onInvalidMessage: finish,
+        onClose: finish,
+        onError: () => {},
+      });
+      client.connect();
+    });
   }
 
   prepareToClose() {
@@ -237,8 +399,20 @@ class NeonCodeApp {
 
     this.closed = true;
     this.sessionDiscoveryClient?.close();
-    const closeMethod = this.config.persistencePolicy === 'kill' ? 'killAndClose' : 'detachAndClose';
-    this.closePromise = Promise.all(this.panes.map((pane) => pane[closeMethod]())).then(() => undefined);
+    this.closePromise = (async () => {
+      await this.switchPromise;
+      if (this.config.persistencePolicy === 'kill') {
+        for (const pane of this.panes) {
+          pane.close();
+        }
+        await Promise.all([...this.visitedSessionIds].map((sessionId) => this.killDetachedSession(sessionId)));
+        for (const pane of this.panes) {
+          pane.dispose();
+        }
+      } else {
+        await Promise.all(this.panes.map((pane) => pane.detachAndClose()));
+      }
+    })();
     return this.closePromise;
   }
 
@@ -246,7 +420,7 @@ class NeonCodeApp {
     this.closed = true;
     this.sessionDiscoveryClient?.close();
     for (const pane of this.panes) {
-      pane.close();
+      pane.dispose();
     }
   }
 }
@@ -266,11 +440,11 @@ function startRendererApp(options = {}) {
 }
 
 module.exports = {
-  MAX_STATIC_TERMINAL_PANES,
+  CONTROL_OPERATION_TIMEOUT_MS,
   STARTUP_SESSION_LIST_TIMEOUT_MS,
   NeonCodeApp,
   createAppConfig,
-  createPaneDescriptors,
   createSessionId,
+  createWorkspaceDescriptors,
   startRendererApp,
 };
