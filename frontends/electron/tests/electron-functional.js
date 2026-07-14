@@ -367,6 +367,18 @@ async function assertPaneLifecycles(instance, expectedLifecycle) {
   }
 }
 
+async function assertWorkspaceStatus(page, workspaceId, expectedState, expectedText) {
+  const status = page.getByTestId(`workspace-status-${workspaceId}`);
+  assert(
+    await status.getAttribute('data-state') === expectedState,
+    `${workspaceId} workspace status was not ${expectedState}`,
+  );
+  assert(
+    await status.textContent() === expectedText,
+    `${workspaceId} workspace status expected '${expectedText}', got '${await status.textContent()}'`,
+  );
+}
+
 async function switchWorkspace(page, workspaceId) {
   await page.evaluate((targetWorkspaceId) => window.neoncodeTest.switchWorkspace(targetWorkspaceId), workspaceId);
   await page.waitForFunction(
@@ -511,6 +523,12 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   assert(
     await page.getByTestId('workspace-default').getAttribute('aria-current') === 'true',
     'default workspace was not visibly selected',
+  );
+  await assertWorkspaceStatus(page, 'default', 'running', '2 running');
+  await assertWorkspaceStatus(page, 'review', 'idle', 'Not started');
+  assert(
+    await page.getByTestId('workspace-default').locator('.workspace-location').textContent() === 'WSL · 2 paths',
+    'workspace location summary was not rendered',
   );
   assert(initialState.configuration.terminal.fontSize === 16, 'configured terminal appearance was not exposed');
   for (const pane of initialState.panes) {
@@ -748,6 +766,8 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
     await page.getByTestId('workspace-review').getAttribute('aria-current') === 'true',
     'review workspace was not visibly selected',
   );
+  await assertWorkspaceStatus(page, 'default', 'detached', '2 detached');
+  await assertWorkspaceStatus(page, 'review', 'running', '3 running');
   const reviewSeedExpected = `review-seed-${runToken}`;
   const reviewSeedCommand = `export NEONCODE_REVIEW_PERSIST='${runToken}'; printf 'review-seed-%s\\n' "$NEONCODE_REVIEW_PERSIST"\n`;
   assertMarkerIsNotEchoed(reviewSeedCommand, reviewSeedExpected);
@@ -756,6 +776,8 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
 
   await switchWorkspace(page, 'default');
   workspaceState = await getState(page);
+  await assertWorkspaceStatus(page, 'default', 'running', '2 running');
+  await assertWorkspaceStatus(page, 'review', 'detached', '3 detached');
   assert(workspaceState.panes.length === 2, 'default workspace did not restore two panes');
   await assertPaneLifecycles(instance, 'attached');
   const switchedBackExpected = `workspace-return-${runToken}`;
@@ -800,6 +822,8 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
   );
   assert(state.workspace.activeWorkspaceId === 'review', 'persisted active workspace was not restored');
   assert(state.panes.length === 3, 'restored review workspace did not contain three panes');
+  await assertWorkspaceStatus(instance.page, 'default', 'available', '2 available');
+  await assertWorkspaceStatus(instance.page, 'review', 'running', '3 running');
   const expectedSessionIds = [
     `${sessionPrefix}-shell`, `${sessionPrefix}-tasks`,
     `${sessionPrefix}-review-shell`, `${sessionPrefix}-review-tasks`, `${sessionPrefix}-review-agent`,
@@ -823,6 +847,8 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
 
   await switchWorkspace(instance.page, 'default');
   state = await getState(instance.page);
+  await assertWorkspaceStatus(instance.page, 'default', 'running', '2 running');
+  await assertWorkspaceStatus(instance.page, 'review', 'detached', '3 detached');
   await assertPaneLifecycles(instance, 'attached');
   const seedExpected = `seed-${runToken}`;
   assert(

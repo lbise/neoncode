@@ -16,6 +16,7 @@ class SessionModel {
       panes: [],
       workspace: {
         activeWorkspaceId: null,
+        summaries: [],
       },
       sessionDiscovery: {
         status: 'idle',
@@ -35,6 +36,10 @@ class SessionModel {
     if (!this.publicState.configuration.warnings.includes(warning)) {
       this.publicState.configuration.warnings.push(warning);
     }
+  }
+
+  setWorkspaceSummaries(summaries) {
+    this.publicState.workspace.summaries = JSON.parse(JSON.stringify(summaries));
   }
 
   setActiveWorkspace(workspaceId) {

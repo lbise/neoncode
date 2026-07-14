@@ -36,6 +36,7 @@ Current role:
 - renders 1–8 panes for the active configured workspace and opens one WebSocket per pane/session;
 - switches named workspaces by detaching the old panes and attaching/starting the selected panes;
 - restores the active workspace from app-owned state;
+- summarizes configured WSL launch locations and aggregate pane lifecycle in the workspace sidebar;
 - attaches known sessions and starts missing sessions;
 - sends `input`, `resize`, and acknowledgement-based `detach` before normal app close;
 - provides smoke-test state for Playwright and PowerShell validation.
@@ -238,7 +239,7 @@ sessions:
     command: ./andromeda test --hil
 ```
 
-The current Electron sidebar switches these configured workspaces and restores the active choice. Layout is currently a simple column count; free-form splits and external workspace files remain future work.
+The current Electron sidebar switches these configured workspaces, restores the active choice, and derives status from configured WSL launch locations plus frontend-observed pane lifecycle. This is not yet live shell cwd/git metadata because the protocol has no canonical session metadata feed. Layout is currently a simple column count; free-form splits and external workspace files remain future work.
 
 The hub should eventually own:
 

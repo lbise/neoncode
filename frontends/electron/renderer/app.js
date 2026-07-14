@@ -17,6 +17,7 @@ function createWorkspaceDescriptors(bootstrap) {
     layout: { columns: workspace.layout.columns },
     panes: workspace.sessions.map((session, index) => ({
       index,
+      workspaceId: workspace.id,
       paneId: session.id,
       sessionKey: session.id,
       title: session.title,
@@ -82,6 +83,12 @@ class NeonCodeApp {
     this.sessionDiscoveryClient = undefined;
     this.discoveredSessionIds = new Set();
     this.visitedSessionIds = new Set();
+    this.workspaceSessionStates = new Map(
+      this.config.workspaces.flatMap((workspace) => workspace.panes.map((pane) => [
+        pane.sessionId,
+        { workspaceId: workspace.id, lifecycle: 'idle', error: '' },
+      ])),
+    );
     this.panes = [];
     this.activeWorkspaceId = null;
     this.closed = false;
@@ -119,6 +126,72 @@ class NeonCodeApp {
     }
   }
 
+  workspaceLocation(workspace) {
+    const paths = new Set(workspace.panes.map((pane) => pane.launchProfile.cwd || '~'));
+    if (paths.size === 1) return `WSL · ${[...paths][0]}`;
+    return `WSL · ${paths.size} paths`;
+  }
+
+  workspaceSummary(workspace) {
+    const states = workspace.panes.map((pane) => (
+      this.workspaceSessionStates.get(pane.sessionId) || { lifecycle: 'idle', error: '' }
+    ));
+    const count = (lifecycles) => states.filter((state) => lifecycles.includes(state.lifecycle)).length;
+    const errors = states.filter((state) => state.error).map((state) => state.error);
+    if (errors.length > 0 || count(['error']) > 0) {
+      return { state: 'error', label: 'Error', detail: errors[0] || 'Session error' };
+    }
+    if (count(['reconnecting']) > 0) {
+      return { state: 'reconnecting', label: 'Reconnecting', detail: 'Session reconnecting' };
+    }
+    const stopped = count(['killed', 'exited']);
+    if (stopped > 0) {
+      return { state: 'stopped', label: `${stopped} stopped`, detail: `${stopped} sessions stopped` };
+    }
+    const running = count(['started', 'attached']);
+    if (running > 0) {
+      return { state: 'running', label: `${running} running`, detail: `${running} of ${states.length} sessions running` };
+    }
+    const transitional = count(['connecting', 'starting', 'attaching', 'detaching', 'killing']);
+    if (transitional > 0) {
+      return { state: 'connecting', label: 'Connecting', detail: 'Session transition in progress' };
+    }
+    const detached = count(['detached']);
+    if (detached > 0) {
+      return { state: 'detached', label: `${detached} detached`, detail: `${detached} sessions detached` };
+    }
+    const available = count(['available']);
+    if (available > 0) {
+      return { state: 'available', label: `${available} available`, detail: `${available} hub sessions available` };
+    }
+    return { state: 'idle', label: 'Not started', detail: 'No workspace sessions started' };
+  }
+
+  updateWorkspaceStatuses() {
+    const summaries = this.config.workspaces.map((workspace) => ({
+      id: workspace.id,
+      location: this.workspaceLocation(workspace),
+      ...this.workspaceSummary(workspace),
+    }));
+    this.sessionModel.setWorkspaceSummaries(summaries);
+    for (const summary of summaries) {
+      const button = this.workspaceList.querySelector(`[data-workspace-id="${summary.id}"]`);
+      const status = button?.querySelector('.workspace-status');
+      if (!button || !status) continue;
+      button.dataset.state = summary.state;
+      button.title = `${summary.location} — ${summary.detail}`;
+      status.dataset.state = summary.state;
+      status.textContent = summary.label;
+    }
+  }
+
+  recordWorkspaceSessionState(sessionId, lifecycle, error = '') {
+    const current = this.workspaceSessionStates.get(sessionId);
+    if (!current) return;
+    this.workspaceSessionStates.set(sessionId, { ...current, lifecycle, error });
+    this.updateWorkspaceStatuses();
+  }
+
   renderWorkspaceSelector() {
     this.workspaceList.replaceChildren();
     for (const workspace of this.config.workspaces) {
@@ -130,13 +203,19 @@ class NeonCodeApp {
       button.setAttribute('aria-current', workspace.id === this.activeWorkspaceId ? 'true' : 'false');
       button.disabled = this.switching;
 
+      const identity = this.document.createElement('span');
+      identity.className = 'workspace-identity';
       const name = this.document.createElement('span');
       name.className = 'workspace-name';
       name.textContent = workspace.name;
-      const count = this.document.createElement('span');
-      count.className = 'workspace-pane-count';
-      count.textContent = String(workspace.panes.length);
-      button.append(name, count);
+      const location = this.document.createElement('span');
+      location.className = 'workspace-location';
+      location.textContent = this.workspaceLocation(workspace);
+      identity.append(name, location);
+      const status = this.document.createElement('span');
+      status.className = 'workspace-status';
+      status.dataset.testid = `workspace-status-${workspace.id}`;
+      button.append(identity, status);
       button.addEventListener('click', () => {
         this.switchWorkspace(workspace.id).catch((error) => {
           console.error('workspace_switch_failed', error);
@@ -145,6 +224,7 @@ class NeonCodeApp {
       });
       this.workspaceList.append(button);
     }
+    this.updateWorkspaceStatuses();
   }
 
   updateWorkspaceSelector() {
@@ -165,6 +245,13 @@ class NeonCodeApp {
 
     this.renderWorkspaceSelector();
     this.discoveredSessionIds = new Set(await this.discoverSessions());
+    for (const sessionId of this.discoveredSessionIds) {
+      if (this.workspaceSessionStates.has(sessionId)) {
+        const current = this.workspaceSessionStates.get(sessionId);
+        this.workspaceSessionStates.set(sessionId, { ...current, lifecycle: 'available', error: '' });
+      }
+    }
+    this.updateWorkspaceStatuses();
     if (this.closed) {
       return;
     }
@@ -355,6 +442,9 @@ class NeonCodeApp {
       statusElement: this.document.getElementById(`pane-status-${descriptor.paneId}`),
       sessionModel: this.sessionModel,
       setStatus: (text) => this.setStatus(text),
+      onLifecycleChange: (lifecycle, error) => {
+        this.recordWorkspaceSessionState(descriptor.sessionId, lifecycle, error);
+      },
     });
     this.panes.push(pane);
     pane.start();

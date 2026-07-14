@@ -125,15 +125,50 @@ header span,
   opacity: 0.65;
 }
 
-.workspace-name {
+.workspace-identity {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.workspace-name,
+.workspace-location {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.workspace-pane-count {
+.workspace-location {
   color: #64748b;
-  font-size: 11px;
+  font-size: 10px;
+}
+
+.workspace-status {
+  color: #64748b;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.workspace-status[data-state="running"] {
+  color: #4ade80;
+}
+
+.workspace-status[data-state="connecting"],
+.workspace-status[data-state="reconnecting"] {
+  color: #facc15;
+}
+
+.workspace-status[data-state="detached"],
+.workspace-status[data-state="available"] {
+  color: #67e8f9;
+}
+
+.workspace-status[data-state="error"] {
+  color: #f87171;
+}
+
+.workspace-status[data-state="stopped"] {
+  color: #fb923c;
 }
 
 main {

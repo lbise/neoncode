@@ -3,7 +3,7 @@
 ## Current stage
 
 ```text
-Stage: Dynamic workspace and pane baseline ready for manual preview
+Stage: Workspace status baseline ready for manual preview
 Supported Windows app: Electron + xterm.js + neoncode-hub
 Next focus: extended stability soaking, then richer workspace status and snapshot/resync
 ```
@@ -293,12 +293,23 @@ Still needed:
 - [x] Persist and restore the active configured workspace.
 - [x] Restore configured dynamic pane grids.
 - [x] Add a workspace selector sidebar with pane counts and active state.
-- [ ] Add richer workspace status metadata:
-  - cwd;
-  - host;
-  - git branch;
-  - session status;
-  - latest notification/error.
+- [x] Show configured WSL launch-location summaries and aggregate session state in the sidebar.
+- [ ] Add richer runtime workspace metadata:
+  - live shell cwd;
+  - git branch/dirty state;
+  - retained latest notification/error.
+
+### Milestone: workspace status sidebar
+
+Status: complete and ready for manual preview.
+
+- [x] Show WSL/configured launch-location summaries per workspace.
+- [x] Aggregate pane lifecycles into running, connecting, reconnecting, detached, available, stopped, and error states.
+- [x] Update status during workspace switching and hub reattachment.
+- [x] Expose structured workspace summaries in renderer test state.
+- [x] Verify idle/running/detached/available transitions across switch and relaunch in real Electron tests.
+
+Manual preview: run two configured workspaces, switch between them, and observe the sidebar move from `running` to `detached`; close and reopen to see inactive hub sessions reported as `available` before reattachment.
 
 ### 5. Hub protocol evolution
 

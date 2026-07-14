@@ -67,6 +67,7 @@ class TerminalPane {
     statusElement,
     sessionModel,
     setStatus,
+    onLifecycleChange,
   }) {
     this.index = index;
     this.paneId = paneId;
@@ -81,6 +82,7 @@ class TerminalPane {
     this.statusElement = statusElement;
     this.sessionModel = sessionModel;
     this.setStatus = setStatus;
+    this.onLifecycleChange = onLifecycleChange;
     this.state = undefined;
     this.hubClient = undefined;
     this.resizeObserver = undefined;
@@ -139,6 +141,7 @@ class TerminalPane {
       this.statusElement.textContent = LIFECYCLE_LABELS[lifecycle] || lifecycle;
       this.statusElement.title = error;
     }
+    this.onLifecycleChange?.(lifecycle, error);
   }
 
   close() {
