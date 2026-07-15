@@ -60,25 +60,26 @@ Explicit commands:
 main.js              Electron main process, security policy, and window-state lifecycle
 config-store.js      versioned config/state validation, migration, recovery, and atomic IO
 preload.js           narrow context-isolated desktop bridge
-renderer.js          browser-bundle bootstrap entrypoint (migration pending)
-renderer/app.js      app/bootstrap and pane grid wiring (migration pending)
+renderer.ts          typed browser-bundle bootstrap entrypoint
+renderer/app.ts      typed app/bootstrap and pane grid orchestration
 renderer/hub-client.ts
                      typed WebSocket protocol client and validators
 renderer/session-model.ts
                      typed pane/session state and bounded output view
-renderer/terminal-pane.js
-                     xterm.js pane/input/resize/output handling (migration pending)
+renderer/terminal-pane.ts
+                     typed xterm.js pane/input/resize/output handling
 renderer/reconnect-policy.ts
                      typed reconnect timing and attach/start fallback policy
-renderer/test-api.js
-                     structured test API (migration pending)
+renderer/test-api.ts typed structured test API
+renderer/globals.d.ts
+                     context-isolated desktop, public-state, and test globals
 shared/types.ts      shared protocol and renderer-state contracts
 tsconfig.*.json      strict Node, renderer, and test compiler boundaries
 dist/                ignored generated CommonJS and renderer bundle
 tests/               Node config/auth tests and hidden-window Playwright functional tests
 ```
 
-`npm run check` performs strict type-checking, creates a clean `dist/`, bundles the browser renderer, and runs unit tests from generated CommonJS. Published Electron also executes only `dist/` artifacts; no runtime TypeScript loader is used. The migration remains intentionally incremental, with unconverted JavaScript copied through the same compiler pipeline.
+`npm run check` performs strict type-checking, creates a clean `dist/`, bundles the browser renderer, and runs unit tests from generated CommonJS. Published Electron also executes only `dist/` artifacts; no runtime TypeScript loader is used. Phase 2 completed the strict renderer migration and disabled renderer `allowJs`; unconverted Node/preload/configuration and test JavaScript remains in the applicable incremental compiler pipelines.
 
 On startup, Electron main loads `%APPDATA%\\NeonCode\\config.json`, validates configured workspaces/sessions/process profiles, and sends a deeply frozen bootstrap object to the renderer. The renderer calls `list_sessions`, restores the active workspace, attaches matching stable sessions, and starts missing sessions with configured command/args/cwd. The sidebar switches workspaces through detach/reattach and shows hub-owned configured launch cwd when available (with frontend-config fallback) plus aggregate running/reconnecting/detached/available/in-use/error state and retained exit attention with explicit dismissal. The close policy waits for `detached` or `killed` acknowledgements. Attach replays up to 2 MiB of recent ordered terminal output before live output continues, so normal shell history and prompts reappear.
 

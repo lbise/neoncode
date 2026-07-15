@@ -2,6 +2,7 @@ import type { FitAddon } from '@xterm/addon-fit';
 import type { Terminal } from '@xterm/xterm';
 
 export type ActivationMode = 'attach' | 'start';
+export type PersistencePolicy = 'detach' | 'kill';
 export type SessionLifecycle =
   | 'attached'
   | 'attaching'
@@ -60,6 +61,104 @@ export interface HubWelcome {
   [key: string]: unknown;
 }
 
+export interface TerminalTheme {
+  name: string;
+  background: string;
+  foreground: string;
+  cursorColor: string;
+  selectionBackground: string;
+  black: string;
+  red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  purple: string;
+  cyan: string;
+  white: string;
+  brightBlack: string;
+  brightRed: string;
+  brightGreen: string;
+  brightYellow: string;
+  brightBlue: string;
+  brightPurple: string;
+  brightCyan: string;
+  brightWhite: string;
+}
+
+export interface TerminalAppearance {
+  fontFamily: string;
+  fontSize: number;
+  cursorBlink: boolean;
+  theme: TerminalTheme;
+}
+
+export interface LaunchProfile {
+  type?: 'process';
+  command: string;
+  args: string[];
+  cwd: string | null;
+}
+
+export interface PaneDescriptor {
+  index: number;
+  workspaceId: string;
+  paneId: string;
+  sessionKey: string;
+  title: string;
+  terminalElementId: string;
+  sessionId: string;
+  launchProfile: LaunchProfile;
+}
+
+export interface WorkspaceDescriptor {
+  id: string;
+  name: string;
+  layout: { columns: number };
+  panes: PaneDescriptor[];
+}
+
+export interface AppDiagnostics {
+  configStatus: string;
+  stateStatus: string;
+  warnings: string[];
+  errors: string[];
+}
+
+export interface RendererAppConfig {
+  schemaVersion: unknown;
+  configurationValid: boolean;
+  endpoint: string;
+  capabilityToken: string;
+  sessionPrefix: string;
+  persistencePolicy: PersistencePolicy;
+  terminal: TerminalAppearance | null;
+  testMode: boolean;
+  activeWorkspaceId: string | null;
+  diagnostics: AppDiagnostics;
+  workspaces: WorkspaceDescriptor[];
+}
+
+export type WorkspaceSummaryState =
+  | 'attention'
+  | 'available'
+  | 'connecting'
+  | 'detached'
+  | 'error'
+  | 'idle'
+  | 'in_use'
+  | 'reconnecting'
+  | 'running'
+  | 'stopped';
+
+export interface WorkspaceSummary {
+  id: string;
+  location: string;
+  locationSource: 'config' | 'hub' | 'mixed';
+  state: WorkspaceSummaryState;
+  label: string;
+  detail: string;
+}
+
 export interface PublicConfiguration {
   valid: boolean;
   configStatus: string;
@@ -67,7 +166,7 @@ export interface PublicConfiguration {
   warnings: string[];
   errors: string[];
   persistencePolicy: string;
-  sessions: unknown[];
+  sessions?: unknown[];
   activeWorkspaceId?: string | null;
   [key: string]: unknown;
 }
@@ -111,7 +210,7 @@ export interface RendererPublicState {
   panes: PublicPaneState[];
   workspace: {
     activeWorkspaceId: string | null;
-    summaries: unknown[];
+    summaries: WorkspaceSummary[];
   };
   sessionDiscovery: {
     status: string;
@@ -120,6 +219,26 @@ export interface RendererPublicState {
     sessionSummaries: NormalizedSessionSummary[];
     error: string;
   };
+}
+
+export interface RendererTestApi {
+  getState(): RendererPublicState;
+  sendText(paneId: string, text: string): void;
+  pasteText(paneId: string, text: string): void;
+  killPane(paneId: string): Promise<void>;
+  switchWorkspace(workspaceId: string): Promise<void>;
+  acknowledgeWorkspaceAttention(workspaceId: string): Promise<void>;
+  disconnectPaneSocket(paneId: string): void;
+  selectAll(paneId: string): void;
+  simulatePasteShortcutRace(paneId: string, text: string): void;
+}
+
+export interface NeoncodeDesktopApi {
+  readonly config: unknown;
+  readClipboardText(): Promise<string>;
+  writeClipboardText(text: string): Promise<void>;
+  setActiveWorkspace(workspaceId: string): Promise<void>;
+  onPrepareClose(callback: () => void | Promise<void>): void;
 }
 
 export interface PaneState {

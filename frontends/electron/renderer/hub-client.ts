@@ -12,12 +12,12 @@ export const AUTHENTICATION_TIMEOUT_MS = 5000;
 export const WELCOME_TIMEOUT_MS = 3000;
 
 type TimerHandle = ReturnType<typeof setTimeout>;
-type UnknownMessage = Record<string, unknown>;
+export type UnknownMessage = Record<string, unknown>;
 
-interface HubClientOptions {
+export interface HubClientOptions {
   endpoint: string;
   capabilityToken: string;
-  sessionId: string;
+  sessionId?: string;
   onOpen?: (welcome: HubWelcome) => void;
   onMessage?: (message: UnknownMessage) => void;
   onInvalidMessage?: (error: unknown, raw?: unknown) => void;
@@ -269,7 +269,7 @@ export function parseReplayCheckpoint(message: UnknownMessage): ReplayCheckpoint
 export class HubClient {
   readonly endpoint: string;
   readonly capabilityToken: string;
-  readonly sessionId: string;
+  readonly sessionId: string | undefined;
   readonly onOpen: HubClientOptions['onOpen'];
   readonly onMessage: HubClientOptions['onMessage'];
   readonly onInvalidMessage: HubClientOptions['onInvalidMessage'];

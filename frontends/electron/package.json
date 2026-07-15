@@ -11,7 +11,7 @@
     "build:node": "tsc -p tsconfig.node.json",
     "build:renderer:modules": "tsc -p tsconfig.renderer.json",
     "build:tests": "tsc -p tsconfig.tests.json",
-    "build:renderer": "esbuild renderer.js --bundle --platform=browser --format=iife --target=es2022 --outfile=dist/renderer.bundle.js",
+    "build:renderer": "esbuild renderer.ts --bundle --platform=browser --format=iife --target=es2022 --outfile=dist/renderer.bundle.js",
     "build": "npm run clean && npm run typecheck && npm run build:node && npm run build:renderer:modules && npm run build:tests && npm run build:renderer",
     "test:unit": "node dist/tests/config-store.js && node dist/tests/token-loader.js && node dist/tests/hub-client-auth.js && node dist/tests/reconnect-policy.js && node dist/tests/session-model.js && node dist/tests/reconnect-output-soak.js && node dist/tests/terminal-pane-fake-hub.js",
     "check": "npm run build && npm run test:unit",

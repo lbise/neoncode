@@ -11,6 +11,7 @@ import type {
   RendererPublicState,
   ReplayCheckpoint,
   SessionLifecycle,
+  WorkspaceSummary,
 } from '../shared/types';
 
 export const MAX_RECENT_OUTPUT_CHARS = 32768;
@@ -84,7 +85,7 @@ export class SessionModel {
     }
   }
 
-  setWorkspaceSummaries(summaries: unknown[]): void {
+  setWorkspaceSummaries(summaries: WorkspaceSummary[]): void {
     this.publicState.workspace.summaries = cloneJson(summaries);
   }
 
@@ -293,8 +294,10 @@ export class SessionModel {
     this.pane(state).inputEvents = state.inputEvents;
   }
 
-  recordOutput(state: PaneState, text: string, seq?: number): boolean {
-    const outputSeq = Number.isSafeInteger(seq) ? seq as number : state.lastOutputSeq + 1;
+  recordOutput(state: PaneState, text: string, seq?: unknown): boolean {
+    const outputSeq = typeof seq === 'number' && Number.isSafeInteger(seq)
+      ? seq
+      : state.lastOutputSeq + 1;
     if (outputSeq <= state.lastOutputSeq) {
       return false;
     }

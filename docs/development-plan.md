@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Strict TypeScript migration phase 1 complete
+Stage: Strict TypeScript migration phase 2 complete
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: migrate renderer orchestration, then Electron main/preload and tests
+Next focus: migrate Electron main/preload/configuration, then tests
 ```
 
 The Windows tech stack is now:
@@ -89,7 +89,7 @@ Why this matters:
 
 Tasks:
 
-- [x] Refactor `frontends/electron/renderer.js` into modules:
+- [x] Refactor the browser renderer entrypoint into modules:
   - hub client;
   - terminal pane;
   - session model;
@@ -395,7 +395,7 @@ Extended multi-minute wall-clock and long-session resource stability remain sepa
 
 ### Milestone: strict TypeScript migration
 
-Status: phase 1 of 4 complete.
+Status: phase 2 of 4 complete.
 
 - [x] Add strict, environment-specific Node/renderer/test TypeScript projects.
 - [x] Build all mixed JavaScript/TypeScript sources into an ignored clean `dist/` runtime tree.
@@ -403,7 +403,7 @@ Status: phase 1 of 4 complete.
 - [x] Define shared protocol, replay, session summary, and renderer-state contracts.
 - [x] Migrate `hub-client`, `session-model`, and `reconnect-policy` to strict TypeScript.
 - [x] Preserve runtime JSON validation at configuration and WebSocket trust boundaries.
-- [ ] Migrate renderer entry, app orchestration, terminal pane, and test API.
+- [x] Migrate renderer entry, app orchestration, terminal pane, and test API; disable renderer `allowJs`.
 - [ ] Migrate Electron main, preload, configuration store, and token loader.
 - [ ] Migrate tests and disable `allowJs` in every compiler project.
 

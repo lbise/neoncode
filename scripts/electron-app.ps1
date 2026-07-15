@@ -65,7 +65,7 @@ function Copy-ElectronAppFiles {
     )
 
     New-Item -ItemType Directory -Force -Path $DestinationDirectory | Out-Null
-    foreach ($file in @("package.json", "package-lock.json", "tsconfig.base.json", "tsconfig.node.json", "tsconfig.renderer.json", "tsconfig.tests.json", "main.js", "preload.js", "config-store.js", "token-loader.js", "index.html", "styles.css", "renderer.js")) {
+    foreach ($file in @("package.json", "package-lock.json", "tsconfig.base.json", "tsconfig.node.json", "tsconfig.renderer.json", "tsconfig.tests.json", "main.js", "preload.js", "config-store.js", "token-loader.js", "index.html", "styles.css", "renderer.ts")) {
         $source = Join-Path $SourceDirectory $file
         if (Test-Path -LiteralPath $source -PathType Leaf) {
             Copy-Item -LiteralPath $source -Destination (Join-Path $DestinationDirectory $file) -Force

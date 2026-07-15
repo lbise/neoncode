@@ -1,22 +1,37 @@
-const { Terminal } = require('@xterm/xterm');
-const { FitAddon } = require('@xterm/addon-fit');
+import { FitAddon } from '@xterm/addon-fit';
+import { Terminal, type ITheme } from '@xterm/xterm';
 
-const {
+import type {
+  ActivationMode,
+  ExitReason,
+  ExitSummary,
+  HubWelcome,
+  LaunchProfile,
+  NeoncodeDesktopApi,
+  PaneState,
+  SessionLifecycle,
+  TerminalAppearance,
+} from '../shared/types';
+import {
   HubClient,
   base64ToBytes,
   decoder,
   encoder,
   parseReplayCheckpoint,
-} = require('./hub-client');
-const {
+  type HubClientOptions,
+  type UnknownMessage,
+} from './hub-client';
+import {
   RECONNECT_INITIAL_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
   ReconnectPolicy,
   activationFallback,
-} = require('./reconnect-policy');
+} from './reconnect-policy';
+import { SessionModel } from './session-model';
 
-const CLOSE_ACK_TIMEOUT_MS = 1500;
-const LIFECYCLE_LABELS = {
+export const CLOSE_ACK_TIMEOUT_MS = 1500;
+
+const LIFECYCLE_LABELS: Record<string, string> = {
   attached: 'Attached',
   attaching: 'Attaching',
   connecting: 'Connecting',
@@ -32,11 +47,87 @@ const LIFECYCLE_LABELS = {
   starting: 'Starting',
 };
 
-function normalizeTerminalText(text) {
+type CloseAction = 'detach' | 'kill';
+type ActiveLifecycle = 'attached' | 'started';
+type TimerHandle = ReturnType<typeof setTimeout>;
+
+interface ReplayCursor {
+  instanceId: string;
+  afterOutputSeq: number;
+}
+
+interface HubStartRequest {
+  command?: string;
+  args?: string[];
+  cwd?: string | null;
+  rows?: number;
+  cols?: number;
+  persistent?: boolean;
+}
+
+export interface HubClientTransport {
+  connect(): void;
+  isOpen(): boolean;
+  attach(cursor?: ReplayCursor): boolean;
+  start(request: HubStartRequest): boolean;
+  input(bytes: Uint8Array): boolean;
+  resize(size: { rows: number; cols: number }): boolean;
+  detach(): boolean;
+  kill(): boolean;
+  close(): void;
+}
+
+export type HubClientFactory = (options: HubClientOptions) => HubClientTransport;
+
+export interface TerminalPaneOptions {
+  index: number;
+  paneId: string;
+  sessionKey: string;
+  sessionId: string;
+  activationMode: ActivationMode;
+  endpoint: string;
+  capabilityToken: string;
+  launchProfile: LaunchProfile;
+  terminalAppearance: TerminalAppearance;
+  container: HTMLElement;
+  statusElement: HTMLElement | null;
+  sessionModel: SessionModel;
+  setStatus: (text: string) => void;
+  onLifecycleChange?: (lifecycle: SessionLifecycle, error: string) => void;
+  onSessionExit?: (outcome: ExitSummary) => void;
+  hubClientFactory?: HubClientFactory;
+  reconnectPolicy?: ReconnectPolicy;
+}
+
+interface PendingClose {
+  action: CloseAction;
+  promise: Promise<void>;
+  resolve: () => void;
+  timer: TimerHandle;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function integerOrNull(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) ? value : null;
+}
+
+function normalizeExitReason(value: unknown): ExitReason {
+  if (value === 'wait_failed' || value === 'killed') return value;
+  return 'process_exit';
+}
+
+function desktopBridge(): NeoncodeDesktopApi {
+  return Reflect.get(globalThis, 'neoncodeDesktop') as NeoncodeDesktopApi;
+}
+
+export function normalizeTerminalText(text: string): string {
   return text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 }
 
-function buildTerminalTheme(appearance) {
+export function buildTerminalTheme(appearance: TerminalAppearance): ITheme {
   const theme = appearance.theme;
   return {
     background: theme.background,
@@ -62,7 +153,37 @@ function buildTerminalTheme(appearance) {
   };
 }
 
-class TerminalPane {
+export class TerminalPane {
+  readonly index: number;
+  readonly paneId: string;
+  readonly sessionKey: string;
+  readonly sessionId: string;
+  activationMode: ActivationMode;
+  readonly endpoint: string;
+  readonly capabilityToken: string;
+  readonly launchProfile: LaunchProfile;
+  readonly terminalAppearance: TerminalAppearance;
+  readonly container: HTMLElement;
+  readonly statusElement: HTMLElement | null;
+  readonly sessionModel: SessionModel;
+  readonly setStatus: (text: string) => void;
+  readonly onLifecycleChange: TerminalPaneOptions['onLifecycleChange'];
+  readonly onSessionExit: TerminalPaneOptions['onSessionExit'];
+  readonly hubClientFactory: HubClientFactory;
+  state!: PaneState;
+  hubClient: HubClientTransport | undefined;
+  resizeObserver: ResizeObserver | undefined;
+  activationFallbackUsed = false;
+  pendingClose: PendingClose | undefined;
+  closed = false;
+  connectionGeneration = 0;
+  readonly reconnectPolicy: ReconnectPolicy;
+  pasteShortcutActive = false;
+  pasteShortcutTimer: TimerHandle | undefined;
+  suppressedPasteTimer: TimerHandle | undefined;
+  supportsExitAttention = false;
+  disposed = false;
+
   constructor({
     index,
     paneId,
@@ -81,7 +202,7 @@ class TerminalPane {
     onSessionExit,
     hubClientFactory = (options) => new HubClient(options),
     reconnectPolicy = new ReconnectPolicy(),
-  }) {
+  }: TerminalPaneOptions) {
     this.index = index;
     this.paneId = paneId;
     this.sessionKey = sessionKey;
@@ -98,22 +219,10 @@ class TerminalPane {
     this.onLifecycleChange = onLifecycleChange;
     this.onSessionExit = onSessionExit;
     this.hubClientFactory = hubClientFactory;
-    this.state = undefined;
-    this.hubClient = undefined;
-    this.resizeObserver = undefined;
-    this.activationFallbackUsed = false;
-    this.pendingClose = undefined;
-    this.closed = false;
-    this.connectionGeneration = 0;
     this.reconnectPolicy = reconnectPolicy;
-    this.pasteShortcutActive = false;
-    this.pasteShortcutTimer = undefined;
-    this.suppressedPasteTimer = undefined;
-    this.supportsExitAttention = false;
-    this.disposed = false;
   }
 
-  start() {
+  start(): void {
     const terminal = new Terminal({
       cursorBlink: this.terminalAppearance.cursorBlink,
       convertEol: false,
@@ -149,20 +258,18 @@ class TerminalPane {
     this.scheduleFitAndResize();
   }
 
-  setLifecycle(lifecycle, error = '') {
+  setLifecycle(lifecycle: SessionLifecycle, error = ''): void {
     this.sessionModel.setLifecycle(this.state, lifecycle, error);
     if (this.statusElement) {
       this.statusElement.dataset.state = lifecycle;
-      this.statusElement.textContent = LIFECYCLE_LABELS[lifecycle] || lifecycle;
+      this.statusElement.textContent = LIFECYCLE_LABELS[lifecycle] ?? lifecycle;
       this.statusElement.title = error;
     }
     this.onLifecycleChange?.(lifecycle, error);
   }
 
-  close() {
-    if (this.closed) {
-      return;
-    }
+  close(): void {
+    if (this.closed) return;
     this.closed = true;
     this.connectionGeneration += 1;
     this.reconnectPolicy.cancel();
@@ -173,40 +280,34 @@ class TerminalPane {
     this.resolvePendingClose();
   }
 
-  dispose() {
-    if (this.disposed) {
-      return;
-    }
+  dispose(): void {
+    if (this.disposed) return;
     this.disposed = true;
     this.close();
     this.state?.terminal.dispose();
     this.container.replaceChildren();
   }
 
-  detachAndClose() {
+  detachAndClose(): Promise<void> {
     return this.requestClose('detach');
   }
 
-  killAndClose() {
+  killAndClose(): Promise<void> {
     return this.requestClose('kill');
   }
 
-  requestClose(action) {
+  requestClose(action: CloseAction): Promise<void> {
     this.reconnectPolicy.cancel();
-    if (this.pendingClose) {
-      return this.pendingClose.promise;
-    }
-    if (this.closed) {
-      return Promise.resolve();
-    }
+    if (this.pendingClose) return this.pendingClose.promise;
+    if (this.closed) return Promise.resolve();
     if (!this.hubClient?.isOpen() || ['detached', 'exited', 'killed'].includes(this.state.lifecycle)) {
       this.close();
       return Promise.resolve();
     }
 
     this.setLifecycle(action === 'detach' ? 'detaching' : 'killing');
-    let resolvePromise;
-    const promise = new Promise((resolve) => {
+    let resolvePromise!: () => void;
+    const promise = new Promise<void>((resolve) => {
       resolvePromise = resolve;
     });
     const timer = setTimeout(() => {
@@ -220,13 +321,11 @@ class TerminalPane {
     };
 
     const sent = action === 'detach' ? this.hubClient.detach() : this.hubClient.kill();
-    if (!sent) {
-      this.finishClose('error', `failed to send ${action}`);
-    }
+    if (!sent) this.finishClose('error', `failed to send ${action}`);
     return promise;
   }
 
-  finishClose(lifecycle, error = '') {
+  finishClose(lifecycle: SessionLifecycle, error = ''): void {
     this.state.started = false;
     this.sessionModel.setPublicStarted(this.state, false);
     this.setLifecycle(lifecycle, error);
@@ -239,30 +338,25 @@ class TerminalPane {
     this.resolvePendingClose();
   }
 
-  resolvePendingClose() {
-    if (!this.pendingClose) {
-      return;
-    }
+  resolvePendingClose(): void {
+    if (!this.pendingClose) return;
     clearTimeout(this.pendingClose.timer);
     const { resolve } = this.pendingClose;
     this.pendingClose = undefined;
     resolve();
   }
 
-  configureInputHandlers() {
+  configureInputHandlers(): void {
     const { terminal } = this.state;
 
     terminal.onData((data) => {
-      if (this.shouldSuppressDuplicatePaste(data)) {
-        return;
+      if (!this.shouldSuppressDuplicatePaste(data)) {
+        this.sendTerminalText(data, 'xterm');
       }
-      this.sendTerminalText(data, 'xterm');
     });
 
     terminal.attachCustomKeyEventHandler((event) => {
-      if (event.type !== 'keydown') {
-        return true;
-      }
+      if (event.type !== 'keydown') return true;
 
       if (event.ctrlKey && !event.altKey && !event.shiftKey && (event.code === 'Space' || event.key === ' ')) {
         console.log(`special_key ${this.index} ctrl_space`);
@@ -307,28 +401,20 @@ class TerminalPane {
     });
   }
 
-  sendTerminalBytes(bytes, _reason = 'data') {
-    if (!bytes || bytes.length === 0 || !this.state.started) {
-      return false;
-    }
-
+  sendTerminalBytes(bytes: Uint8Array, _reason = 'data'): boolean {
+    if (bytes.length === 0 || !this.state.started) return false;
     const sent = this.hubClient?.input(bytes) ?? false;
-    if (!sent) {
-      return false;
-    }
-
+    if (!sent) return false;
     this.sessionModel.recordInput(this.state);
     return true;
   }
 
-  sendTerminalText(text, reason = 'text') {
+  sendTerminalText(text: string, reason = 'text'): boolean {
     return this.sendTerminalBytes(encoder.encode(text), reason);
   }
 
-  handlePasteShortcut() {
-    if (this.pasteShortcutActive) {
-      return;
-    }
+  handlePasteShortcut(): void {
+    if (this.pasteShortcutActive) return;
     this.pasteShortcutActive = true;
     clearTimeout(this.pasteShortcutTimer);
     this.pasteClipboardText('key_paste').finally(() => {
@@ -338,26 +424,19 @@ class TerminalPane {
     });
   }
 
-  shouldSuppressDuplicatePaste(data) {
-    if (!this.state.suppressedPasteText) {
-      return false;
-    }
-
+  shouldSuppressDuplicatePaste(data: string): boolean {
+    if (!this.state.suppressedPasteText) return false;
     if (data.includes(this.state.suppressedPasteText)) {
       console.log(`terminal_input_suppressed ${this.index} duplicate_paste`);
       this.state.suppressedPasteText = '';
       return true;
     }
-
     return false;
   }
 
-  pasteText(text, reason = 'paste') {
+  pasteText(text: string, reason = 'paste'): boolean {
     const normalized = normalizeTerminalText(text || '');
-    if (!normalized) {
-      return false;
-    }
-
+    if (!normalized) return false;
     const sent = this.sendTerminalText(normalized, reason);
     if (sent) {
       this.state.suppressedPasteText = normalized;
@@ -369,44 +448,37 @@ class TerminalPane {
     return sent;
   }
 
-  async copySelection() {
+  async copySelection(): Promise<boolean> {
     const text = this.state.terminal.getSelection();
-    if (!text) {
-      return false;
-    }
+    if (!text) return false;
     try {
-      await window.neoncodeDesktop.writeClipboardText(text);
+      await desktopBridge().writeClipboardText(text);
       return !this.disposed;
     } catch (error) {
       if (!this.disposed) {
-        this.setLifecycle('error', `Clipboard write failed: ${error.message}`);
+        this.setLifecycle('error', `Clipboard write failed: ${errorMessage(error)}`);
       }
       return false;
     }
   }
 
-  async pasteClipboardText(reason = 'clipboard') {
+  async pasteClipboardText(reason = 'clipboard'): Promise<boolean> {
     try {
-      const text = await window.neoncodeDesktop.readClipboardText();
+      const text = await desktopBridge().readClipboardText();
       return this.disposed ? false : this.pasteText(text, reason);
     } catch (error) {
       if (!this.disposed) {
-        this.setLifecycle('error', `Clipboard read failed: ${error.message}`);
+        this.setLifecycle('error', `Clipboard read failed: ${errorMessage(error)}`);
       }
       return false;
     }
   }
 
-  scheduleFitAndResize() {
-    if (this.state.resizePending) {
-      return;
-    }
-
+  scheduleFitAndResize(): void {
+    if (this.state.resizePending) return;
     this.state.resizePending = true;
     requestAnimationFrame(() => {
-      if (this.disposed) {
-        return;
-      }
+      if (this.disposed) return;
       this.state.resizePending = false;
       try {
         this.state.fitAddon.fit();
@@ -419,31 +491,39 @@ class TerminalPane {
           this.sessionModel.recordResize(this.state);
           console.log(`terminal_resize ${this.index} ${rows} ${cols}`);
         }
-        if (this.state.started) {
-          this.hubClient?.resize({ rows, cols });
-        }
+        if (this.state.started) this.hubClient?.resize({ rows, cols });
       } catch (error) {
         console.warn('fit failed', error);
       }
     });
   }
 
-  connect() {
+  connect(): void {
     const generation = ++this.connectionGeneration;
     this.hubClient = this.hubClientFactory({
       endpoint: this.endpoint,
       capabilityToken: this.capabilityToken,
       sessionId: this.sessionId,
-      onOpen: (welcome) => generation === this.connectionGeneration && this.handleHubOpen(welcome),
-      onMessage: (message) => generation === this.connectionGeneration && this.handleHubMessage(message),
-      onInvalidMessage: (error) => generation === this.connectionGeneration && this.handleInvalidHubMessage(error),
-      onClose: () => generation === this.connectionGeneration && this.handleHubClose(),
-      onError: () => generation === this.connectionGeneration && this.handleHubError(),
+      onOpen: (welcome) => {
+        if (generation === this.connectionGeneration) this.handleHubOpen(welcome);
+      },
+      onMessage: (message) => {
+        if (generation === this.connectionGeneration) this.handleHubMessage(message);
+      },
+      onInvalidMessage: (error) => {
+        if (generation === this.connectionGeneration) this.handleInvalidHubMessage(error);
+      },
+      onClose: () => {
+        if (generation === this.connectionGeneration) this.handleHubClose();
+      },
+      onError: () => {
+        if (generation === this.connectionGeneration) this.handleHubError();
+      },
     });
     this.hubClient.connect();
   }
 
-  handleHubOpen(welcome) {
+  handleHubOpen(welcome: HubWelcome): void {
     console.log(`hub_connected ${this.index}`);
     this.supportsExitAttention = welcome.capabilities.includes('session_exit_attention');
     this.sessionModel.beginHubBoot(this.state, welcome.boot_id);
@@ -453,7 +533,7 @@ class TerminalPane {
     this.activate(recovering ? 'attach' : this.activationMode);
   }
 
-  activate(mode) {
+  activate(mode: ActivationMode): void {
     this.activationMode = mode;
     this.sessionModel.setActivationMode(this.state, mode);
     this.setLifecycle(mode === 'attach' ? 'attaching' : 'starting');
@@ -464,21 +544,19 @@ class TerminalPane {
       }
       : undefined;
     const sent = mode === 'attach'
-      ? this.hubClient.attach(replayCursor)
-      : this.hubClient.start({
+      ? this.hubClient?.attach(replayCursor) ?? false
+      : this.hubClient?.start({
         command: this.launchProfile.command,
         args: this.launchProfile.args,
         cwd: this.launchProfile.cwd,
         persistent: true,
         rows: this.state.terminal.rows || 30,
         cols: this.state.terminal.cols || 120,
-      });
-    if (!sent) {
-      this.handleActivationFailure(`failed to send ${mode}`);
-    }
+      }) ?? false;
+    if (!sent) this.handleActivationFailure(`failed to send ${mode}`);
   }
 
-  handleActivationFailure(message) {
+  handleActivationFailure(message: string): boolean {
     const fallback = activationFallback({
       mode: this.activationMode,
       message,
@@ -490,58 +568,63 @@ class TerminalPane {
     return true;
   }
 
-  handleInvalidHubMessage(error) {
-    this.setLifecycle('error', error.message);
-    this.state.terminal.writeln(`\r\n\x1b[31mInvalid hub JSON: ${error.message}\x1b[0m`);
+  handleInvalidHubMessage(error: unknown): void {
+    const message = errorMessage(error);
+    this.setLifecycle('error', message);
+    this.state.terminal.writeln(`\r\n\x1b[31mInvalid hub JSON: ${message}\x1b[0m`);
   }
 
-  handleHubMessage(message) {
+  handleHubMessage(message: UnknownMessage): void {
     if (message.type === 'output' && message.session_id === this.sessionId) {
       this.handleHubOutput(message);
     } else if (message.type === 'started' && message.session_id === this.sessionId) {
-      if (Object.hasOwn(message, 'instance_id') && !/^[0-9a-f]{32}$/.test(message.instance_id)) {
+      const rawInstanceId = message.instance_id;
+      if (Object.hasOwn(message, 'instance_id')
+          && (typeof rawInstanceId !== 'string' || !/^[0-9a-f]{32}$/.test(rawInstanceId))) {
         this.handleInvalidHubMessage(new Error('Invalid started session instance'));
         this.hubClient?.close();
         return;
       }
-      const instanceChanged = /^[0-9a-f]{32}$/.test(message.instance_id || '')
-        && this.state.sessionInstanceId
-        && this.state.sessionInstanceId !== message.instance_id;
+      const instanceId = typeof rawInstanceId === 'string' && /^[0-9a-f]{32}$/.test(rawInstanceId)
+        ? rawInstanceId
+        : null;
+      const instanceChanged = instanceId !== null
+        && Boolean(this.state.sessionInstanceId)
+        && this.state.sessionInstanceId !== instanceId;
       if (instanceChanged) {
         this.state.terminal.reset();
         this.state.terminal.writeln('\x1b[33mReplacement session started; terminal replay reset\x1b[0m');
         this.sessionModel.applyReplayCheckpoint(this.state, {
-          instanceId: message.instance_id,
+          instanceId,
           firstAvailableSeq: 1,
           replayThroughSeq: 0,
           replayTruncated: false,
           resetRequired: true,
         });
       } else {
-        this.sessionModel.setSessionInstance(this.state, message.instance_id);
+        this.sessionModel.setSessionInstance(this.state, rawInstanceId);
       }
       this.handleHubActive('started');
     } else if (message.type === 'attached' && message.session_id === this.sessionId) {
-      let checkpoint;
       try {
-        checkpoint = parseReplayCheckpoint(message);
+        const checkpoint = parseReplayCheckpoint(message);
+        if (checkpoint) {
+          if (checkpoint.resetRequired) {
+            this.state.terminal.reset();
+            this.state.terminal.writeln('\x1b[33mSession incarnation changed; terminal replay reset\x1b[0m');
+          }
+          this.sessionModel.applyReplayCheckpoint(this.state, checkpoint);
+          if (checkpoint.replayTruncated
+              || (checkpoint.resetRequired && checkpoint.firstAvailableSeq > 1)) {
+            this.state.terminal.writeln(
+              `\x1b[33mReplay truncated before output sequence ${checkpoint.firstAvailableSeq}\x1b[0m`,
+            );
+          }
+        }
       } catch (error) {
         this.handleInvalidHubMessage(error);
         this.hubClient?.close();
         return;
-      }
-      if (checkpoint) {
-        if (checkpoint.resetRequired) {
-          this.state.terminal.reset();
-          this.state.terminal.writeln('\x1b[33mSession incarnation changed; terminal replay reset\x1b[0m');
-        }
-        this.sessionModel.applyReplayCheckpoint(this.state, checkpoint);
-        if (checkpoint.replayTruncated
-            || (checkpoint.resetRequired && checkpoint.firstAvailableSeq > 1)) {
-          this.state.terminal.writeln(
-            `\x1b[33mReplay truncated before output sequence ${checkpoint.firstAvailableSeq}\x1b[0m`,
-          );
-        }
       }
       this.handleHubActive('attached');
     } else if (message.type === 'detached' && message.session_id === this.sessionId) {
@@ -549,14 +632,12 @@ class TerminalPane {
     } else if (message.type === 'killed' && message.session_id === this.sessionId) {
       this.finishClose('killed');
     } else if (message.type === 'exit' && message.session_id === this.sessionId) {
-      const outcome = {
+      const outcome: ExitSummary = {
         attentionId: typeof message.attention_id === 'string' && /^[0-9a-f]{32}$/.test(message.attention_id)
           ? message.attention_id
           : null,
-        status: Number.isInteger(message.status) ? message.status : null,
-        reason: ['process_exit', 'wait_failed', 'killed'].includes(message.reason)
-          ? message.reason
-          : 'process_exit',
+        status: integerOrNull(message.status),
+        reason: normalizeExitReason(message.reason),
       };
       this.state.started = false;
       this.sessionModel.setPublicStarted(this.state, false);
@@ -574,11 +655,14 @@ class TerminalPane {
       this.resolvePendingClose();
     } else if (message.type === 'error'
         && (!message.session_id || message.session_id === this.sessionId)) {
-      this.handleHubProtocolError(message.message || 'Hub protocol error');
+      const messageText = typeof message.message === 'string' && message.message
+        ? message.message
+        : 'Hub protocol error';
+      this.handleHubProtocolError(messageText);
     }
   }
 
-  handleHubActive(lifecycle) {
+  handleHubActive(lifecycle: ActiveLifecycle): void {
     this.state.started = true;
     this.sessionModel.setPublicStarted(this.state, true);
     this.setLifecycle(lifecycle);
@@ -589,29 +673,26 @@ class TerminalPane {
     this.scheduleFitAndResize();
   }
 
-  handleHubProtocolError(message) {
+  handleHubProtocolError(message: string): void {
     if (['attaching', 'starting'].includes(this.state.lifecycle)
         && this.handleActivationFailure(message)) {
       return;
     }
-
     this.setLifecycle('error', message);
     this.state.terminal.writeln(`\r\n\x1b[31mHub error: ${message}\x1b[0m`);
     this.setStatus(`Hub error: ${message}`);
-    if (this.pendingClose) {
-      this.finishClose('error', message);
-    }
+    if (this.pendingClose) this.finishClose('error', message);
   }
 
-  handleHubOutput(message) {
-    const bytes = base64ToBytes(message.data_b64 || '');
+  handleHubOutput(message: UnknownMessage): void {
+    const bytes = base64ToBytes(typeof message.data_b64 === 'string' ? message.data_b64 : '');
     const text = decoder.decode(bytes);
     if (this.sessionModel.recordOutput(this.state, text, message.seq)) {
       this.state.terminal.write(bytes);
     }
   }
 
-  handleHubClose() {
+  handleHubClose(): void {
     this.state.started = false;
     this.sessionModel.setPublicStarted(this.state, false);
     if (this.pendingClose) {
@@ -620,21 +701,17 @@ class TerminalPane {
       this.resolvePendingClose();
       return;
     }
-    if (this.closed || ['detached', 'killed'].includes(this.state.lifecycle)) {
-      return;
-    }
+    if (this.closed || ['detached', 'killed'].includes(this.state.lifecycle)) return;
 
     console.log(`hub_closed ${this.index}`);
     this.state.terminal.writeln('\r\n\x1b[33mDisconnected from neoncode-hub; reconnecting\x1b[0m');
     this.scheduleReconnect();
   }
 
-  scheduleReconnect() {
+  scheduleReconnect(): void {
     if (this.closed || this.pendingClose) return;
     const scheduled = this.reconnectPolicy.schedule(() => {
-      if (!this.closed && !this.pendingClose) {
-        this.connect();
-      }
+      if (!this.closed && !this.pendingClose) this.connect();
     });
     if (!scheduled) return;
     this.setLifecycle('reconnecting');
@@ -642,14 +719,12 @@ class TerminalPane {
     this.sessionModel.recordReconnect(this.state, scheduled.attempts, scheduled.delayMs);
   }
 
-  forceDisconnectForTest() {
+  forceDisconnectForTest(): void {
     this.hubClient?.close();
   }
 
-  handleHubError() {
-    if (this.closed) {
-      return;
-    }
+  handleHubError(): void {
+    if (this.closed) return;
     console.log(`hub_error ${this.index}`);
     this.setLifecycle('error', 'WebSocket error');
     this.state.terminal.writeln('\r\n\x1b[31mWebSocket error. Is ./dev hub running?\x1b[0m');
@@ -657,11 +732,7 @@ class TerminalPane {
   }
 }
 
-module.exports = {
-  CLOSE_ACK_TIMEOUT_MS,
+export {
   RECONNECT_INITIAL_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
-  TerminalPane,
-  buildTerminalTheme,
-  normalizeTerminalText,
 };

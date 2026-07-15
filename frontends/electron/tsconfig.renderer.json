@@ -5,12 +5,10 @@
     "outDir": "dist",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": [],
-    "allowJs": true,
-    "checkJs": false
+    "allowJs": false
   },
   "include": [
-    "renderer.js",
-    "renderer/**/*.js",
+    "renderer.ts",
     "renderer/**/*.ts",
     "renderer/**/*.d.ts",
     "shared/**/*.ts"

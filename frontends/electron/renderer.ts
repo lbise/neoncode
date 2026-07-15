@@ -1,4 +1,4 @@
-const { startRendererApp } = require('./renderer/app');
+import { startRendererApp } from './renderer/app';
 
 const rendererApp = startRendererApp({
   bootstrap: window.neoncodeDesktop.config,

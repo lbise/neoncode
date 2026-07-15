@@ -123,14 +123,15 @@ hub/tests/                         real WebSocket and PTY integration tests
 frontends/electron/main.js          Electron main process, lifecycle, and state persistence
 frontends/electron/config-store.js  versioned config/state validation, migration, recovery, atomic IO
 frontends/electron/preload.js       narrow context-isolated desktop bridge
-frontends/electron/renderer.js      browser-bundle bootstrap entrypoint (migration pending)
-frontends/electron/renderer/        renderer modules:
-  app.js                            app/bootstrap and pane grid wiring (migration pending)
+frontends/electron/renderer.ts      typed browser-bundle bootstrap entrypoint
+frontends/electron/renderer/        strict TypeScript renderer modules:
+  app.ts                            typed app/bootstrap and pane grid orchestration
   hub-client.ts                     typed WebSocket protocol client and validators
   session-model.ts                  typed pane/session state and bounded output view
-  terminal-pane.js                  xterm.js pane, input, resize, output handling (migration pending)
+  terminal-pane.ts                  typed xterm.js pane, input, resize, and output handling
   reconnect-policy.ts               typed reconnect timing and activation fallback
-  test-api.js                       test-mode structured renderer API (migration pending)
+  test-api.ts                       typed test-mode structured renderer API
+  globals.d.ts                      context-isolated desktop, public-state, and test globals
 frontends/electron/shared/types.ts  shared protocol and renderer-state contracts
 frontends/electron/tsconfig.*.json  strict Node, renderer, and test compiler boundaries
 frontends/electron/dist/            ignored generated CommonJS and renderer bundle
@@ -139,7 +140,7 @@ scripts/electron-app.ps1            npm ci, strict build, Windows publish/start
 scripts/electron-test.ps1           Windows wrapper for Playwright tests
 ```
 
-The Electron frontend is migrating incrementally to strict TypeScript without introducing a runtime TypeScript loader. `tsc` type-checks separate Node, DOM renderer, and test projects; generated CommonJS and the esbuild browser bundle live only under ignored `dist/`. During migration, remaining JavaScript is copied through the same build so published Electron and all tests execute generated artifacts rather than a mixture of source and output files.
+The Electron frontend is migrating incrementally to strict TypeScript without introducing a runtime TypeScript loader. Phase 2 completed the browser renderer migration and disabled `allowJs` for its strict DOM project. `tsc` still type-checks separate Node, renderer, and test projects; generated CommonJS and the esbuild browser bundle live only under ignored `dist/`. Remaining Node/preload/configuration and test JavaScript is copied through the applicable build projects so published Electron and all tests execute generated artifacts rather than a mixture of source and output files.
 
 ## Electron security boundary
 
