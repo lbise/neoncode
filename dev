@@ -161,13 +161,7 @@ case "$command" in
     done < <(find frontends/electron \
       -path 'frontends/electron/node_modules' -prune -o \
       -name '*.js' -print0)
-    node frontends/electron/tests/config-store.js
-    node frontends/electron/tests/token-loader.js
-    node frontends/electron/tests/hub-client-auth.js
-    node frontends/electron/tests/reconnect-policy.js
-    node frontends/electron/tests/session-model.js
-    node frontends/electron/tests/reconnect-output-soak.js
-    node frontends/electron/tests/terminal-pane-fake-hub.js
+    npm --prefix frontends/electron run check
     cargo fmt --check
     cargo check
     cargo test

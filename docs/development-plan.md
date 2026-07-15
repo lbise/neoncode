@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Incarnation-aware bounded replay checkpoints complete
+Stage: Strict TypeScript migration phase 1 complete
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: extended reconnect and output stability soaking, then richer live metadata
+Next focus: migrate renderer orchestration, then Electron main/preload and tests
 ```
 
 The Windows tech stack is now:
@@ -392,6 +392,22 @@ Status: complete.
 - [x] Keep deterministic policy, timeout, race, and soak coverage in `./dev check`/Rust tests.
 
 Extended multi-minute wall-clock and long-session resource stability remain separate manual/CI soak gates.
+
+### Milestone: strict TypeScript migration
+
+Status: phase 1 of 4 complete.
+
+- [x] Add strict, environment-specific Node/renderer/test TypeScript projects.
+- [x] Build all mixed JavaScript/TypeScript sources into an ignored clean `dist/` runtime tree.
+- [x] Run unit and Electron functional tests only against generated CommonJS/browser artifacts.
+- [x] Define shared protocol, replay, session summary, and renderer-state contracts.
+- [x] Migrate `hub-client`, `session-model`, and `reconnect-policy` to strict TypeScript.
+- [x] Preserve runtime JSON validation at configuration and WebSocket trust boundaries.
+- [ ] Migrate renderer entry, app orchestration, terminal pane, and test API.
+- [ ] Migrate Electron main, preload, configuration store, and token loader.
+- [ ] Migrate tests and disable `allowJs` in every compiler project.
+
+The migration intentionally does not use a runtime TypeScript loader. Windows publish output contains generated JavaScript under `dist/`, and every phase must continue passing the real hidden-Electron relaunch suite.
 
 ### 6. CLI/API
 

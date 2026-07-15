@@ -1,7 +1,52 @@
-const MAX_RECENT_OUTPUT_CHARS = 32768;
+import type { FitAddon } from '@xterm/addon-fit';
+import type { Terminal } from '@xterm/xterm';
 
-class SessionModel {
-  constructor({ windowRef = window } = {}) {
+import type {
+  ActivationMode,
+  ExitSummary,
+  NormalizedSessionSummary,
+  PaneState,
+  PublicConfiguration,
+  PublicPaneState,
+  RendererPublicState,
+  ReplayCheckpoint,
+  SessionLifecycle,
+} from '../shared/types';
+
+export const MAX_RECENT_OUTPUT_CHARS = 32768;
+
+interface WindowStateTarget {
+  neoncodeXtermState?: RendererPublicState;
+}
+
+interface SessionModelOptions {
+  windowRef?: WindowStateTarget;
+}
+
+interface CreatePaneStateOptions {
+  index: number;
+  paneId: string;
+  sessionKey: string;
+  sessionId: string;
+  activationMode: ActivationMode;
+  terminal: Terminal;
+  fitAddon: FitAddon;
+}
+
+interface TerminalSize {
+  rows: number;
+  cols: number;
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+export class SessionModel {
+  readonly windowRef: WindowStateTarget;
+  readonly publicState: RendererPublicState;
+
+  constructor({ windowRef = window as WindowStateTarget }: SessionModelOptions = {}) {
     this.windowRef = windowRef;
     this.publicState = {
       configuration: {
@@ -29,44 +74,52 @@ class SessionModel {
     this.windowRef.neoncodeXtermState = this.publicState;
   }
 
-  setConfiguration(configuration) {
-    this.publicState.configuration = JSON.parse(JSON.stringify(configuration));
+  setConfiguration(configuration: PublicConfiguration): void {
+    this.publicState.configuration = cloneJson(configuration);
   }
 
-  addConfigurationWarning(warning) {
+  addConfigurationWarning(warning: string): void {
     if (!this.publicState.configuration.warnings.includes(warning)) {
       this.publicState.configuration.warnings.push(warning);
     }
   }
 
-  setWorkspaceSummaries(summaries) {
-    this.publicState.workspace.summaries = JSON.parse(JSON.stringify(summaries));
+  setWorkspaceSummaries(summaries: unknown[]): void {
+    this.publicState.workspace.summaries = cloneJson(summaries);
   }
 
-  setActiveWorkspace(workspaceId) {
+  setActiveWorkspace(workspaceId: string): void {
     this.publicState.workspace.activeWorkspaceId = workspaceId;
     this.publicState.configuration.activeWorkspaceId = workspaceId;
   }
 
-  resetPanes(workspaceId) {
+  resetPanes(workspaceId: string): void {
     this.publicState.panes = [];
     this.setActiveWorkspace(workspaceId);
   }
 
-  setSessionDiscoveryStatus(status, error = '') {
+  setSessionDiscoveryStatus(status: string, error = ''): void {
     this.publicState.sessionDiscovery.status = status;
     this.publicState.sessionDiscovery.error = error;
   }
 
-  recordSessionList(summaries) {
+  recordSessionList(summaries: NormalizedSessionSummary[]): void {
     this.publicState.sessionDiscovery.status = 'ready';
     this.publicState.sessionDiscovery.sessionListEvents += 1;
     this.publicState.sessionDiscovery.sessions = summaries.map((summary) => summary.sessionId);
-    this.publicState.sessionDiscovery.sessionSummaries = JSON.parse(JSON.stringify(summaries));
+    this.publicState.sessionDiscovery.sessionSummaries = cloneJson(summaries);
     this.publicState.sessionDiscovery.error = '';
   }
 
-  createPaneState({ index, paneId, sessionKey, sessionId, activationMode, terminal, fitAddon }) {
+  createPaneState({
+    index,
+    paneId,
+    sessionKey,
+    sessionId,
+    activationMode,
+    terminal,
+    fitAddon,
+  }: CreatePaneStateOptions): PaneState {
     const state = {
       index,
       paneId,
@@ -95,9 +148,10 @@ class SessionModel {
       replayTruncated: false,
       replayWarning: '',
       replayResetEvents: 0,
-    };
+    } as PaneState;
 
-    const publicPane = {
+    const theme = terminal.options.theme ?? {};
+    const publicPane: PublicPaneState = {
       paneId,
       sessionKey,
       sessionId,
@@ -118,12 +172,12 @@ class SessionModel {
       reconnectAttempts: 0,
       reconnectEvents: 0,
       reconnectDelayMs: 0,
-      fontFamily: terminal.options.fontFamily,
-      fontSize: terminal.options.fontSize,
-      cursorBlink: terminal.options.cursorBlink,
-      background: terminal.options.theme.background,
-      magenta: terminal.options.theme.magenta,
-      brightMagenta: terminal.options.theme.brightMagenta,
+      fontFamily: terminal.options.fontFamily ?? '',
+      fontSize: terminal.options.fontSize ?? 0,
+      cursorBlink: terminal.options.cursorBlink ?? false,
+      background: theme.background ?? '',
+      magenta: theme.magenta ?? '',
+      brightMagenta: theme.brightMagenta ?? '',
       latestExit: null,
       sessionInstanceId: '',
       replayTruncated: false,
@@ -136,20 +190,20 @@ class SessionModel {
     return state;
   }
 
-  pane(state) {
+  pane(state: PaneState): PublicPaneState {
     return state.publicPane;
   }
 
-  setPublicStarted(state, started) {
+  setPublicStarted(state: PaneState, started: boolean): void {
     this.pane(state).started = started;
   }
 
-  setActivationMode(state, activationMode) {
+  setActivationMode(state: PaneState, activationMode: ActivationMode): void {
     state.activationMode = activationMode;
     this.pane(state).activationMode = activationMode;
   }
 
-  setLifecycle(state, lifecycle, error = '') {
+  setLifecycle(state: PaneState, lifecycle: SessionLifecycle, error = ''): void {
     state.lifecycle = lifecycle;
     state.error = error;
     const pane = this.pane(state);
@@ -157,13 +211,13 @@ class SessionModel {
     pane.error = error;
   }
 
-  updateSize(state, { rows, cols }) {
+  updateSize(state: PaneState, { rows, cols }: TerminalSize): void {
     const pane = this.pane(state);
     pane.rows = rows;
     pane.cols = cols;
   }
 
-  beginHubBoot(state, bootId) {
+  beginHubBoot(state: PaneState, bootId: string): void {
     if (state.hubBootId && state.hubBootId !== bootId && !state.sessionInstanceId) {
       state.firstOutputSeq = 0;
       state.lastOutputSeq = 0;
@@ -176,7 +230,7 @@ class SessionModel {
     this.pane(state).hubBootId = bootId;
   }
 
-  applyReplayCheckpoint(state, checkpoint) {
+  applyReplayCheckpoint(state: PaneState, checkpoint: ReplayCheckpoint): void {
     const pane = this.pane(state);
     if (checkpoint.resetRequired) {
       const replayBaseline = Math.max(0, checkpoint.firstAvailableSeq - 1);
@@ -207,13 +261,13 @@ class SessionModel {
     pane.replayTruncated = checkpoint.replayTruncated;
   }
 
-  setSessionInstance(state, instanceId) {
-    if (!/^[0-9a-f]{32}$/.test(instanceId || '')) return;
+  setSessionInstance(state: PaneState, instanceId: unknown): void {
+    if (typeof instanceId !== 'string' || !/^[0-9a-f]{32}$/.test(instanceId)) return;
     state.sessionInstanceId = instanceId;
     this.pane(state).sessionInstanceId = instanceId;
   }
 
-  recordReconnect(state, attempts, delayMs) {
+  recordReconnect(state: PaneState, attempts: number, delayMs: number): void {
     state.reconnectAttempts = attempts;
     state.reconnectEvents += 1;
     const pane = this.pane(state);
@@ -222,25 +276,25 @@ class SessionModel {
     pane.reconnectDelayMs = delayMs;
   }
 
-  clearReconnect(state) {
+  clearReconnect(state: PaneState): void {
     state.reconnectAttempts = 0;
     const pane = this.pane(state);
     pane.reconnectAttempts = 0;
     pane.reconnectDelayMs = 0;
   }
 
-  recordExit(state, outcome) {
+  recordExit(state: PaneState, outcome: ExitSummary): void {
     state.latestExit = { ...outcome };
     this.pane(state).latestExit = { ...outcome };
   }
 
-  recordInput(state) {
+  recordInput(state: PaneState): void {
     state.inputEvents += 1;
     this.pane(state).inputEvents = state.inputEvents;
   }
 
-  recordOutput(state, text, seq) {
-    const outputSeq = Number.isSafeInteger(seq) ? seq : state.lastOutputSeq + 1;
+  recordOutput(state: PaneState, text: string, seq?: number): boolean {
+    const outputSeq = Number.isSafeInteger(seq) ? seq as number : state.lastOutputSeq + 1;
     if (outputSeq <= state.lastOutputSeq) {
       return false;
     }
@@ -261,13 +315,8 @@ class SessionModel {
     return true;
   }
 
-  recordResize(state) {
+  recordResize(state: PaneState): void {
     state.resizeEvents += 1;
     this.pane(state).resizeEvents = state.resizeEvents;
   }
 }
-
-module.exports = {
-  MAX_RECENT_OUTPUT_CHARS,
-  SessionModel,
-};

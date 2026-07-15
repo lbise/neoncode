@@ -17,6 +17,7 @@ Thumbs.db
 
 # Node/Electron
 node_modules/
+/frontends/electron/dist/
 
 # Local agent/session artifacts
 session.jsonl

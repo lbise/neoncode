@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": [
+    "renderer.js",
+    "renderer/**/*.js",
+    "renderer/**/*.ts",
+    "renderer/**/*.d.ts",
+    "shared/**/*.ts"
+  ],
+  "exclude": ["dist", "node_modules"]
+}

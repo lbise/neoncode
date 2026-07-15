@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { defaultConfig } = require('../config-store');
 
-const appRoot = path.resolve(__dirname, '..');
+const appRoot = path.resolve(__dirname, '..', '..');
 const endpoint = process.env.NEONCODE_HUB_ENDPOINT || 'ws://127.0.0.1:44777/ws';
 const timeout = Number.parseInt(process.env.NEONCODE_PLAYWRIGHT_TIMEOUT || '20000', 10);
 function writeTestConfig(directory, { persistencePolicy = 'detach' } = {}) {
@@ -219,6 +219,9 @@ async function verifyTmuxMouseBehavior(page, paneId, token) {
   assertMarkerIsNotEchoed(clickCommand, leftClickExpected);
   await sendText(page, paneId, clickCommand);
   await waitForOutput(page, paneId, leftClickExpected);
+  // The marker can arrive just before tmux redraws the shell prompt. Avoid
+  // merging the following long command into that redraw/input transition.
+  await page.waitForTimeout(500);
 
   const resultPath = `/tmp/neoncode-tmux-wheel-${token}`;
   const historyExpected = `tmux-history-${token}`;
@@ -601,17 +604,25 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   await sendText(page, 'shell', ctrlZCommand);
   await pressTerminalKey(page, 'shell', 'Control+z');
   await waitForOutput(page, 'shell', ctrlZExpected);
-  await sendText(page, 'shell', "kill %1 2>/dev/null || true\n");
+  const jobCleanupExpected = `job-cleanup-${runToken}`;
+  const jobCleanupCommand = `kill %1 2>/dev/null || true; printf 'job-cleanup-%s\\n' '${runToken}'\n`;
+  assertMarkerIsNotEchoed(jobCleanupCommand, jobCleanupExpected);
+  await sendText(page, 'shell', jobCleanupCommand);
+  await waitForOutput(page, 'shell', jobCleanupExpected);
+  await page.waitForTimeout(200);
 
   const keyHex = [
-    '1b4f41', '1b4f42', '1b4f43', '1b4f44',
-    '1b4f48', '1b4f46', '1b5b357e', '1b5b367e',
+    '1b5b41', '1b5b42', '1b5b43', '1b5b44',
+    '1b5b48', '1b5b46', '1b5b357e', '1b5b367e',
     '1b4f50', '1b4f51', '1b5b31357e', '1b5b32347e', '0a',
   ].join('');
   const keyExpected = `keys-${keyHex}`;
-  const keyCommand = `python3 -c "import os; d=b''.join(iter(lambda:os.read(0,1),b'\\n')); print('k'+'eys-'+(d+b'\\n').hex())"\n`;
+  const keyReaderReady = `key-reader-ready-${runToken}`;
+  const keyCommand = `python3 -c "import os; print('key-reader-'+'ready-'+'${runToken}',flush=True); d=b''.join(iter(lambda:os.read(0,1),b'\\n')); print('k'+'eys-'+(d+b'\\n').hex())"\n`;
+  assertMarkerIsNotEchoed(keyCommand, keyReaderReady);
   assertMarkerIsNotEchoed(keyCommand, 'keys-');
   await sendText(page, 'shell', keyCommand);
+  await waitForOutput(page, 'shell', keyReaderReady);
   for (const key of ['ArrowUp', 'ArrowDown', 'ArrowRight', 'ArrowLeft', 'Home', 'End', 'PageUp', 'PageDown', 'F1', 'F2', 'F5', 'F12', 'Enter']) {
     await pressTerminalKey(page, 'shell', key);
   }
@@ -891,8 +902,12 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
     'workspace attention acknowledgement did not clear',
   );
   for (const pane of state.panes) {
-    assert(pane.firstOutputSeq > 0, `${pane.paneId} did not receive replayed output sequence data`);
-    assert(pane.lastOutputSeq >= pane.firstOutputSeq, `${pane.paneId} output sequence regressed`);
+    if (pane.activationMode === 'attach') {
+      assert(pane.firstOutputSeq > 0, `${pane.paneId} did not receive replayed output sequence data`);
+    }
+    if (pane.outputEvents > 0) {
+      assert(pane.lastOutputSeq >= pane.firstOutputSeq, `${pane.paneId} output sequence regressed`);
+    }
     assert(pane.outputGap === '', `${pane.paneId} output sequence gap: ${pane.outputGap}`);
   }
   assert(

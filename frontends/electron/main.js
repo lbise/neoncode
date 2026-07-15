@@ -219,7 +219,7 @@ function configureSessionSecurity() {
 
 function createWindow() {
   Menu.setApplicationMenu(null);
-  const indexPath = path.join(__dirname, 'index.html');
+  const indexPath = path.join(__dirname, '..', 'index.html');
   const appUrl = pathToFileURL(indexPath).toString();
   const windowSize = restoredWindowSize();
   allowWindowClose = false;

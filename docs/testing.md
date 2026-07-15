@@ -57,6 +57,8 @@ Future hub integration coverage should include transport-level oversized frames,
 
 ### 2. Renderer unit/integration tests
 
+The incremental TypeScript build strictly checks separate Node, DOM renderer, and test projects, emits mixed sources into a clean ignored `frontends/electron/dist/`, and runs tests against generated CommonJS. This prevents source/output resolution differences while JavaScript modules are migrated in phases.
+
 Renderer state transitions and protocol decisions should be tested without launching Electron where possible.
 
 Use injected/fake dependencies for:

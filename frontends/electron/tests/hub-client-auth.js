@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { createHmac, webcrypto } = require('node:crypto');
 
-global.crypto = webcrypto;
+Object.defineProperty(global, 'crypto', { configurable: true, value: webcrypto });
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -40,7 +40,7 @@ class MockWebSocket {
   }
 }
 
-global.WebSocket = MockWebSocket;
+Object.defineProperty(global, 'WebSocket', { configurable: true, value: MockWebSocket });
 
 class FakeClock {
   constructor() {

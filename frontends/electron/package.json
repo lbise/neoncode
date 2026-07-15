@@ -3,19 +3,30 @@
   "version": "0.1.0",
   "private": true,
   "description": "NeonCode Electron app rendering neoncode-hub PTYs with xterm.js.",
-  "main": "main.js",
+  "type": "commonjs",
+  "main": "dist/main.js",
   "scripts": {
-    "build:renderer": "esbuild renderer.js --bundle --platform=browser --format=iife --outfile=renderer.bundle.js",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.renderer.json --noEmit && tsc -p tsconfig.tests.json --noEmit",
+    "build:node": "tsc -p tsconfig.node.json",
+    "build:renderer:modules": "tsc -p tsconfig.renderer.json",
+    "build:tests": "tsc -p tsconfig.tests.json",
+    "build:renderer": "esbuild renderer.js --bundle --platform=browser --format=iife --target=es2022 --outfile=dist/renderer.bundle.js",
+    "build": "npm run clean && npm run typecheck && npm run build:node && npm run build:renderer:modules && npm run build:tests && npm run build:renderer",
+    "test:unit": "node dist/tests/config-store.js && node dist/tests/token-loader.js && node dist/tests/hub-client-auth.js && node dist/tests/reconnect-policy.js && node dist/tests/session-model.js && node dist/tests/reconnect-output-soak.js && node dist/tests/terminal-pane-fake-hub.js",
+    "check": "npm run build && npm run test:unit",
     "start": "electron .",
-    "test": "node tests/electron-functional.js"
+    "test": "node dist/tests/electron-functional.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0"
   },
   "devDependencies": {
+    "@types/node": "24.10.1",
     "electron": "43.1.0",
     "esbuild-wasm": "0.28.1",
-    "playwright": "1.61.1"
+    "playwright": "1.61.1",
+    "typescript": "5.9.3"
   }
 }

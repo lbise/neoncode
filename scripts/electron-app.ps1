@@ -65,14 +65,14 @@ function Copy-ElectronAppFiles {
     )
 
     New-Item -ItemType Directory -Force -Path $DestinationDirectory | Out-Null
-    foreach ($file in @("package.json", "package-lock.json", "main.js", "preload.js", "config-store.js", "token-loader.js", "index.html", "styles.css", "renderer.js")) {
+    foreach ($file in @("package.json", "package-lock.json", "tsconfig.base.json", "tsconfig.node.json", "tsconfig.renderer.json", "tsconfig.tests.json", "main.js", "preload.js", "config-store.js", "token-loader.js", "index.html", "styles.css", "renderer.js")) {
         $source = Join-Path $SourceDirectory $file
         if (Test-Path -LiteralPath $source -PathType Leaf) {
             Copy-Item -LiteralPath $source -Destination (Join-Path $DestinationDirectory $file) -Force
         }
     }
 
-    foreach ($directory in @("renderer", "tests")) {
+    foreach ($directory in @("renderer", "shared", "tests")) {
         $source = Join-Path $SourceDirectory $directory
         if (Test-Path -LiteralPath $source -PathType Container) {
             $destination = Join-Path $DestinationDirectory $directory
@@ -106,12 +106,12 @@ switch ($Command) {
         Copy-ElectronAppFiles -SourceDirectory $sourceDir -DestinationDirectory $publishedDir
         Invoke-Npm -WorkingDirectory $publishedDir -Arguments "ci"
         Invoke-Npm -WorkingDirectory $publishedDir -Arguments "exec -- install-electron"
-        Invoke-Npm -WorkingDirectory $publishedDir -Arguments "run build:renderer"
+        Invoke-Npm -WorkingDirectory $publishedDir -Arguments "run build"
 
         $packageJson = Join-Path $publishedDir "package.json"
         $electronBin = Join-Path $publishedDir "node_modules\electron\dist\electron.exe"
-        $preload = Join-Path $publishedDir "preload.js"
-        $rendererBundle = Join-Path $publishedDir "renderer.bundle.js"
+        $preload = Join-Path $publishedDir "dist\preload.js"
+        $rendererBundle = Join-Path $publishedDir "dist\renderer.bundle.js"
         $xtermPackage = Join-Path $publishedDir "node_modules\@xterm\xterm\package.json"
         $fitPackage = Join-Path $publishedDir "node_modules\@xterm\addon-fit\package.json"
 

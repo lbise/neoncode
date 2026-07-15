@@ -23,7 +23,7 @@ function Resolve-Npm {
 
 $publishedDir = Join-Path $OutputPath "electron"
 $packageJson = Join-Path $publishedDir "package.json"
-$testScript = Join-Path $publishedDir "tests\electron-functional.js"
+$testScript = Join-Path $publishedDir "dist\tests\electron-functional.js"
 $playwrightPackage = Join-Path $publishedDir "node_modules\playwright\package.json"
 
 foreach ($required in @($packageJson, $testScript, $playwrightPackage)) {

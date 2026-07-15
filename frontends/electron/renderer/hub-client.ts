@@ -1,9 +1,58 @@
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-const AUTHENTICATION_TIMEOUT_MS = 5000;
-const WELCOME_TIMEOUT_MS = 3000;
+import type {
+  HubWelcome,
+  NormalizedSessionSummary,
+  ReplayCheckpoint,
+  RetainedExitSummary,
+  SessionSummaryState,
+} from '../shared/types';
 
-function bytesToBase64(bytes) {
+export const encoder = new TextEncoder();
+export const decoder = new TextDecoder();
+export const AUTHENTICATION_TIMEOUT_MS = 5000;
+export const WELCOME_TIMEOUT_MS = 3000;
+
+type TimerHandle = ReturnType<typeof setTimeout>;
+type UnknownMessage = Record<string, unknown>;
+
+interface HubClientOptions {
+  endpoint: string;
+  capabilityToken: string;
+  sessionId: string;
+  onOpen?: (welcome: HubWelcome) => void;
+  onMessage?: (message: UnknownMessage) => void;
+  onInvalidMessage?: (error: unknown, raw?: unknown) => void;
+  onClose?: (event: CloseEvent) => void;
+  onError?: (event: Event) => void;
+  setTimer?: (callback: () => void, delayMs: number) => TimerHandle;
+  clearTimer?: (timer: TimerHandle) => void;
+  authenticationTimeoutMs?: number;
+  welcomeTimeoutMs?: number;
+}
+
+interface AttachCursor {
+  instanceId?: string;
+  afterOutputSeq?: number;
+}
+
+interface StartOptions {
+  command?: string;
+  args?: string[];
+  cwd?: string | null;
+  rows?: number;
+  cols?: number;
+  persistent?: boolean;
+}
+
+interface TerminalSize {
+  rows: number;
+  cols: number;
+}
+
+function isRecord(value: unknown): value is UnknownMessage {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
   let binary = '';
   for (const byte of bytes) {
     binary += String.fromCharCode(byte);
@@ -11,7 +60,7 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
-function hexToBytes(value) {
+function hexToBytes(value: string): Uint8Array {
   if (!/^[0-9a-fA-F]+$/.test(value) || value.length % 2 !== 0) {
     throw new Error('Invalid hexadecimal value');
   }
@@ -22,33 +71,42 @@ function hexToBytes(value) {
   return bytes;
 }
 
-function bytesToHex(bytes) {
+function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
-async function importAuthenticationKey(capabilityToken, usages) {
+async function importAuthenticationKey(capabilityToken: string, usages: KeyUsage[]): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     'raw',
-    hexToBytes(capabilityToken),
+    hexToBytes(capabilityToken).buffer as ArrayBuffer,
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     usages,
   );
 }
 
-async function createAuthenticationHmac(capabilityToken, payload) {
+async function createAuthenticationHmac(capabilityToken: string, payload: string): Promise<string> {
   const key = await importAuthenticationKey(capabilityToken, ['sign']);
   const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
   return bytesToHex(new Uint8Array(signature));
 }
 
-async function verifyAuthenticationHmac(capabilityToken, payload, hmac) {
+async function verifyAuthenticationHmac(
+  capabilityToken: string,
+  payload: string,
+  hmac: string,
+): Promise<boolean> {
   const key = await importAuthenticationKey(capabilityToken, ['verify']);
-  return crypto.subtle.verify('HMAC', key, hexToBytes(hmac), encoder.encode(payload));
+  return crypto.subtle.verify(
+    'HMAC',
+    key,
+    hexToBytes(hmac).buffer as ArrayBuffer,
+    encoder.encode(payload),
+  );
 }
 
-function normalizeExitSummary(exit, sessionId) {
-  if (!exit || typeof exit !== 'object' || Array.isArray(exit)) {
+function normalizeExitSummary(exit: unknown, sessionId: string): RetainedExitSummary {
+  if (!isRecord(exit)) {
     throw new Error(`session_list latest_exit is invalid for ${sessionId}`);
   }
   if (typeof exit.attention_id !== 'string' || !/^[0-9a-f]{32}$/.test(exit.attention_id)) {
@@ -57,21 +115,27 @@ function normalizeExitSummary(exit, sessionId) {
   if (exit.status !== null && !Number.isInteger(exit.status)) {
     throw new Error(`session_list exit status is invalid for ${sessionId}`);
   }
-  if (!['process_exit', 'wait_failed', 'killed'].includes(exit.reason)) {
+  const reason = exit.reason;
+  if (reason !== 'process_exit' && reason !== 'wait_failed' && reason !== 'killed') {
     throw new Error(`session_list exit reason is invalid for ${sessionId}`);
   }
-  return { attentionId: exit.attention_id, status: exit.status, reason: exit.reason };
+  return {
+    attentionId: exit.attention_id,
+    status: exit.status as number | null,
+    reason,
+  };
 }
 
-function normalizeSessionSummaries(sessions) {
+export function normalizeSessionSummaries(sessions: unknown): NormalizedSessionSummary[] {
   if (!Array.isArray(sessions) || sessions.length > 64) {
     throw new Error('session_list.sessions must contain at most 64 entries');
   }
   const seen = new Set();
-  return sessions.map((summary) => {
-    if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+  return sessions.map((rawSummary) => {
+    if (!isRecord(rawSummary)) {
       throw new Error('session_list summary must be an object');
     }
+    const summary = rawSummary;
     const sessionId = summary.session_id;
     if (typeof sessionId !== 'string'
         || !/^[A-Za-z0-9_.-]{1,128}$/.test(sessionId)
@@ -114,11 +178,11 @@ function normalizeSessionSummaries(sessions) {
       throw new Error(`session_list persistent flag is invalid for ${sessionId}`);
     }
     if (!Number.isInteger(summary.attachment_count)
-        || summary.attachment_count < 0
-        || summary.attachment_count > 128) {
+        || (summary.attachment_count as number) < 0
+        || (summary.attachment_count as number) > 128) {
       throw new Error(`session_list attachment_count is invalid for ${sessionId}`);
     }
-    let instanceId = null;
+    let instanceId: string | null = null;
     let instanceComplete = false;
     if (Object.hasOwn(summary, 'instance_id')) {
       if (typeof summary.instance_id !== 'string' || !/^[0-9a-f]{32}$/.test(summary.instance_id)) {
@@ -132,10 +196,10 @@ function normalizeSessionSummaries(sessions) {
     if (lifecycleFields !== 0 && lifecycleFields !== lifecycleKeys.length) {
       throw new Error(`session_list lifecycle metadata is incomplete for ${sessionId}`);
     }
-    let state = 'running';
-    let latestExit = null;
+    let state: SessionSummaryState = 'running';
+    let latestExit: RetainedExitSummary | null = null;
     if (lifecycleFields === lifecycleKeys.length) {
-      if (!['running', 'exited'].includes(summary.state)) {
+      if (summary.state !== 'running' && summary.state !== 'exited') {
         throw new Error(`session_list state is invalid for ${sessionId}`);
       }
       state = summary.state;
@@ -151,7 +215,7 @@ function normalizeSessionSummaries(sessions) {
       command: summary.command,
       cwd: summary.cwd,
       persistent: summary.persistent,
-      attachmentCount: summary.attachment_count,
+      attachmentCount: summary.attachment_count as number,
       metadataComplete: true,
       state,
       latestExit,
@@ -162,7 +226,7 @@ function normalizeSessionSummaries(sessions) {
   });
 }
 
-function base64ToBytes(data) {
+export function base64ToBytes(data: string): Uint8Array {
   const binary = atob(data);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
@@ -171,7 +235,7 @@ function base64ToBytes(data) {
   return bytes;
 }
 
-function parseReplayCheckpoint(message) {
+export function parseReplayCheckpoint(message: UnknownMessage): ReplayCheckpoint | null {
   const fields = [
     'instance_id', 'first_available_seq', 'replay_through_seq',
     'replay_truncated', 'reset_required',
@@ -181,8 +245,10 @@ function parseReplayCheckpoint(message) {
   if (present !== fields.length
       || typeof message.instance_id !== 'string'
       || !/^[0-9a-f]{32}$/.test(message.instance_id)
+      || typeof message.first_available_seq !== 'number'
       || !Number.isSafeInteger(message.first_available_seq)
       || message.first_available_seq < 1
+      || typeof message.replay_through_seq !== 'number'
       || !Number.isSafeInteger(message.replay_through_seq)
       || message.replay_through_seq < 0
       || message.first_available_seq > message.replay_through_seq + 1
@@ -200,7 +266,26 @@ function parseReplayCheckpoint(message) {
   };
 }
 
-class HubClient {
+export class HubClient {
+  readonly endpoint: string;
+  readonly capabilityToken: string;
+  readonly sessionId: string;
+  readonly onOpen: HubClientOptions['onOpen'];
+  readonly onMessage: HubClientOptions['onMessage'];
+  readonly onInvalidMessage: HubClientOptions['onInvalidMessage'];
+  readonly onClose: HubClientOptions['onClose'];
+  readonly onError: HubClientOptions['onError'];
+  readonly setTimer: NonNullable<HubClientOptions['setTimer']>;
+  readonly clearTimer: NonNullable<HubClientOptions['clearTimer']>;
+  readonly authenticationTimeoutMs: number;
+  readonly welcomeTimeoutMs: number;
+  socket: WebSocket | undefined;
+  authenticated = false;
+  ready = false;
+  clientNonce: string | undefined;
+  welcome: HubWelcome | undefined;
+  private handshakeTimer: TimerHandle | undefined;
+
   constructor({
     endpoint,
     capabilityToken,
@@ -214,7 +299,7 @@ class HubClient {
     clearTimer = (timer) => clearTimeout(timer),
     authenticationTimeoutMs = AUTHENTICATION_TIMEOUT_MS,
     welcomeTimeoutMs = WELCOME_TIMEOUT_MS,
-  }) {
+  }: HubClientOptions) {
     this.endpoint = endpoint;
     this.capabilityToken = capabilityToken;
     this.sessionId = sessionId;
@@ -223,26 +308,20 @@ class HubClient {
     this.onInvalidMessage = onInvalidMessage;
     this.onClose = onClose;
     this.onError = onError;
-    this.socket = undefined;
-    this.authenticated = false;
-    this.ready = false;
-    this.clientNonce = undefined;
-    this.welcome = undefined;
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
     this.authenticationTimeoutMs = authenticationTimeoutMs;
     this.welcomeTimeoutMs = welcomeTimeoutMs;
-    this.handshakeTimer = undefined;
   }
 
-  clearHandshakeTimer() {
+  clearHandshakeTimer(): void {
     if (this.handshakeTimer !== undefined) {
       this.clearTimer(this.handshakeTimer);
       this.handshakeTimer = undefined;
     }
   }
 
-  armHandshakeTimer(socket, phase, delayMs) {
+  armHandshakeTimer(socket: WebSocket, phase: string, delayMs: number): void {
     this.clearHandshakeTimer();
     this.handshakeTimer = this.setTimer(() => {
       this.handshakeTimer = undefined;
@@ -252,7 +331,7 @@ class HubClient {
     }, delayMs);
   }
 
-  connect() {
+  connect(): void {
     const socket = new WebSocket(this.endpoint, ['neoncode.v1']);
     this.socket = socket;
     this.authenticated = false;
@@ -263,13 +342,19 @@ class HubClient {
 
     socket.addEventListener('message', async (event) => {
       if (socket !== this.socket || socket.readyState === WebSocket.CLOSED) return;
-      let message;
+      let parsedMessage: unknown;
       try {
-        message = JSON.parse(event.data);
+        parsedMessage = JSON.parse(event.data as string) as unknown;
       } catch (error) {
         this.onInvalidMessage?.(error, event.data);
         return;
       }
+      if (!isRecord(parsedMessage)) {
+        this.onInvalidMessage?.(new Error('Hub message must be an object'), event.data);
+        socket.close();
+        return;
+      }
+      let message = parsedMessage;
 
       if (!this.authenticated) {
         if (message.type === 'auth_challenge' && typeof message.nonce === 'string') {
@@ -325,7 +410,8 @@ class HubClient {
       if (!this.ready) {
         if (message.type === 'welcome'
             && message.protocol_version === 1
-            && /^[0-9a-f]{64}$/.test(message.boot_id || '')) {
+            && typeof message.boot_id === 'string'
+            && /^[0-9a-f]{64}$/.test(message.boot_id)) {
           const capabilities = message.capabilities === undefined ? [] : message.capabilities;
           if (!Array.isArray(capabilities)
               || capabilities.length > 32
@@ -334,10 +420,17 @@ class HubClient {
             socket.close();
             return;
           }
-          this.welcome = { ...message, capabilities: [...capabilities] };
+          const welcome = {
+            ...message,
+            type: 'welcome' as const,
+            protocol_version: 1 as const,
+            boot_id: message.boot_id as string,
+            capabilities: [...capabilities] as string[],
+          };
+          this.welcome = welcome;
           this.ready = true;
           this.clearHandshakeTimer();
-          this.onOpen?.(this.welcome);
+          this.onOpen?.(welcome);
           return;
         }
         this.onInvalidMessage?.(new Error('Invalid or unsupported hub welcome'), event.data);
@@ -372,26 +465,26 @@ class HubClient {
     });
   }
 
-  isOpen() {
+  isOpen(): boolean {
     return this.ready && this.socket?.readyState === WebSocket.OPEN;
   }
 
-  send(message) {
+  send(message: UnknownMessage): boolean {
     if (!this.isOpen()) {
       return false;
     }
 
-    this.socket.send(JSON.stringify(message));
+    this.socket!.send(JSON.stringify(message));
     return true;
   }
 
-  listSessions() {
+  listSessions(): boolean {
     return this.send({
       type: 'list_sessions',
     });
   }
 
-  attach({ instanceId, afterOutputSeq } = {}) {
+  attach({ instanceId, afterOutputSeq }: AttachCursor = {}): boolean {
     const cursor = instanceId && Number.isSafeInteger(afterOutputSeq)
       ? { instance_id: instanceId, after_output_seq: afterOutputSeq }
       : {};
@@ -402,7 +495,14 @@ class HubClient {
     });
   }
 
-  start({ command = 'bash', args = [], cwd = null, rows = 30, cols = 120, persistent = false }) {
+  start({
+    command = 'bash',
+    args = [],
+    cwd = null,
+    rows = 30,
+    cols = 120,
+    persistent = false,
+  }: StartOptions): boolean {
     return this.send({
       type: 'start',
       session_id: this.sessionId,
@@ -415,7 +515,7 @@ class HubClient {
     });
   }
 
-  input(bytes) {
+  input(bytes: Uint8Array): boolean {
     return this.send({
       type: 'input',
       session_id: this.sessionId,
@@ -423,7 +523,7 @@ class HubClient {
     });
   }
 
-  resize({ rows, cols }) {
+  resize({ rows, cols }: TerminalSize): boolean {
     return this.send({
       type: 'resize',
       session_id: this.sessionId,
@@ -432,21 +532,21 @@ class HubClient {
     });
   }
 
-  detach() {
+  detach(): boolean {
     return this.send({
       type: 'detach',
       session_id: this.sessionId,
     });
   }
 
-  kill() {
+  kill(): boolean {
     return this.send({
       type: 'kill',
       session_id: this.sessionId,
     });
   }
 
-  acknowledgeAttention(attentionId) {
+  acknowledgeAttention(attentionId: string): boolean {
     return this.send({
       type: 'acknowledge_attention',
       session_id: this.sessionId,
@@ -454,20 +554,9 @@ class HubClient {
     });
   }
 
-  close() {
+  close(): void {
     if (this.socket?.readyState === WebSocket.OPEN || this.socket?.readyState === WebSocket.CONNECTING) {
       this.socket.close();
     }
   }
 }
-
-module.exports = {
-  AUTHENTICATION_TIMEOUT_MS,
-  HubClient,
-  WELCOME_TIMEOUT_MS,
-  base64ToBytes,
-  decoder,
-  encoder,
-  normalizeSessionSummaries,
-  parseReplayCheckpoint,
-};
