@@ -45,6 +45,22 @@ async function verifyAuthenticationHmac(capabilityToken, payload, hmac) {
   return crypto.subtle.verify('HMAC', key, hexToBytes(hmac), encoder.encode(payload));
 }
 
+function normalizeExitSummary(exit, sessionId) {
+  if (!exit || typeof exit !== 'object' || Array.isArray(exit)) {
+    throw new Error(`session_list latest_exit is invalid for ${sessionId}`);
+  }
+  if (typeof exit.attention_id !== 'string' || !/^[0-9a-f]{32}$/.test(exit.attention_id)) {
+    throw new Error(`session_list attention_id is invalid for ${sessionId}`);
+  }
+  if (exit.status !== null && !Number.isInteger(exit.status)) {
+    throw new Error(`session_list exit status is invalid for ${sessionId}`);
+  }
+  if (!['process_exit', 'wait_failed', 'killed'].includes(exit.reason)) {
+    throw new Error(`session_list exit reason is invalid for ${sessionId}`);
+  }
+  return { attentionId: exit.attention_id, status: exit.status, reason: exit.reason };
+}
+
 function normalizeSessionSummaries(sessions) {
   if (!Array.isArray(sessions) || sessions.length > 64) {
     throw new Error('session_list.sessions must contain at most 64 entries');
@@ -75,6 +91,9 @@ function normalizeSessionSummaries(sessions) {
         persistent: null,
         attachmentCount: null,
         metadataComplete: false,
+        state: 'running',
+        latestExit: null,
+        lifecycleComplete: false,
       };
     }
 
@@ -95,6 +114,25 @@ function normalizeSessionSummaries(sessions) {
         || summary.attachment_count > 128) {
       throw new Error(`session_list attachment_count is invalid for ${sessionId}`);
     }
+    const lifecycleKeys = ['state', 'latest_exit'];
+    const lifecycleFields = lifecycleKeys.filter((key) => Object.hasOwn(summary, key)).length;
+    if (lifecycleFields !== 0 && lifecycleFields !== lifecycleKeys.length) {
+      throw new Error(`session_list lifecycle metadata is incomplete for ${sessionId}`);
+    }
+    let state = 'running';
+    let latestExit = null;
+    if (lifecycleFields === lifecycleKeys.length) {
+      if (!['running', 'exited'].includes(summary.state)) {
+        throw new Error(`session_list state is invalid for ${sessionId}`);
+      }
+      state = summary.state;
+      latestExit = summary.latest_exit === null
+        ? null
+        : normalizeExitSummary(summary.latest_exit, sessionId);
+      if (state === 'exited' && latestExit === null) {
+        throw new Error(`exited session is missing latest_exit for ${sessionId}`);
+      }
+    }
     return {
       sessionId,
       command: summary.command,
@@ -102,6 +140,9 @@ function normalizeSessionSummaries(sessions) {
       persistent: summary.persistent,
       attachmentCount: summary.attachment_count,
       metadataComplete: true,
+      state,
+      latestExit,
+      lifecycleComplete: lifecycleFields === lifecycleKeys.length,
     };
   });
 }
@@ -193,9 +234,17 @@ class HubClient {
         if (message.type === 'welcome'
             && message.protocol_version === 1
             && /^[0-9a-f]{64}$/.test(message.boot_id || '')) {
-          this.welcome = message;
+          const capabilities = message.capabilities === undefined ? [] : message.capabilities;
+          if (!Array.isArray(capabilities)
+              || capabilities.length > 32
+              || capabilities.some((capability) => typeof capability !== 'string' || capability.length > 64)) {
+            this.onInvalidMessage?.(new Error('Invalid hub capabilities'), event.data);
+            socket.close();
+            return;
+          }
+          this.welcome = { ...message, capabilities: [...capabilities] };
           this.ready = true;
-          this.onOpen?.(message);
+          this.onOpen?.(this.welcome);
           return;
         }
         this.onInvalidMessage?.(new Error('Invalid or unsupported hub welcome'), event.data);
@@ -295,6 +344,14 @@ class HubClient {
     return this.send({
       type: 'kill',
       session_id: this.sessionId,
+    });
+  }
+
+  acknowledgeAttention(attentionId) {
+    return this.send({
+      type: 'acknowledge_attention',
+      session_id: this.sessionId,
+      attention_id: attentionId,
     });
   }
 

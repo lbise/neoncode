@@ -38,6 +38,10 @@ pub enum ClientMessage {
     Kill {
         session_id: String,
     },
+    AcknowledgeAttention {
+        session_id: String,
+        attention_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -52,6 +56,7 @@ pub enum ServerMessage {
     Welcome {
         protocol_version: u32,
         boot_id: String,
+        capabilities: Vec<String>,
     },
     Started {
         session_id: String,
@@ -72,15 +77,43 @@ pub enum ServerMessage {
     },
     Exit {
         session_id: String,
+        attention_id: String,
         status: Option<i32>,
+        reason: ExitReason,
     },
     Killed {
         session_id: String,
+    },
+    AttentionAcknowledged {
+        session_id: String,
+        attention_id: String,
     },
     Error {
         session_id: Option<String>,
         message: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExitReason {
+    ProcessExit,
+    WaitFailed,
+    Killed,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionState {
+    Running,
+    Exited,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExitSummary {
+    pub attention_id: String,
+    pub status: Option<i32>,
+    pub reason: ExitReason,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,4 +123,6 @@ pub struct SessionSummary {
     pub cwd: Option<String>,
     pub persistent: bool,
     pub attachment_count: u32,
+    pub state: SessionState,
+    pub latest_exit: Option<ExitSummary>,
 }

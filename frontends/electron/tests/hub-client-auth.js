@@ -66,6 +66,9 @@ function validatesSessionSummaries() {
     persistent: true,
     attachmentCount: 2,
     metadataComplete: true,
+    state: 'running',
+    latestExit: null,
+    lifecycleComplete: false,
   }]);
 
   assert.deepEqual(normalizeSessionSummaries([{ session_id: 'legacy' }]), [{
@@ -75,6 +78,9 @@ function validatesSessionSummaries() {
     persistent: null,
     attachmentCount: null,
     metadataComplete: false,
+    state: 'running',
+    latestExit: null,
+    lifecycleComplete: false,
   }]);
   assert.throws(
     () => normalizeSessionSummaries([{ session_id: 'duplicate' }, { session_id: 'duplicate' }]),
@@ -83,6 +89,33 @@ function validatesSessionSummaries() {
   assert.throws(
     () => normalizeSessionSummaries([{ session_id: 'partial', command: 'bash' }]),
     /metadata is incomplete/,
+  );
+  const exited = normalizeSessionSummaries([{
+    session_id: 'exited',
+    command: 'bash',
+    cwd: null,
+    persistent: true,
+    attachment_count: 0,
+    state: 'exited',
+    latest_exit: {
+      attention_id: 'ab'.repeat(16), status: 7, reason: 'process_exit',
+    },
+  }]);
+  assert.deepEqual(exited[0].latestExit, {
+    attentionId: 'ab'.repeat(16), status: 7, reason: 'process_exit',
+  });
+  assert.equal(exited[0].state, 'exited');
+  assert.equal(exited[0].lifecycleComplete, true);
+  assert.throws(
+    () => normalizeSessionSummaries([{
+      session_id: 'partial-lifecycle',
+      command: 'bash',
+      cwd: null,
+      persistent: true,
+      attachment_count: 0,
+      state: 'exited',
+    }]),
+    /lifecycle metadata is incomplete/,
   );
   assert.throws(
     () => normalizeSessionSummaries([{
@@ -141,6 +174,38 @@ async function validMutualAuthentication() {
   assert.equal(client.isOpen(), true);
 }
 
+async function rejectsMalformedWelcomeCapabilities() {
+  let opened = 0;
+  let invalid = 0;
+  const client = new HubClient({
+    endpoint: 'ws://127.0.0.1:44777/ws',
+    capabilityToken: TOKEN,
+    onOpen: () => { opened += 1; },
+    onInvalidMessage: () => { invalid += 1; },
+  });
+  client.connect();
+
+  const socket = MockWebSocket.instances.at(-1);
+  await socket.emit('message', {
+    data: JSON.stringify({ type: 'auth_challenge', nonce: SERVER_NONCE }),
+  });
+  const response = JSON.parse(socket.sent[0]);
+  await socket.emit('message', {
+    data: JSON.stringify({ type: 'authenticated', hmac: hmac(`server:${response.client_nonce}`) }),
+  });
+  await socket.emit('message', {
+    data: JSON.stringify({
+      type: 'welcome',
+      protocol_version: 1,
+      boot_id: 'ab'.repeat(32),
+      capabilities: ['valid', 7],
+    }),
+  });
+  assert.equal(opened, 0);
+  assert.equal(invalid, 1);
+  assert.equal(socket.readyState, MockWebSocket.CLOSED);
+}
+
 async function rejectsFakeHubProof() {
   let opened = 0;
   let invalid = 0;
@@ -169,6 +234,7 @@ async function rejectsFakeHubProof() {
 Promise.resolve()
   .then(validatesSessionSummaries)
   .then(validMutualAuthentication)
+  .then(rejectsMalformedWelcomeCapabilities)
   .then(rejectsFakeHubProof)
   .then(() => console.log('hub-client mutual authentication tests passed'))
   .catch((error) => {

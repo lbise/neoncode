@@ -461,6 +461,11 @@ async fn session_operation_errors_include_the_session_id() {
     )
     .await;
     wait_for_session_type(&mut socket, "killed", session_id).await;
+    assert!(
+        !list_session_ids(&mut socket)
+            .await
+            .contains(&session_id.to_string())
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -485,6 +490,7 @@ async fn fast_command_preserves_output_reports_exit_and_reuses_id() {
     let deadline = Instant::now() + MESSAGE_TIMEOUT;
     let mut output = String::new();
     let mut exit_status = None;
+    let mut exit_reason = None;
     while !output.contains("fast-output") || exit_status.is_none() {
         let message = next_json_before(&mut socket, deadline).await;
         match message["type"].as_str() {
@@ -496,6 +502,7 @@ async fn fast_command_preserves_output_reports_exit_and_reuses_id() {
             }
             Some("exit") if message["session_id"] == session_id => {
                 exit_status = message["status"].as_i64();
+                exit_reason = message["reason"].as_str().map(str::to_string);
             }
             Some("error") => panic!("unexpected hub error: {message}"),
             _ => {}
@@ -503,26 +510,72 @@ async fn fast_command_preserves_output_reports_exit_and_reuses_id() {
     }
 
     assert_eq!(exit_status, Some(7));
+    assert_eq!(exit_reason.as_deref(), Some("process_exit"));
+    let exited = list_session_summaries(&mut socket).await;
+    assert_eq!(exited[0]["state"], "exited");
+    assert_eq!(exited[0]["latest_exit"]["status"], 7);
+    assert_eq!(exited[0]["latest_exit"]["reason"], "process_exit");
+    let attention_id = exited[0]["latest_exit"]["attention_id"]
+        .as_str()
+        .expect("attention id")
+        .to_string();
+    assert_eq!(attention_id.len(), 32);
+
+    start_shell(&mut socket, session_id).await;
+    send_input(&mut socket, session_id, "printf 'reused-id\\n'\n").await;
+    wait_for_output(&mut socket, session_id, "reused-id").await;
+    let reused = list_session_summaries(&mut socket).await;
+    assert_eq!(reused[0]["state"], "running");
+    assert_eq!(reused[0]["latest_exit"]["status"], 7);
+
+    send_json(
+        &mut socket,
+        json!({
+            "type": "acknowledge_attention",
+            "session_id": session_id,
+            "attention_id": "ffffffffffffffffffffffffffffffff"
+        }),
+    )
+    .await;
+    let changed_error = wait_for_type(&mut socket, "error").await;
     assert!(
-        !list_session_ids(&mut socket)
-            .await
-            .contains(&session_id.to_string())
+        changed_error["message"]
+            .as_str()
+            .unwrap()
+            .contains("attention changed")
+    );
+    assert_eq!(
+        list_session_summaries(&mut socket).await[0]["latest_exit"]["attention_id"],
+        attention_id
     );
 
     send_json(
         &mut socket,
         json!({
-            "type": "start",
+            "type": "acknowledge_attention",
             "session_id": session_id,
-            "command": "sh",
-            "args": ["-c", "printf 'reused-id'"],
-            "rows": 24,
-            "cols": 80
+            "attention_id": attention_id.clone()
         }),
     )
     .await;
-    wait_for_session_type(&mut socket, "started", session_id).await;
-    wait_for_output(&mut socket, session_id, "reused-id").await;
+    wait_for_session_type(&mut socket, "attention_acknowledged", session_id).await;
+    assert!(list_session_summaries(&mut socket).await[0]["latest_exit"].is_null());
+    send_json(
+        &mut socket,
+        json!({
+            "type": "acknowledge_attention",
+            "session_id": session_id,
+            "attention_id": attention_id
+        }),
+    )
+    .await;
+    wait_for_session_type(&mut socket, "attention_acknowledged", session_id).await;
+    send_json(
+        &mut socket,
+        json!({ "type": "kill", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut socket, "killed", session_id).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

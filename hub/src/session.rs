@@ -7,6 +7,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread,
+    time::Instant,
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -15,15 +16,26 @@ use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_s
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
+use crate::protocol::{ExitReason, ExitSummary};
+
 const SESSION_EVENT_BUFFER: usize = 256;
 const SESSION_REPLAY_BUFFER_BYTES: usize = 2 * 1024 * 1024;
 const SESSION_REPLAY_BUFFER_ENTRIES: usize = 4096;
 
 #[derive(Debug, Clone)]
 pub enum SessionEvent {
-    Output { seq: u64, data_b64: String },
-    Exit { status: Option<i32> },
-    Error { message: String },
+    Output {
+        seq: u64,
+        data_b64: String,
+    },
+    Exit {
+        attention_id: String,
+        status: Option<i32>,
+        reason: ExitReason,
+    },
+    Error {
+        message: String,
+    },
 }
 
 pub struct SessionSubscription {
@@ -49,6 +61,9 @@ pub struct Session {
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
     running: Arc<AtomicBool>,
+    kill_requested: Arc<AtomicBool>,
+    outcome: Arc<Mutex<Option<ExitSummary>>>,
+    completed_at: Arc<Mutex<Option<Instant>>>,
     event_tx: broadcast::Sender<SessionEvent>,
     event_state: Arc<Mutex<SessionEventState>>,
 }
@@ -139,15 +154,27 @@ impl Session {
             })
             .context("failed to spawn PTY reader thread")?;
 
+        let mut attention_id_bytes = [0_u8; 16];
+        getrandom::fill(&mut attention_id_bytes)
+            .map_err(|error| anyhow!("failed to generate attention id: {error}"))?;
+        let attention_id = hex::encode(attention_id_bytes);
         let running = Arc::new(AtomicBool::new(true));
+        let kill_requested = Arc::new(AtomicBool::new(false));
+        let outcome = Arc::new(Mutex::new(None));
+        let completed_at = Arc::new(Mutex::new(None));
         let waiter_running = running.clone();
+        let waiter_kill_requested = kill_requested.clone();
+        let waiter_outcome = outcome.clone();
+        let waiter_completed_at = completed_at.clone();
         let waiter_session_id = id.clone();
+        let waiter_attention_id = attention_id;
         let waiter_event_tx = event_tx.clone();
         let waiter_event_state = event_state.clone();
         thread::Builder::new()
             .name(format!("pty-waiter-{waiter_session_id}"))
             .spawn(move || {
                 let wait_result = child.wait();
+                let kill_caused_exit = waiter_kill_requested.load(Ordering::Acquire);
                 if reader_thread.join().is_err() {
                     publish_event(
                         &waiter_session_id,
@@ -159,17 +186,16 @@ impl Session {
                     );
                 }
 
-                waiter_running.store(false, Ordering::Release);
-                match wait_result {
-                    Ok(exit_status) => {
-                        let status = i32::try_from(exit_status.exit_code()).ok();
-                        publish_event(
-                            &waiter_session_id,
-                            &waiter_event_tx,
-                            &waiter_event_state,
-                            SessionEvent::Exit { status },
-                        );
-                    }
+                let outcome = match wait_result {
+                    Ok(exit_status) => ExitSummary {
+                        attention_id: waiter_attention_id.clone(),
+                        status: i32::try_from(exit_status.exit_code()).ok(),
+                        reason: if kill_caused_exit {
+                            ExitReason::Killed
+                        } else {
+                            ExitReason::ProcessExit
+                        },
+                    },
                     Err(err) => {
                         publish_event(
                             &waiter_session_id,
@@ -179,14 +205,30 @@ impl Session {
                                 message: format!("failed to wait for PTY child: {err}"),
                             },
                         );
-                        publish_event(
-                            &waiter_session_id,
-                            &waiter_event_tx,
-                            &waiter_event_state,
-                            SessionEvent::Exit { status: None },
-                        );
+                        ExitSummary {
+                            attention_id: waiter_attention_id.clone(),
+                            status: None,
+                            reason: ExitReason::WaitFailed,
+                        }
                     }
+                };
+                if let Ok(mut stored_outcome) = waiter_outcome.lock() {
+                    *stored_outcome = Some(outcome.clone());
                 }
+                if let Ok(mut stored_completed_at) = waiter_completed_at.lock() {
+                    *stored_completed_at = Some(Instant::now());
+                }
+                waiter_running.store(false, Ordering::Release);
+                publish_event(
+                    &waiter_session_id,
+                    &waiter_event_tx,
+                    &waiter_event_state,
+                    SessionEvent::Exit {
+                        attention_id: outcome.attention_id,
+                        status: outcome.status,
+                        reason: outcome.reason,
+                    },
+                );
             })
             .context("failed to spawn PTY waiter thread")?;
 
@@ -197,6 +239,9 @@ impl Session {
                 master: Arc::new(Mutex::new(pair.master)),
                 child_killer: Mutex::new(child_killer),
                 running,
+                kill_requested,
+                outcome,
+                completed_at,
                 event_tx,
                 event_state,
             },
@@ -223,6 +268,17 @@ impl Session {
 
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::Acquire)
+    }
+
+    pub fn outcome(&self) -> Option<ExitSummary> {
+        self.outcome.lock().ok().and_then(|outcome| outcome.clone())
+    }
+
+    pub fn completed_at(&self) -> Option<Instant> {
+        self.completed_at
+            .lock()
+            .ok()
+            .and_then(|completed_at| *completed_at)
     }
 
     pub fn write_input(&self, bytes: &[u8]) -> Result<()> {
@@ -254,6 +310,7 @@ impl Session {
     }
 
     pub fn kill(self) {
+        self.kill_requested.store(true, Ordering::Release);
         match self.child_killer.lock() {
             Ok(mut child_killer) => {
                 if let Err(err) = child_killer.kill() {

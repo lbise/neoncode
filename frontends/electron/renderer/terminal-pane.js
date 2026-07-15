@@ -2,10 +2,14 @@ const { Terminal } = require('@xterm/xterm');
 const { FitAddon } = require('@xterm/addon-fit');
 
 const { HubClient, base64ToBytes, decoder, encoder } = require('./hub-client');
+const {
+  RECONNECT_INITIAL_DELAY_MS,
+  RECONNECT_MAX_DELAY_MS,
+  ReconnectPolicy,
+  activationFallback,
+} = require('./reconnect-policy');
 
 const CLOSE_ACK_TIMEOUT_MS = 1500;
-const RECONNECT_INITIAL_DELAY_MS = 250;
-const RECONNECT_MAX_DELAY_MS = 5000;
 const LIFECYCLE_LABELS = {
   attached: 'Attached',
   attaching: 'Attaching',
@@ -68,6 +72,7 @@ class TerminalPane {
     sessionModel,
     setStatus,
     onLifecycleChange,
+    onSessionExit,
   }) {
     this.index = index;
     this.paneId = paneId;
@@ -83,6 +88,7 @@ class TerminalPane {
     this.sessionModel = sessionModel;
     this.setStatus = setStatus;
     this.onLifecycleChange = onLifecycleChange;
+    this.onSessionExit = onSessionExit;
     this.state = undefined;
     this.hubClient = undefined;
     this.resizeObserver = undefined;
@@ -90,11 +96,11 @@ class TerminalPane {
     this.pendingClose = undefined;
     this.closed = false;
     this.connectionGeneration = 0;
-    this.reconnectTimer = undefined;
-    this.reconnectAttempts = 0;
+    this.reconnectPolicy = new ReconnectPolicy();
     this.pasteShortcutActive = false;
     this.pasteShortcutTimer = undefined;
     this.suppressedPasteTimer = undefined;
+    this.supportsExitAttention = false;
     this.disposed = false;
   }
 
@@ -150,10 +156,9 @@ class TerminalPane {
     }
     this.closed = true;
     this.connectionGeneration += 1;
-    clearTimeout(this.reconnectTimer);
+    this.reconnectPolicy.cancel();
     clearTimeout(this.pasteShortcutTimer);
     clearTimeout(this.suppressedPasteTimer);
-    this.reconnectTimer = undefined;
     this.resizeObserver?.disconnect();
     this.hubClient?.close();
     this.resolvePendingClose();
@@ -178,8 +183,7 @@ class TerminalPane {
   }
 
   requestClose(action) {
-    clearTimeout(this.reconnectTimer);
-    this.reconnectTimer = undefined;
+    this.reconnectPolicy.cancel();
     if (this.pendingClose) {
       return this.pendingClose.promise;
     }
@@ -432,9 +436,10 @@ class TerminalPane {
 
   handleHubOpen(welcome) {
     console.log(`hub_connected ${this.index}`);
+    this.supportsExitAttention = welcome.capabilities.includes('session_exit_attention');
     this.sessionModel.beginHubBoot(this.state, welcome.boot_id);
     this.setStatus(`Connected to ${this.endpoint}`);
-    const recovering = this.reconnectAttempts > 0;
+    const recovering = this.reconnectPolicy.attempts > 0;
     this.activationFallbackUsed = false;
     this.activate(recovering ? 'attach' : this.activationMode);
   }
@@ -459,19 +464,15 @@ class TerminalPane {
   }
 
   handleActivationFailure(message) {
-    if (!this.activationFallbackUsed) {
-      if (this.activationMode === 'attach' && message.includes('unknown session')) {
-        this.activationFallbackUsed = true;
-        this.activate('start');
-        return true;
-      }
-      if (this.activationMode === 'start' && message.includes('session already exists')) {
-        this.activationFallbackUsed = true;
-        this.activate('attach');
-        return true;
-      }
-    }
-    return false;
+    const fallback = activationFallback({
+      mode: this.activationMode,
+      message,
+      alreadyUsed: this.activationFallbackUsed,
+    });
+    if (!fallback) return false;
+    this.activationFallbackUsed = true;
+    this.activate(fallback);
+    return true;
   }
 
   handleInvalidHubMessage(error) {
@@ -491,10 +492,28 @@ class TerminalPane {
     } else if (message.type === 'killed' && message.session_id === this.sessionId) {
       this.finishClose('killed');
     } else if (message.type === 'exit' && message.session_id === this.sessionId) {
+      const outcome = {
+        attentionId: typeof message.attention_id === 'string' && /^[0-9a-f]{32}$/.test(message.attention_id)
+          ? message.attention_id
+          : null,
+        status: Number.isInteger(message.status) ? message.status : null,
+        reason: ['process_exit', 'wait_failed', 'killed'].includes(message.reason)
+          ? message.reason
+          : 'process_exit',
+      };
       this.state.started = false;
       this.sessionModel.setPublicStarted(this.state, false);
-      this.setLifecycle('exited');
-      this.state.terminal.writeln(`\r\n\x1b[33mHub session exited (${message.status ?? 'unknown'})\x1b[0m`);
+      this.sessionModel.recordExit(this.state, outcome);
+      if (this.supportsExitAttention && outcome.attentionId && outcome.reason !== 'killed') {
+        this.onSessionExit?.(outcome);
+      }
+      this.setLifecycle(outcome.reason === 'killed' ? 'killed' : 'exited');
+      const status = outcome.status ?? 'unknown';
+      const reason = outcome.reason.replaceAll('_', ' ');
+      if (this.statusElement) {
+        this.statusElement.textContent = outcome.reason === 'killed' ? 'Killed' : `Exited (${status})`;
+      }
+      this.state.terminal.writeln(`\r\n\x1b[33mHub session exited (${status}, ${reason})\x1b[0m`);
       this.resolvePendingClose();
     } else if (message.type === 'error'
         && (!message.session_id || message.session_id === this.sessionId)) {
@@ -506,7 +525,7 @@ class TerminalPane {
     this.state.started = true;
     this.sessionModel.setPublicStarted(this.state, true);
     this.setLifecycle(lifecycle);
-    this.reconnectAttempts = 0;
+    this.reconnectPolicy.reset();
     this.sessionModel.clearReconnect(this.state);
     console.log(`hub_${lifecycle} ${this.index}`);
     this.state.terminal.writeln(`\r\n\x1b[32mHub session ${lifecycle}\x1b[0m`);
@@ -554,23 +573,16 @@ class TerminalPane {
   }
 
   scheduleReconnect() {
-    if (this.closed || this.pendingClose || this.reconnectTimer) {
-      return;
-    }
-    this.reconnectAttempts += 1;
-    const delay = Math.min(
-      RECONNECT_INITIAL_DELAY_MS * (2 ** (this.reconnectAttempts - 1)),
-      RECONNECT_MAX_DELAY_MS,
-    );
-    this.setLifecycle('reconnecting');
-    this.setStatus(`Reconnecting to neoncode-hub in ${delay}ms`);
-    this.sessionModel.recordReconnect(this.state, this.reconnectAttempts, delay);
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = undefined;
+    if (this.closed || this.pendingClose) return;
+    const scheduled = this.reconnectPolicy.schedule(() => {
       if (!this.closed && !this.pendingClose) {
         this.connect();
       }
-    }, delay);
+    });
+    if (!scheduled) return;
+    this.setLifecycle('reconnecting');
+    this.setStatus(`Reconnecting to neoncode-hub in ${scheduled.delayMs}ms`);
+    this.sessionModel.recordReconnect(this.state, scheduled.attempts, scheduled.delayMs);
   }
 
   forceDisconnectForTest() {
@@ -590,6 +602,8 @@ class TerminalPane {
 
 module.exports = {
   CLOSE_ACK_TIMEOUT_MS,
+  RECONNECT_INITIAL_DELAY_MS,
+  RECONNECT_MAX_DELAY_MS,
   TerminalPane,
   buildTerminalTheme,
   normalizeTerminalText,

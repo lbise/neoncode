@@ -1,6 +1,7 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex},
+    time::Instant,
 };
 
 use anyhow::{Result, anyhow};
@@ -8,13 +9,14 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::debug;
 
 use crate::{
-    protocol::SessionSummary,
+    protocol::{ExitSummary, SessionState, SessionSummary},
     session::{Session, SessionSubscription, default_shell},
 };
 
 const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_COLS: u16 = 80;
 const MAX_SESSIONS: usize = 64;
+const MAX_RETAINED_EXITS: usize = 64;
 const MAX_SESSION_ID_BYTES: usize = 128;
 const MAX_COMMAND_BYTES: usize = 4096;
 const MAX_ARGUMENTS: usize = 128;
@@ -77,6 +79,7 @@ pub fn validate_capability_token(token: &str) -> Result<()> {
 #[derive(Default)]
 pub struct SessionRegistry {
     sessions: Mutex<HashMap<String, SessionEntry>>,
+    retained_exits: Mutex<RetainedExitState>,
 }
 
 impl SessionRegistry {
@@ -90,7 +93,7 @@ impl SessionRegistry {
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
-        prune_exited_sessions(&mut sessions);
+        self.prune_exited_sessions(&mut sessions)?;
 
         if sessions.contains_key(&request.session_id) {
             return Err(anyhow!("session already exists: {}", request.session_id));
@@ -98,6 +101,7 @@ impl SessionRegistry {
         if sessions.len() >= MAX_SESSIONS {
             return Err(anyhow!("session limit reached"));
         }
+        self.make_room_for_active_session(&sessions, &request.session_id)?;
 
         let command = request.command.unwrap_or_else(default_shell);
         let cwd = request.cwd;
@@ -130,8 +134,12 @@ impl SessionRegistry {
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
-        prune_exited_sessions(&mut sessions);
+        self.prune_exited_sessions(&mut sessions)?;
 
+        let retained = self
+            .retained_exits
+            .lock()
+            .map_err(|_| anyhow!("retained exit mutex poisoned"))?;
         let mut summaries = sessions
             .iter()
             .map(|(session_id, entry)| SessionSummary {
@@ -140,8 +148,28 @@ impl SessionRegistry {
                 cwd: entry.cwd.clone(),
                 persistent: entry.persistent,
                 attachment_count: u32::try_from(entry.attachments.len()).unwrap_or(u32::MAX),
+                state: SessionState::Running,
+                latest_exit: retained
+                    .records
+                    .get(session_id)
+                    .map(|record| record.outcome.clone()),
             })
             .collect::<Vec<_>>();
+        summaries.extend(
+            retained
+                .records
+                .iter()
+                .filter(|(session_id, _)| !sessions.contains_key(*session_id))
+                .map(|(session_id, record)| SessionSummary {
+                    session_id: session_id.clone(),
+                    command: record.command.clone(),
+                    cwd: record.cwd.clone(),
+                    persistent: record.persistent,
+                    attachment_count: 0,
+                    state: SessionState::Exited,
+                    latest_exit: Some(record.outcome.clone()),
+                }),
+        );
         summaries.sort_by(|a, b| a.session_id.cmp(&b.session_id));
         Ok(summaries)
     }
@@ -156,7 +184,7 @@ impl SessionRegistry {
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
-        prune_exited_sessions(&mut sessions);
+        self.prune_exited_sessions(&mut sessions)?;
 
         let entry = sessions
             .get_mut(session_id)
@@ -177,7 +205,7 @@ impl SessionRegistry {
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
-        prune_exited_sessions(&mut sessions);
+        self.prune_exited_sessions(&mut sessions)?;
 
         let entry = sessions
             .get_mut(session_id)
@@ -196,7 +224,7 @@ impl SessionRegistry {
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
-        prune_exited_sessions(&mut sessions);
+        self.prune_exited_sessions(&mut sessions)?;
 
         let entry = sessions
             .get_mut(session_id)
@@ -222,7 +250,7 @@ impl SessionRegistry {
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
-        prune_exited_sessions(&mut sessions);
+        self.prune_exited_sessions(&mut sessions)?;
 
         let entry = sessions
             .get(session_id)
@@ -237,7 +265,7 @@ impl SessionRegistry {
             .sessions
             .lock()
             .map_err(|_| anyhow!("session registry mutex poisoned"))?;
-        prune_exited_sessions(&mut sessions);
+        self.prune_exited_sessions(&mut sessions)?;
 
         let entry = sessions
             .get(session_id)
@@ -247,13 +275,37 @@ impl SessionRegistry {
 
     pub fn kill_session(&self, session_id: &str) -> Result<()> {
         validate_session_id(session_id)?;
-        let entry = self
-            .sessions
-            .lock()
-            .map_err(|_| anyhow!("session registry mutex poisoned"))?
-            .remove(session_id)
-            .ok_or_else(|| anyhow!("unknown session: {session_id}"))?;
+        let entry = {
+            let mut sessions = self
+                .sessions
+                .lock()
+                .map_err(|_| anyhow!("session registry mutex poisoned"))?;
+            self.prune_exited_sessions(&mut sessions)?;
+            sessions
+                .remove(session_id)
+                .ok_or_else(|| anyhow!("unknown running session: {session_id}"))?
+        };
         entry.session.kill();
+        Ok(())
+    }
+
+    pub fn acknowledge_attention(&self, session_id: &str, attention_id: &str) -> Result<()> {
+        validate_session_id(session_id)?;
+        validate_attention_id(attention_id)?;
+        let mut retained = self
+            .retained_exits
+            .lock()
+            .map_err(|_| anyhow!("retained exit mutex poisoned"))?;
+        let Some(record) = retained.records.get(session_id) else {
+            return Ok(());
+        };
+        if record.outcome.attention_id != attention_id {
+            return Err(anyhow!(
+                "retained attention changed for session: {session_id}"
+            ));
+        }
+        retained.records.remove(session_id);
+        retained.record_ids.remove(session_id);
         Ok(())
     }
 
@@ -263,7 +315,7 @@ impl SessionRegistry {
                 .sessions
                 .lock()
                 .map_err(|_| anyhow!("session registry mutex poisoned"))?;
-            prune_exited_sessions(&mut sessions);
+            self.prune_exited_sessions(&mut sessions)?;
             for entry in sessions.values_mut() {
                 entry.attachments.remove(owner_connection_id);
             }
@@ -292,16 +344,81 @@ impl SessionRegistry {
         }
         Ok(count)
     }
+
+    fn make_room_for_active_session(
+        &self,
+        sessions: &HashMap<String, SessionEntry>,
+        new_session_id: &str,
+    ) -> Result<()> {
+        let mut retained = self
+            .retained_exits
+            .lock()
+            .map_err(|_| anyhow!("retained exit mutex poisoned"))?;
+        loop {
+            let distinct_retained = retained
+                .records
+                .keys()
+                .filter(|session_id| !sessions.contains_key(*session_id))
+                .count();
+            let additional = usize::from(!retained.records.contains_key(new_session_id));
+            if sessions.len() + distinct_retained + additional <= MAX_SESSIONS {
+                return Ok(());
+            }
+            if !retained.evict_oldest() {
+                return Err(anyhow!("session and retained attention limit reached"));
+            }
+        }
+    }
+
+    fn prune_exited_sessions(&self, sessions: &mut HashMap<String, SessionEntry>) -> Result<()> {
+        let mut exited_ids = sessions
+            .iter()
+            .filter(|(_, entry)| !entry.session.is_running())
+            .map(|(session_id, entry)| {
+                (
+                    entry.session.completed_at().unwrap_or_else(Instant::now),
+                    session_id.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        exited_ids.sort_by_key(|(completed_at, _)| *completed_at);
+        if exited_ids.is_empty() {
+            return Ok(());
+        }
+
+        let mut retained = self
+            .retained_exits
+            .lock()
+            .map_err(|_| anyhow!("retained exit mutex poisoned"))?;
+        for (_, session_id) in exited_ids {
+            let Some(entry) = sessions.remove(&session_id) else {
+                continue;
+            };
+            let Some(outcome) = entry.session.outcome() else {
+                continue;
+            };
+            debug!(%session_id, "retaining exited session attention");
+            retained.insert(
+                session_id,
+                RetainedExitRecord {
+                    command: entry.command,
+                    cwd: entry.cwd,
+                    persistent: entry.persistent,
+                    outcome,
+                },
+            );
+        }
+        Ok(())
+    }
 }
 
-fn prune_exited_sessions(sessions: &mut HashMap<String, SessionEntry>) {
-    sessions.retain(|session_id, entry| {
-        let running = entry.session.is_running();
-        if !running {
-            debug!(%session_id, "removing exited session from registry");
-        }
-        running
-    });
+fn validate_attention_id(attention_id: &str) -> Result<()> {
+    if attention_id.len() != 32 || !attention_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(anyhow!(
+            "attention_id must contain exactly 32 hexadecimal characters"
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_session_id(session_id: &str) -> Result<()> {
@@ -385,11 +502,126 @@ struct SessionEntry {
     session: Session,
 }
 
+struct RetainedExitRecord {
+    command: String,
+    cwd: Option<String>,
+    persistent: bool,
+    outcome: ExitSummary,
+}
+
+#[derive(Default)]
+struct RetainedExitState {
+    records: HashMap<String, RetainedExitRecord>,
+    order: VecDeque<(u64, String)>,
+    next_record_id: u64,
+    record_ids: HashMap<String, u64>,
+}
+
+impl RetainedExitState {
+    fn evict_oldest(&mut self) -> bool {
+        while let Some((old_record_id, old_session_id)) = self.order.pop_front() {
+            if self.record_ids.get(&old_session_id) == Some(&old_record_id) {
+                self.record_ids.remove(&old_session_id);
+                self.records.remove(&old_session_id);
+                return true;
+            }
+        }
+        false
+    }
+
+    fn insert(&mut self, session_id: String, record: RetainedExitRecord) {
+        let record_id = self.next_record_id;
+        self.next_record_id = self.next_record_id.wrapping_add(1);
+        self.records.insert(session_id.clone(), record);
+        self.record_ids.insert(session_id.clone(), record_id);
+        self.order
+            .retain(|(_, queued_session_id)| queued_session_id != &session_id);
+        self.order.push_back((record_id, session_id));
+
+        while self.records.len() > MAX_RETAINED_EXITS && self.evict_oldest() {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{AppState, MAX_WEBSOCKET_CONNECTIONS};
+    use std::collections::HashMap;
+
+    use crate::protocol::{ExitReason, ExitSummary};
+
+    use super::{
+        AppState, MAX_RETAINED_EXITS, MAX_WEBSOCKET_CONNECTIONS, RetainedExitRecord,
+        RetainedExitState, SessionRegistry,
+    };
 
     const TEST_TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+    #[test]
+    fn retained_exits_are_bounded_and_replace_by_session_id() {
+        let mut retained = RetainedExitState::default();
+        for index in 0..(MAX_RETAINED_EXITS + 10) {
+            retained.insert(
+                format!("session-{index}"),
+                RetainedExitRecord {
+                    command: "sh".to_string(),
+                    cwd: None,
+                    persistent: true,
+                    outcome: ExitSummary {
+                        attention_id: format!("{index:032x}"),
+                        status: Some(index as i32),
+                        reason: ExitReason::ProcessExit,
+                    },
+                },
+            );
+        }
+        assert_eq!(retained.records.len(), MAX_RETAINED_EXITS);
+        assert!(!retained.records.contains_key("session-0"));
+        retained.insert(
+            "session-10".to_string(),
+            RetainedExitRecord {
+                command: "bash".to_string(),
+                cwd: Some("/tmp".to_string()),
+                persistent: true,
+                outcome: ExitSummary {
+                    attention_id: "ffffffffffffffffffffffffffffffff".to_string(),
+                    status: Some(99),
+                    reason: ExitReason::ProcessExit,
+                },
+            },
+        );
+        assert_eq!(retained.records.len(), MAX_RETAINED_EXITS);
+        assert!(retained.order.len() <= MAX_RETAINED_EXITS);
+        assert_eq!(retained.records["session-10"].outcome.status, Some(99));
+    }
+
+    #[test]
+    fn new_active_session_evicts_attention_to_preserve_summary_bound() {
+        let registry = SessionRegistry::default();
+        {
+            let mut retained = registry.retained_exits.lock().unwrap();
+            for index in 0..MAX_RETAINED_EXITS {
+                retained.insert(
+                    format!("retained-{index}"),
+                    RetainedExitRecord {
+                        command: "sh".to_string(),
+                        cwd: None,
+                        persistent: true,
+                        outcome: ExitSummary {
+                            attention_id: format!("{index:032x}"),
+                            status: Some(0),
+                            reason: ExitReason::ProcessExit,
+                        },
+                    },
+                );
+            }
+        }
+        registry
+            .make_room_for_active_session(&HashMap::new(), "new-session")
+            .unwrap();
+        assert_eq!(
+            registry.retained_exits.lock().unwrap().records.len(),
+            MAX_RETAINED_EXITS - 1
+        );
+    }
 
     #[test]
     fn websocket_connection_count_is_bounded() {

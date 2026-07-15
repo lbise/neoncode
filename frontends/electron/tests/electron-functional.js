@@ -793,6 +793,19 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   await sendText(page, 'review-shell', reviewReturnCommand);
   await waitForOutput(page, 'review-shell', reviewReturnExpected);
 
+  await sendText(page, 'review-agent', 'exit 7\n');
+  await page.waitForFunction(() => {
+    const pane = window.neoncodeTest.getState().panes.find((candidate) => candidate.paneId === 'review-agent');
+    return pane?.lifecycle === 'exited'
+      && pane.latestExit?.status === 7
+      && pane.latestExit?.reason === 'process_exit';
+  }, null, { timeout });
+  await assertWorkspaceStatus(page, 'review', 'attention', 'Needs attention');
+  assert(
+    await page.getByTestId('workspace-acknowledge-review').isVisible(),
+    'workspace attention acknowledgement was not visible',
+  );
+
   log('tools', { tmux: tmuxResult, nvim: nvimResult });
 }
 
@@ -825,10 +838,15 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
   assert(summaries.length === 5, `expected five hub session summaries, got ${summaries.length}`);
   for (const summary of summaries) {
     assert(summary.metadataComplete === true, `${summary.sessionId} metadata was incomplete`);
+    assert(summary.lifecycleComplete === true, `${summary.sessionId} lifecycle metadata was incomplete`);
     assert(summary.command === 'bash', `${summary.sessionId} command metadata was not bash`);
     assert(summary.persistent === true, `${summary.sessionId} was not reported persistent`);
     assert(summary.attachmentCount === 0, `${summary.sessionId} was unexpectedly attached during discovery`);
   }
+  const agentSummary = summaries.find((summary) => summary.sessionId === `${sessionPrefix}-review-agent`);
+  assert(agentSummary.state === 'exited', 'exited review agent was not retained by the hub');
+  assert(agentSummary.latestExit?.status === 7, 'retained review agent exit status was not 7');
+  assert(agentSummary.latestExit?.reason === 'process_exit', 'retained review agent exit reason was incorrect');
   assert(
     summaries.find((summary) => summary.sessionId === `${sessionPrefix}-shell`).cwd === null,
     'hub did not preserve the original default cwd metadata',
@@ -840,7 +858,7 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
   const restoredLocation = instance.page.getByTestId('workspace-default').locator('.workspace-location');
   assert(await restoredLocation.getAttribute('data-source') === 'hub', 'restored workspace location was not hub-backed');
   await assertWorkspaceStatus(instance.page, 'default', 'available', '2 available');
-  await assertWorkspaceStatus(instance.page, 'review', 'running', '3 running');
+  await assertWorkspaceStatus(instance.page, 'review', 'attention', 'Needs attention');
   const expectedSessionIds = [
     `${sessionPrefix}-shell`, `${sessionPrefix}-tasks`,
     `${sessionPrefix}-review-shell`, `${sessionPrefix}-review-tasks`, `${sessionPrefix}-review-agent`,
@@ -851,7 +869,23 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
       `session discovery did not find persisted session ${sessionId}`,
     );
   }
-  await assertPaneLifecycles(instance, 'attached');
+  for (const pane of state.panes) {
+    const expectedLifecycle = pane.paneId === 'review-agent' ? 'started' : 'attached';
+    assert(pane.lifecycle === expectedLifecycle, `${pane.paneId} expected ${expectedLifecycle}, got ${pane.lifecycle}`);
+  }
+  await instance.page.getByTestId('workspace-acknowledge-review').click();
+  await instance.page.waitForFunction(() => (
+    document.querySelector('[data-testid="workspace-status-review"]')?.dataset.state === 'running'
+  ), null, { timeout });
+  await assertWorkspaceStatus(instance.page, 'review', 'running', '3 running');
+  await instance.page.waitForFunction(() => (
+    window.neoncodeTest.getState().workspace.summaries
+      .find((workspace) => workspace.id === 'review')?.state === 'running'
+  ), null, { timeout });
+  assert(
+    await instance.page.getByTestId('workspace-acknowledge-review').isHidden(),
+    'workspace attention acknowledgement did not clear',
+  );
   for (const pane of state.panes) {
     assert(pane.firstOutputSeq > 0, `${pane.paneId} did not receive replayed output sequence data`);
     assert(pane.lastOutputSeq >= pane.firstOutputSeq, `${pane.paneId} output sequence regressed`);

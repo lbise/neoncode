@@ -171,6 +171,10 @@ async fn handle_socket(
         &ServerMessage::Welcome {
             protocol_version: PROTOCOL_VERSION,
             boot_id: state.boot_id().to_string(),
+            capabilities: vec![
+                "session_metadata".to_string(),
+                "session_exit_attention".to_string(),
+            ],
         },
     )
     .await
@@ -425,6 +429,20 @@ async fn handle_client_text(
             state.registry().kill_session(&session_id)?;
             outgoing.send(ServerMessage::Killed { session_id }).await?;
         }
+        ClientMessage::AcknowledgeAttention {
+            session_id,
+            attention_id,
+        } => {
+            state
+                .registry()
+                .acknowledge_attention(&session_id, &attention_id)?;
+            outgoing
+                .send(ServerMessage::AttentionAcknowledged {
+                    session_id,
+                    attention_id,
+                })
+                .await?;
+        }
     }
 
     Ok(())
@@ -502,9 +520,15 @@ fn server_message_from_event(session_id: &str, event: SessionEvent) -> ServerMes
             seq,
             data_b64,
         },
-        SessionEvent::Exit { status } => ServerMessage::Exit {
-            session_id: session_id.to_string(),
+        SessionEvent::Exit {
+            attention_id,
             status,
+            reason,
+        } => ServerMessage::Exit {
+            session_id: session_id.to_string(),
+            attention_id,
+            status,
+            reason,
         },
         SessionEvent::Error { message } => ServerMessage::Error {
             session_id: Some(session_id.to_string()),

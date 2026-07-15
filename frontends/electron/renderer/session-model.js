@@ -90,6 +90,7 @@ class SessionModel {
       hubBootId: '',
       reconnectAttempts: 0,
       reconnectEvents: 0,
+      latestExit: null,
     };
 
     const publicPane = {
@@ -119,6 +120,7 @@ class SessionModel {
       background: terminal.options.theme.background,
       magenta: terminal.options.theme.magenta,
       brightMagenta: terminal.options.theme.brightMagenta,
+      latestExit: null,
     };
     this.publicState.panes[index] = publicPane;
     state.publicPane = publicPane;
@@ -180,6 +182,11 @@ class SessionModel {
     const pane = this.pane(state);
     pane.reconnectAttempts = 0;
     pane.reconnectDelayMs = 0;
+  }
+
+  recordExit(state, outcome) {
+    state.latestExit = { ...outcome };
+    this.pane(state).latestExit = { ...outcome };
   }
 
   recordInput(state) {

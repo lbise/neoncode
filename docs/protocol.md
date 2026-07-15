@@ -123,6 +123,18 @@ Subscribes this WebSocket to the session. The hub sends `attached`, replays its 
 Stops forwarding session events to this WebSocket.
 If the detaching WebSocket created the session, the session is released from that WebSocket lifetime and can survive that WebSocket closing.
 
+### Acknowledge retained exit attention
+
+```json
+{
+  "type": "acknowledge_attention",
+  "session_id": "shell-1",
+  "attention_id": "<32-hex attention generation>"
+}
+```
+
+Compare-and-clears the specified retained exit without affecting a running replacement or a newer exit. The hub responds with `attention_acknowledged`. Missing/already-cleared records acknowledge idempotently; a different current `attention_id` returns an error so a stale UI cannot clear newer attention.
+
 ### Send terminal input
 
 ```json
@@ -183,11 +195,12 @@ The client verifies this server proof, then waits for `welcome` before sending s
 {
   "type": "welcome",
   "protocol_version": 1,
-  "boot_id": "<64-hex-character hub boot identity>"
+  "boot_id": "<64-hex-character hub boot identity>",
+  "capabilities": ["session_metadata", "session_exit_attention"]
 }
 ```
 
-`boot_id` is stable for one hub process and changes after restart. Clients must reject unsupported protocol versions.
+`boot_id` is stable for one hub process and changes after restart. `capabilities` advertises additive protocol-v1 features; legacy hubs may omit it. Clients must reject unsupported protocol versions.
 
 ### Session started
 
@@ -209,7 +222,9 @@ The client verifies this server proof, then waits for `welcome` before sending s
       "command": "bash",
       "cwd": "/home/me/src/project",
       "persistent": true,
-      "attachment_count": 0
+      "attachment_count": 0,
+      "state": "running",
+      "latest_exit": null
     }
   ]
 }
@@ -222,8 +237,10 @@ Summary fields:
 - `cwd`: configured launch cwd, or `null` for the hub/default inherited cwd. It is not the shell's current working directory after launch.
 - `persistent`: whether the session survives its creating connection disappearing.
 - `attachment_count`: number of authenticated WebSocket connections currently forwarding this session. `start` counts as one attachment; `detach` and socket disconnect decrement it.
+- `state`: `running` for an active PTY or `exited` for a retained exit record.
+- `latest_exit`: `null` or the latest bounded attention record `{ "attention_id": "<32-hex>", "status": 7, "reason": "process_exit" }`. A running replacement may retain an older non-null exit until acknowledgement.
 
-These four metadata fields are emitted as one atomic additive bundle within protocol v1. Updated clients accept legacy ID-only summaries and treat their metadata as unavailable, but reject partially populated bundles as malformed.
+The four launch/attachment fields and two lifecycle fields are emitted as atomic additive bundles within protocol v1. Updated clients accept legacy ID-only summaries and treat their metadata as unavailable, but reject partially populated bundles as malformed.
 
 ### Session attached
 
@@ -262,11 +279,13 @@ These four metadata fields are emitted as one atomic additive bundle within prot
 {
   "type": "exit",
   "session_id": "shell-1",
-  "status": 0
+  "attention_id": "<32-hex attention generation>",
+  "status": 0,
+  "reason": "process_exit"
 }
 ```
 
-`status` is the process exit code when available. It is `null` if the child wait operation cannot provide a status.
+`status` is the process exit code when available. `reason` is `process_exit`, `wait_failed`, or `killed`. It is `null` when the child wait operation cannot provide a status. Portable-pty 0.8 does not expose portable signal fidelity, so NeonCode does not claim a signal-specific reason.
 
 ### Session killed
 
@@ -274,6 +293,16 @@ These four metadata fields are emitted as one atomic additive bundle within prot
 {
   "type": "killed",
   "session_id": "shell-1"
+}
+```
+
+### Attention acknowledged
+
+```json
+{
+  "type": "attention_acknowledged",
+  "session_id": "shell-1",
+  "attention_id": "<32-hex attention generation>"
 }
 ```
 

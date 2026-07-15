@@ -30,7 +30,7 @@ Current capabilities:
 - resize PTY;
 - kill PTY session;
 - maintain sessions in a shared in-process session registry;
-- list active sessions with effective command, configured cwd, persistence, and attachment count;
+- list active sessions with effective command, configured cwd, persistence, attachment count, and retained latest-exit attention;
 - attach a WebSocket with bounded recent terminal-output replay followed by live events;
 - detach a WebSocket from a session;
 - require the Electron `file://` origin and a per-user capability challenge-response on WebSockets;
@@ -45,7 +45,8 @@ Current limitations:
 - output replay is bounded to 2 MiB per session and is raw terminal bytes, not a canonical screen snapshot;
 - the session registry is in-process only and does not persist across hub restarts;
 - session IDs are currently frontend-provided;
-- natural process exits report an exit code when `portable-pty` provides one; `status` remains nullable for unavailable/error cases;
+- natural process exits report a typed reason and exit code when `portable-pty` provides one; signal-specific fidelity remains unavailable;
+- latest exits are retained only in memory, bounded to 64 session IDs, and disappear on hub restart;
 - terminal input/output is JSON text with base64 payloads, not binary frames;
 - remote access is intentionally unsupported; the process refuses non-loopback bind addresses.
 
@@ -233,7 +234,7 @@ Default size:
 
 ### List
 
-Frontend sends `list_sessions` to get active session IDs and hub-owned metadata from the in-process registry: effective command, configured launch cwd, persistence, and current attachment count. Arguments are not exposed because they may contain sensitive values. Configured cwd is launch metadata, not the shell's later live cwd. Naturally exited sessions are pruned and are not returned; their IDs can be reused.
+Frontend sends `list_sessions` to get active session IDs and hub-owned metadata from the in-process registry: effective command, configured launch cwd, persistence, current attachment count, running/exited state, and retained latest exit. Arguments are not exposed because they may contain sensitive values. Configured cwd is launch metadata, not the shell's later live cwd. Naturally exited PTYs are removed, but their latest exit metadata remains discoverable until acknowledged. IDs can be reused immediately; a running replacement retains the prior attention until explicit acknowledgement.
 
 ### Attach
 
@@ -248,6 +249,10 @@ The replay buffer retains up to 2 MiB of raw terminal output per session. This r
 Frontend sends `detach` with a `session_id` to stop forwarding that session's events to the current WebSocket.
 
 Detach removes the current connection from the session's attachment set. If the detaching WebSocket originally created the session, the hub also releases that session from the WebSocket lifetime and marks it persistent. Closing the WebSocket after detach will not kill that session.
+
+### Exit attention
+
+Natural exits retain a bounded latest record per session ID with nullable status and reason `process_exit` or `wait_failed`. Explicit kill does not create attention. A running replacement can coexist with its previous attention. `acknowledge_attention` compare-and-clears only the specified 32-hex attention generation and never kills the replacement; stale acknowledgements cannot clear a newer exit. At most 64 latest-exit records are retained in process memory; oldest records are evicted and hub restart clears them.
 
 ### Input
 

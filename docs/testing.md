@@ -39,6 +39,7 @@ Current coverage:
 - authenticated connections receive a versioned, per-boot hub welcome;
 - persistent sessions retain PTY state across unexpected WebSocket disconnect and remain explicitly killable;
 - session summaries preserve effective command/configured cwd/persistence and track attachment counts across two clients, detach, and disconnect;
+- natural exits expose typed reasons, retain bounded attention across ID reuse, acknowledge independently of replacements, and explicit kills create no attention;
 - invalid/overlong session IDs, invalid sizes, oversized decoded input, and oversized transport messages are rejected;
 - non-loopback bind addresses and excess WebSocket permits are rejected by unit tests;
 - replay is bounded by both raw bytes and entry count;
@@ -63,7 +64,7 @@ Use injected/fake dependencies for:
 - timers/reconnect backoff;
 - persisted configuration.
 
-The current `frontends/electron/tests/hub-client-auth.js` test uses a mock WebSocket plus Node Web Crypto to verify that the renderer sends no bearer token, accepts a valid reciprocal hub proof, and rejects a fake hub proof. `frontends/electron/tests/config-store.js` covers first-run defaults, environment precedence, migration, strict validation, backup recovery, future schemas, state clamping/persistence, stale temporary-file cleanup, unusable missing-primary backups, and injected backup-write failures. `./dev check` runs both without Electron.
+The current `frontends/electron/tests/hub-client-auth.js` test uses a mock WebSocket plus Node Web Crypto to verify that the renderer sends no bearer token, accepts a valid reciprocal hub proof, rejects fake hub proofs/malformed capabilities, and strictly normalizes session lifecycle metadata. `frontends/electron/tests/reconnect-policy.js` uses a fake clock to prove capped backoff, single-timer suppression, cancellation/reset, and bounded attach/start fallback without wall-clock sleeps. `frontends/electron/tests/config-store.js` covers first-run defaults, environment precedence, migration, strict validation, backup recovery, future schemas, state clamping/persistence, stale temporary-file cleanup, unusable missing-primary backups, and injected backup-write failures. `./dev check` runs both without Electron.
 
 This layer should verify state transitions such as:
 
@@ -139,6 +140,6 @@ Then assert `result-token`. Other options are base64-decoding a random token in 
 - [x] Add close/reopen/reattach coverage using a stable session prefix and a real test hub.
 - [x] Verify pre-close output is replayed with contiguous output sequence numbers after reattach.
 - [x] Use an isolated desktop config directory for every Electron test run.
-- [x] Verify configured pane titles and process cwd, real xterm Ctrl+D/Ctrl+Z/navigation/function-key byte paths, selection/clipboard copy, first-use shortcut/DOM paste-race deduplication in both panes, interactive tmux/Neovim workflows, SGR mouse press/release reports, tmux split selection and wheel-activated copy mode, Neovim click positioning and wheel scrolling, Unicode and 20,000-line output with a completion bound and no sequence gap, hub-authoritative session command/cwd/persistence/attachment metadata, dynamic two-/three-pane workspace switching with idle/running/detached/available sidebar status transitions, detach/reattach continuity, active-workspace restoration, detach/kill close policies across visited workspaces, forced-socket reconnect with PTY-state continuity, single-instance storage ownership, atomic window/workspace-state restoration, malformed-config backup recovery, and visible unrecoverable-config errors.
+- [x] Verify configured pane titles and process cwd, real xterm Ctrl+D/Ctrl+Z/navigation/function-key byte paths, selection/clipboard copy, first-use shortcut/DOM paste-race deduplication in both panes, interactive tmux/Neovim workflows, SGR mouse press/release reports, tmux split selection and wheel-activated copy mode, Neovim click positioning and wheel scrolling, Unicode and 20,000-line output with a completion bound and no sequence gap, hub-authoritative session metadata, retained status-7 workspace attention/acknowledgement across relaunch, dynamic two-/three-pane workspace switching with idle/running/detached/available sidebar status transitions, detach/reattach continuity, active-workspace restoration, detach/kill close policies across visited workspaces, forced-socket reconnect with PTY-state continuity, single-instance storage ownership, atomic window/workspace-state restoration, malformed-config backup recovery, and visible unrecoverable-config errors.
 - [ ] Add renderer tests with a fake hub for errors, timeouts, and reconnect state transitions.
 - [ ] Add a narrow PowerShell window-launch/desktop compatibility smoke when installer/DPI/multi-monitor work begins.

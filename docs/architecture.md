@@ -37,6 +37,7 @@ Current role:
 - switches named workspaces by detaching the old panes and attaching/starting the selected panes;
 - restores the active workspace from app-owned state;
 - summarizes hub-owned WSL launch metadata and aggregate pane lifecycle in the workspace sidebar, falling back to configured locations for sessions not yet created;
+- displays and explicitly acknowledges retained exit attention without conflating it with a replacement session's running state;
 - attaches known sessions and starts missing sessions;
 - sends `input`, `resize`, and acknowledgement-based `detach` before normal app close;
 - provides smoke-test state for Playwright and PowerShell validation.
@@ -89,7 +90,7 @@ Detailed docs:
 
 Current protocol is authenticated JSON over WebSocket with base64 terminal bytes. An authenticated `welcome` supplies protocol version 1 and a per-process hub `boot_id` before session operations begin.
 
-`session_list` includes additive hub-owned effective-command, configured-cwd, persistence, and attachment-count metadata while remaining protocol v1 compatible with ID-only clients.
+`session_list` includes additive hub-owned effective-command, configured-cwd, persistence, attachment-count, lifecycle, and retained latest-exit metadata while remaining protocol v1 compatible with ID-only clients. `welcome.capabilities` advertises these additive features.
 
 Important current messages:
 
@@ -128,6 +129,7 @@ frontends/electron/renderer/        renderer modules:
   hub-client.js                     WebSocket protocol client helpers
   session-model.js                  pane/session state and bounded output view
   terminal-pane.js                  xterm.js pane, input, resize, output handling
+  reconnect-policy.js               deterministic reconnect timing and activation fallback
   test-api.js                       test-mode structured renderer API
 frontends/electron/tests/           Node config/auth tests and hidden-window Playwright tests
 scripts/electron-app.ps1            npm ci, renderer build, Windows publish/start

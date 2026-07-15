@@ -87,7 +87,7 @@ class NeonCodeApp {
     this.workspaceSessionStates = new Map(
       this.config.workspaces.flatMap((workspace) => workspace.panes.map((pane) => [
         pane.sessionId,
-        { workspaceId: workspace.id, lifecycle: 'idle', error: '' },
+        { workspaceId: workspace.id, lifecycle: 'idle', error: '', attention: null },
       ])),
     );
     this.panes = [];
@@ -149,6 +149,16 @@ class NeonCodeApp {
       this.workspaceSessionStates.get(pane.sessionId) || { lifecycle: 'idle', error: '' }
     ));
     const count = (lifecycles) => states.filter((state) => lifecycles.includes(state.lifecycle)).length;
+    const attention = states.filter((state) => state.attention);
+    if (attention.length > 0) {
+      const first = attention[0].attention;
+      const status = first.status === null ? 'unknown status' : `status ${first.status}`;
+      return {
+        state: 'attention',
+        label: attention.length === 1 ? 'Needs attention' : `${attention.length} need attention`,
+        detail: `${first.title} exited with ${status} (${first.reason.replaceAll('_', ' ')})`,
+      };
+    }
     const errors = states.filter((state) => state.error).map((state) => state.error);
     if (errors.length > 0 || count(['error']) > 0) {
       return { state: 'error', label: 'Error', detail: errors[0] || 'Session error' };
@@ -195,20 +205,24 @@ class NeonCodeApp {
     });
     this.sessionModel.setWorkspaceSummaries(summaries);
     for (const summary of summaries) {
-      const button = this.workspaceList.querySelector(`[data-workspace-id="${summary.id}"]`);
-      const status = button?.querySelector('.workspace-status');
-      const location = button?.querySelector('.workspace-location');
-      if (!button || !status || !location) continue;
+      const entry = this.workspaceList.querySelector(`.workspace-entry[data-workspace-id="${summary.id}"]`);
+      const button = entry?.querySelector('.workspace-button');
+      const status = entry?.querySelector('.workspace-status');
+      const location = entry?.querySelector('.workspace-location');
+      const acknowledge = entry?.querySelector('.workspace-attention-button');
+      if (!button || !status || !location || !acknowledge) continue;
       button.dataset.state = summary.state;
       button.title = `${summary.location} — ${summary.detail}`;
       location.textContent = summary.location;
       location.dataset.source = summary.locationSource;
       status.dataset.state = summary.state;
       status.textContent = summary.label;
+      acknowledge.hidden = summary.state !== 'attention';
     }
   }
 
   updateHubSessionMetadata(descriptor, lifecycle) {
+    const existing = this.hubSessionsById.get(descriptor.sessionId);
     if (lifecycle === 'started') {
       this.hubSessionsById.set(descriptor.sessionId, {
         sessionId: descriptor.sessionId,
@@ -217,16 +231,57 @@ class NeonCodeApp {
         persistent: true,
         attachmentCount: 1,
         metadataComplete: true,
+        state: 'running',
+        latestExit: existing?.latestExit || null,
+        lifecycleComplete: true,
       });
       this.discoveredSessionIds.add(descriptor.sessionId);
-    } else if (lifecycle === 'detached') {
-      const metadata = this.hubSessionsById.get(descriptor.sessionId);
-      if (metadata?.metadataComplete) {
-        this.hubSessionsById.set(descriptor.sessionId, { ...metadata, attachmentCount: 0 });
+    } else if (lifecycle === 'detached' && existing?.metadataComplete) {
+      this.hubSessionsById.set(descriptor.sessionId, { ...existing, attachmentCount: 0 });
+    } else if (lifecycle === 'killed') {
+      if (existing?.latestExit) {
+        this.hubSessionsById.set(descriptor.sessionId, {
+          ...existing,
+          attachmentCount: 0,
+          state: 'exited',
+        });
+      } else {
+        this.hubSessionsById.delete(descriptor.sessionId);
       }
-    } else if (lifecycle === 'killed' || lifecycle === 'exited') {
-      this.hubSessionsById.delete(descriptor.sessionId);
       this.discoveredSessionIds.delete(descriptor.sessionId);
+    }
+  }
+
+  recordSessionExit(descriptor, outcome) {
+    const latestExit = {
+      attentionId: outcome.attentionId,
+      status: Number.isInteger(outcome.status) ? outcome.status : null,
+      reason: outcome.reason || 'process_exit',
+    };
+    const existing = this.hubSessionsById.get(descriptor.sessionId);
+    this.hubSessionsById.set(descriptor.sessionId, {
+      sessionId: descriptor.sessionId,
+      command: existing?.command || descriptor.launchProfile.command,
+      cwd: existing ? existing.cwd : descriptor.launchProfile.cwd,
+      persistent: existing?.persistent ?? true,
+      attachmentCount: 0,
+      metadataComplete: true,
+      state: 'exited',
+      latestExit,
+      lifecycleComplete: true,
+    });
+    this.discoveredSessionIds.delete(descriptor.sessionId);
+    const current = this.workspaceSessionStates.get(descriptor.sessionId);
+    if (current) {
+      this.workspaceSessionStates.set(descriptor.sessionId, {
+        ...current,
+        attention: {
+          ...latestExit,
+          sessionId: descriptor.sessionId,
+          title: descriptor.title,
+        },
+      });
+      this.updateWorkspaceStatuses();
     }
   }
 
@@ -240,6 +295,9 @@ class NeonCodeApp {
   renderWorkspaceSelector() {
     this.workspaceList.replaceChildren();
     for (const workspace of this.config.workspaces) {
+      const entry = this.document.createElement('div');
+      entry.className = 'workspace-entry';
+      entry.dataset.workspaceId = workspace.id;
       const button = this.document.createElement('button');
       button.type = 'button';
       button.className = 'workspace-button';
@@ -267,7 +325,27 @@ class NeonCodeApp {
           this.setStatus(`Workspace switch failed: ${error.message}`);
         });
       });
-      this.workspaceList.append(button);
+      const acknowledge = this.document.createElement('button');
+      acknowledge.type = 'button';
+      acknowledge.className = 'workspace-attention-button';
+      acknowledge.dataset.testid = `workspace-acknowledge-${workspace.id}`;
+      acknowledge.textContent = 'Dismiss';
+      acknowledge.setAttribute('aria-label', `Dismiss exit attention for ${workspace.name}`);
+      acknowledge.title = `Dismiss exit attention for ${workspace.name}`;
+      acknowledge.hidden = true;
+      acknowledge.addEventListener('click', () => {
+        acknowledge.disabled = true;
+        this.acknowledgeWorkspaceAttention(workspace.id)
+          .catch((error) => {
+            console.error('workspace_attention_acknowledge_failed', error);
+            this.setStatus(`Could not dismiss workspace attention: ${error.message}`);
+          })
+          .finally(() => {
+            acknowledge.disabled = false;
+          });
+      });
+      entry.append(button, acknowledge);
+      this.workspaceList.append(entry);
     }
     this.updateWorkspaceStatuses();
   }
@@ -290,13 +368,28 @@ class NeonCodeApp {
 
     this.renderWorkspaceSelector();
     const discoveredSessions = await this.discoverSessions();
-    this.discoveredSessionIds = new Set(discoveredSessions.map((session) => session.sessionId));
+    this.discoveredSessionIds = new Set(
+      discoveredSessions.filter((session) => session.state === 'running').map((session) => session.sessionId),
+    );
     this.hubSessionsById = new Map(discoveredSessions.map((session) => [session.sessionId, session]));
     for (const session of discoveredSessions) {
       if (this.workspaceSessionStates.has(session.sessionId)) {
         const current = this.workspaceSessionStates.get(session.sessionId);
-        const lifecycle = session.metadataComplete && session.attachmentCount > 0 ? 'in_use' : 'available';
-        this.workspaceSessionStates.set(session.sessionId, { ...current, lifecycle, error: '' });
+        const lifecycle = session.state === 'exited'
+          ? 'idle'
+          : session.metadataComplete && session.attachmentCount > 0 ? 'in_use' : 'available';
+        const pane = this.config.workspaces
+          .flatMap((workspace) => workspace.panes)
+          .find((candidate) => candidate.sessionId === session.sessionId);
+        const attention = session.latestExit
+          ? { ...session.latestExit, sessionId: session.sessionId, title: pane?.title || session.sessionId }
+          : null;
+        this.workspaceSessionStates.set(session.sessionId, {
+          ...current,
+          lifecycle,
+          error: '',
+          attention,
+        });
       }
     }
     this.updateWorkspaceStatuses();
@@ -492,9 +585,84 @@ class NeonCodeApp {
         this.updateHubSessionMetadata(descriptor, lifecycle);
         this.recordWorkspaceSessionState(descriptor.sessionId, lifecycle, error);
       },
+      onSessionExit: (outcome) => this.recordSessionExit(descriptor, outcome),
     });
     this.panes.push(pane);
     pane.start();
+  }
+
+  acknowledgeSessionAttention(sessionId, attentionId) {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutHandle);
+        client.close();
+        if (error) reject(error); else resolve();
+      };
+      const timeoutHandle = setTimeout(
+        () => finish(new Error('attention acknowledgement timed out')),
+        CONTROL_OPERATION_TIMEOUT_MS,
+      );
+      const client = new HubClient({
+        endpoint: this.config.endpoint,
+        capabilityToken: this.config.capabilityToken,
+        sessionId,
+        onOpen: () => {
+          if (!client.acknowledgeAttention(attentionId)) {
+            finish(new Error('failed to send acknowledgement'));
+          }
+        },
+        onMessage: (message) => {
+          if (message.type === 'attention_acknowledged'
+              && message.session_id === sessionId
+              && message.attention_id === attentionId) {
+            finish();
+          } else if (message.type === 'error'
+              && (!message.session_id || message.session_id === sessionId)) {
+            finish(new Error(message.message || 'attention acknowledgement failed'));
+          }
+        },
+        onInvalidMessage: (error) => finish(error),
+        onClose: () => finish(new Error('attention acknowledgement connection closed')),
+        onError: () => {},
+      });
+      client.connect();
+    });
+  }
+
+  async acknowledgeWorkspaceAttention(workspaceId) {
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === workspaceId);
+    if (!workspace) throw new Error(`unknown workspace: ${workspaceId}`);
+    const targets = workspace.panes
+      .map((pane) => ({
+        pane,
+        attentionId: this.workspaceSessionStates.get(pane.sessionId)?.attention?.attentionId,
+      }))
+      .filter((target) => target.attentionId);
+    const results = await Promise.allSettled(targets.map((target) => (
+      this.acknowledgeSessionAttention(target.pane.sessionId, target.attentionId)
+    )));
+    results.forEach((result, index) => {
+      if (result.status !== 'fulfilled') return;
+      const { pane, attentionId: acknowledgedId } = targets[index];
+      const current = this.workspaceSessionStates.get(pane.sessionId);
+      if (!current?.attention || current.attention.attentionId !== acknowledgedId) return;
+      this.workspaceSessionStates.set(pane.sessionId, { ...current, attention: null });
+      const metadata = this.hubSessionsById.get(pane.sessionId);
+      if (metadata?.latestExit?.attentionId !== acknowledgedId) return;
+      if (metadata.state === 'exited') {
+        this.hubSessionsById.delete(pane.sessionId);
+      } else {
+        this.hubSessionsById.set(pane.sessionId, { ...metadata, latestExit: null });
+      }
+    });
+    this.updateWorkspaceStatuses();
+    const failed = results.filter((result) => result.status === 'rejected');
+    if (failed.length > 0) {
+      throw new Error(`${failed.length} attention acknowledgement(s) failed`);
+    }
   }
 
   killDetachedSession(sessionId) {

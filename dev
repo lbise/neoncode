@@ -164,6 +164,7 @@ case "$command" in
     node frontends/electron/tests/config-store.js
     node frontends/electron/tests/token-loader.js
     node frontends/electron/tests/hub-client-auth.js
+    node frontends/electron/tests/reconnect-policy.js
     cargo fmt --check
     cargo check
     cargo test

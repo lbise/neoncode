@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Hub-owned session metadata ready for manual preview
+Stage: Retained workspace exit attention ready for manual preview
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: extended stability soaking, then richer workspace status and snapshot/resync
+Next focus: checkpoint/resync, then extended reconnect and output stability soaking
 ```
 
 The Windows tech stack is now:
@@ -320,7 +320,7 @@ Inspired by wmux/cmux/t3code analysis:
 - [ ] Add snapshot/resync flow.
 - [ ] Add attachment IDs and per-attachment resize semantics.
 - [x] Add hub-owned effective command, configured cwd, persistence, and attachment-count metadata.
-- [ ] Add session exit status/reason.
+- [x] Add typed session exit status/reason and bounded retained attention.
 - [ ] Decide backend-generated vs frontend-provided IDs.
 
 ### Milestone: hub-owned session metadata
@@ -337,6 +337,30 @@ Status: complete and ready for manual preview.
 - [x] Verify hub-authoritative cwd despite changed frontend configuration in real Electron tests.
 
 Manual preview: start workspaces, close NeonCode with detach, alter a matching launch profile cwd, and reopen. Existing sessions continue to show the hub's original configured launch cwd; new sessions use the edited profile.
+
+### Milestone: retained exit attention
+
+Status: complete and ready for manual preview.
+
+- [x] Report typed `process_exit`, `wait_failed`, and `killed` reasons without claiming unavailable signal fidelity.
+- [x] Retain the latest natural exit for at most 64 session IDs in hub memory.
+- [x] Allow immediate ID reuse while preserving prior attention.
+- [x] Add explicit authenticated attention acknowledgement that never kills a replacement.
+- [x] Prioritize workspace attention in the sidebar and show an accessible Dismiss control.
+- [x] Restore attention after Electron relaunch and start a configured replacement session.
+- [x] Cover exit status, retention, reuse, acknowledgement, explicit-kill suppression, and memory bounds.
+
+Manual preview: run `exit 7` in a pane. Its workspace shows `Needs attention`; close/reopen NeonCode to see attention restored while the pane starts again, then use Dismiss.
+
+### Milestone: deterministic reconnect policy coverage
+
+Status: complete.
+
+- [x] Extract capped exponential reconnect timing from xterm rendering.
+- [x] Enforce a single pending reconnect timer with explicit cancel/reset semantics.
+- [x] Extract bounded attach/start fallback decisions.
+- [x] Add fake-clock tests for 250/500/1000…5000 ms backoff, duplicate suppression, cancellation, reset, and one-time fallback.
+- [x] Run the deterministic suite under `./dev check` without wall-clock sleeps.
 
 ### 6. CLI/API
 
