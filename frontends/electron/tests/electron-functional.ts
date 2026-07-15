@@ -1,15 +1,82 @@
-const { _electron: electron } = require('playwright');
-const { spawn } = require('node:child_process');
-const electronExecutable = require('electron');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const { defaultConfig } = require('../config-store');
+import { spawn } from 'node:child_process';
+import fs = require('node:fs');
+import os = require('node:os');
+import path = require('node:path');
+import {
+  _electron as electron,
+  type ElectronApplication,
+  type Page,
+} from 'playwright';
+
+import { defaultConfig } from '../config-store';
+import type {
+  DesktopConfig,
+  DesktopLaunchProfile,
+  NeoncodeDesktopApi,
+  PublicConfiguration,
+  PublicPaneState,
+  RendererPublicState,
+  RendererTestApi,
+  SessionLifecycle,
+  TerminalAppearance,
+} from '../shared/types';
+
+const electronExecutable: unknown = require('electron');
+
+interface FunctionalConfiguration extends PublicConfiguration {
+  terminal: TerminalAppearance;
+  workspaces: Array<{
+    id: string;
+    sessions: Array<{ launchProfile: DesktopLaunchProfile }>;
+  }>;
+}
+
+interface FunctionalState extends Omit<RendererPublicState, 'configuration'> {
+  configuration: FunctionalConfiguration;
+}
+
+interface ElectronTestInstance {
+  electronApp: ElectronApplication;
+  page: Page;
+  consoleMessages: string[];
+  configDirectory: string;
+  launchEnvironment: NodeJS.ProcessEnv;
+}
+
+interface LaunchOptions {
+  expectReady?: boolean;
+}
+
+interface TerminalPointOptions {
+  xFraction?: number;
+  yFraction?: number;
+}
+
+interface TestConfigOptions {
+  persistencePolicy?: 'detach' | 'kill';
+}
+
+interface PersistedTestState {
+  schemaVersion: number;
+  window: { width: number; height: number };
+  activeWorkspaceId: string | null;
+}
+
+declare global {
+  interface Window {
+    neoncodeDesktop: NeoncodeDesktopApi & { readonly config: DesktopConfig };
+    neoncodeTest: RendererTestApi;
+  }
+}
 
 const appRoot = path.resolve(__dirname, '..', '..');
 const endpoint = process.env.NEONCODE_HUB_ENDPOINT || 'ws://127.0.0.1:44777/ws';
 const timeout = Number.parseInt(process.env.NEONCODE_PLAYWRIGHT_TIMEOUT || '20000', 10);
-function writeTestConfig(directory, { persistencePolicy = 'detach' } = {}) {
+
+function writeTestConfig(
+  directory: string,
+  { persistencePolicy = 'detach' }: TestConfigOptions = {},
+): void {
   const config = defaultConfig();
   config.sessionPrefix = 'config-file-prefix';
   config.persistence.onWindowClose = persistencePolicy;
@@ -45,18 +112,33 @@ function writeTestConfig(directory, { persistencePolicy = 'detach' } = {}) {
   fs.writeFileSync(path.join(directory, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
 }
 
-function log(message, details) {
+function log(message: string, details?: unknown): void {
   const payload = details === undefined ? '' : ` ${JSON.stringify(details)}`;
   console.log(`[electron-test] ${message}${payload}`);
 }
 
-function assert(condition, message) {
+function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
     throw new Error(message);
   }
 }
 
-function summarizeState(state) {
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function requireElectronExecutable(value: unknown): string {
+  assert(typeof value === 'string', 'Electron module did not resolve to an executable path');
+  return value;
+}
+
+function parseJson<T>(text: string, label: string): T {
+  const value: unknown = JSON.parse(text);
+  assert(value !== null && typeof value === 'object', `${label} must contain a JSON object`);
+  return value as T;
+}
+
+function summarizeState(state: FunctionalState) {
   return {
     configuration: state.configuration,
     panes: state.panes.map(({ recentOutput, ...pane }) => ({
@@ -67,9 +149,16 @@ function summarizeState(state) {
   };
 }
 
-async function launchApp(sessionPrefix, configDirectory, { expectReady = true } = {}) {
-  const launchEnvironment = {
-    ...process.env,
+async function launchApp(
+  sessionPrefix: string,
+  configDirectory: string,
+  { expectReady = true }: LaunchOptions = {},
+): Promise<ElectronTestInstance> {
+  const inheritedEnvironment = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  );
+  const launchEnvironment: Record<string, string> = {
+    ...inheritedEnvironment,
     NEONCODE_HUB_ENDPOINT: endpoint,
     NEONCODE_SESSION_PREFIX: sessionPrefix,
     NEONCODE_TEST_CONFIG_DIR: configDirectory,
@@ -80,7 +169,7 @@ async function launchApp(sessionPrefix, configDirectory, { expectReady = true } 
     cwd: appRoot,
     env: launchEnvironment,
   });
-  const consoleMessages = [];
+  const consoleMessages: string[] = [];
   try {
     const page = await electronApp.firstWindow({ timeout });
     page.on('console', (message) => {
@@ -121,35 +210,52 @@ async function launchApp(sessionPrefix, configDirectory, { expectReady = true } 
   }
 }
 
-async function getState(page) {
-  return page.evaluate(() => window.neoncodeTest.getState());
+async function getState(page: Page): Promise<FunctionalState> {
+  return page.evaluate(() => {
+    const testApi: unknown = window.neoncodeTest;
+    if (!testApi || typeof testApi !== 'object' || !('getState' in testApi)
+        || typeof testApi.getState !== 'function') {
+      throw new Error('window.neoncodeTest is unavailable');
+    }
+    return testApi.getState() as FunctionalState;
+  });
 }
 
-async function sendText(page, paneId, text) {
+function requirePane(state: FunctionalState, paneId: string): PublicPaneState {
+  const pane = state.panes.find((candidate) => candidate.paneId === paneId);
+  assert(pane, `missing terminal state for ${paneId}`);
+  return pane;
+}
+
+async function sendText(page: Page, paneId: string, text: string): Promise<void> {
   await page.evaluate(
     ({ targetPaneId, input }) => window.neoncodeTest.sendText(targetPaneId, input),
     { targetPaneId: paneId, input: text },
   );
 }
 
-async function pasteText(page, paneId, text) {
+async function pasteText(page: Page, paneId: string, text: string): Promise<void> {
   await page.evaluate(
     ({ targetPaneId, input }) => window.neoncodeTest.pasteText(targetPaneId, input),
     { targetPaneId: paneId, input: text },
   );
 }
 
-async function disconnectPaneSocket(page, paneId) {
+async function disconnectPaneSocket(page: Page, paneId: string): Promise<void> {
   await page.evaluate((targetPaneId) => window.neoncodeTest.disconnectPaneSocket(targetPaneId), paneId);
 }
 
-async function pressTerminalKey(page, paneId, key) {
+async function pressTerminalKey(page: Page, paneId: string, key: string): Promise<void> {
   const textarea = page.getByTestId(`terminal-${paneId}`).locator('.xterm-helper-textarea');
   await textarea.focus();
   await page.keyboard.press(key);
 }
 
-async function terminalPoint(page, paneId, { xFraction = 0.5, yFraction = 0.5 } = {}) {
+async function terminalPoint(
+  page: Page,
+  paneId: string,
+  { xFraction = 0.5, yFraction = 0.5 }: TerminalPointOptions = {},
+): Promise<{ x: number; y: number }> {
   const screen = page.getByTestId(`terminal-${paneId}`).locator('.xterm-screen');
   const box = await screen.boundingBox();
   assert(box, `xterm screen has no bounding box for ${paneId}`);
@@ -159,7 +265,12 @@ async function terminalPoint(page, paneId, { xFraction = 0.5, yFraction = 0.5 } 
   };
 }
 
-async function terminalCellPoint(page, paneId, row, column) {
+async function terminalCellPoint(
+  page: Page,
+  paneId: string,
+  row: number,
+  column: number,
+): Promise<{ x: number; y: number }> {
   const pane = (await getState(page)).panes.find((candidate) => candidate.paneId === paneId);
   assert(pane, `missing terminal state for ${paneId}`);
   assert(row >= 1 && row <= pane.rows, `terminal row ${row} is outside ${paneId}`);
@@ -170,13 +281,17 @@ async function terminalCellPoint(page, paneId, row, column) {
   });
 }
 
-async function clickTerminal(page, paneId, options) {
+async function clickTerminal(
+  page: Page,
+  paneId: string,
+  options?: TerminalPointOptions,
+): Promise<{ x: number; y: number }> {
   const point = await terminalPoint(page, paneId, options);
   await page.mouse.click(point.x, point.y);
   return point;
 }
 
-async function verifyMouseReporting(page, paneId, token) {
+async function verifyMouseReporting(page: Page, paneId: string, token: string): Promise<void> {
   const ready = `mouse-ready-${token}`;
   const script = [
     'import os, termios, tty',
@@ -202,7 +317,7 @@ async function verifyMouseReporting(page, paneId, token) {
   await waitForOutput(page, paneId, 'mouse-bytes-');
 
   const state = await getState(page);
-  const output = state.panes.find((pane) => pane.paneId === paneId).recentOutput;
+  const output = requirePane(state, paneId).recentOutput;
   const hex = [...output.matchAll(/mouse-bytes-([0-9a-f]+)/g)].at(-1)?.[1];
   assert(hex, 'mouse report bytes were not captured');
   const report = Buffer.from(hex, 'hex').toString('binary');
@@ -212,7 +327,7 @@ async function verifyMouseReporting(page, paneId, token) {
   );
 }
 
-async function verifyTmuxMouseBehavior(page, paneId, token) {
+async function verifyTmuxMouseBehavior(page: Page, paneId: string, token: string): Promise<void> {
   const leftClickExpected = `tmux-click-0-${token}`;
   await clickTerminal(page, paneId, { xFraction: 0.25, yFraction: 0.35 });
   const clickCommand = `v=$(tmux display-message -p -t "$TMUX_PANE" '#{pane_index}'); printf 'tmux-click-%s-%s\\n' "$v" '${token}'\n`;
@@ -245,7 +360,7 @@ async function verifyTmuxMouseBehavior(page, paneId, token) {
   await waitForOutput(page, paneId, wheelExpected);
 }
 
-async function verifyNeovimMouseBehavior(page, paneId, token) {
+async function verifyNeovimMouseBehavior(page: Page, paneId: string, token: string): Promise<void> {
   const sourcePath = `/tmp/neoncode-nvim-mouse-${token}.txt`;
   const resultPath = `/tmp/neoncode-nvim-mouse-result-${token}.txt`;
   const ready = `nvim-mouse-ready-${token}`;
@@ -274,16 +389,16 @@ async function verifyNeovimMouseBehavior(page, paneId, token) {
   await sendText(page, paneId, verifyCommand);
   await waitForOutput(page, paneId, resultExpected);
 
-  const output = (await getState(page)).panes.find((pane) => pane.paneId === paneId).recentOutput;
+  const output = requirePane(await getState(page), paneId).recentOutput;
   const result = [...output.matchAll(/nvim-mouse-result-(\d+)\r?\n(\d+)/g)].at(-1);
-  assert(result, 'Neovim mouse result was not captured');
+  assert(result?.[1] !== undefined && result[2] !== undefined, 'Neovim mouse result was not captured');
   const clickedLine = Number.parseInt(result[1], 10);
   const viewportTop = Number.parseInt(result[2], 10);
   assert(clickedLine === targetRow, `Neovim click selected line ${clickedLine}, expected ${targetRow}`);
   assert(viewportTop > 1, `Neovim wheel did not scroll the viewport: top line ${viewportTop}`);
 }
 
-async function waitForOutput(page, paneId, expected) {
+async function waitForOutput(page: Page, paneId: string, expected: string): Promise<void> {
   await page.waitForFunction(
     ({ targetPaneId, output }) => {
       const pane = window.neoncodeTest.getState().panes.find((candidate) => candidate.paneId === targetPaneId);
@@ -294,7 +409,11 @@ async function waitForOutput(page, paneId, expected) {
   );
 }
 
-async function waitForEitherOutput(page, paneId, expectedValues) {
+async function waitForEitherOutput(
+  page: Page,
+  paneId: string,
+  expectedValues: string[],
+): Promise<string> {
   await page.waitForFunction(
     ({ targetPaneId, outputs }) => {
       const pane = window.neoncodeTest.getState().panes.find((candidate) => candidate.paneId === targetPaneId);
@@ -304,21 +423,29 @@ async function waitForEitherOutput(page, paneId, expectedValues) {
     { timeout },
   );
 
-  const pane = (await getState(page)).panes.find((candidate) => candidate.paneId === paneId);
-  return expectedValues.find((output) => pane.recentOutput.includes(output));
+  const pane = requirePane(await getState(page), paneId);
+  const result = expectedValues.find((output) => pane.recentOutput.includes(output));
+  assert(result, `none of the expected output values appeared in ${paneId}`);
+  return result;
 }
 
-function assertMarkerIsNotEchoed(command, expected) {
+function assertMarkerIsNotEchoed(command: string, expected: string): void {
   assert(!command.includes(expected), `test command contains expected output marker: ${expected}`);
 }
 
-async function verifyKeyboardPaste(instance, paneId, shortcut, label, token) {
+async function verifyKeyboardPaste(
+  instance: ElectronTestInstance,
+  paneId: string,
+  shortcut: string,
+  label: string,
+  token: string,
+): Promise<void> {
   const expected = `${label}-${token}`;
   const command = `printf '${label}-%s\\n' '${token}'\n`;
   assertMarkerIsNotEchoed(command, expected);
   const previousClipboard = await instance.electronApp.evaluate(({ clipboard }) => clipboard.readText());
   const before = await getState(instance.page);
-  const beforeInputs = before.panes.find((pane) => pane.paneId === paneId).inputEvents;
+  const beforeInputs = requirePane(before, paneId).inputEvents;
   try {
     await instance.electronApp.evaluate(({ clipboard }, text) => clipboard.writeText(text), command);
     await instance.page.evaluate(
@@ -327,29 +454,37 @@ async function verifyKeyboardPaste(instance, paneId, shortcut, label, token) {
     );
     await waitForOutput(instance.page, paneId, expected);
     const after = await getState(instance.page);
-    const afterInputs = after.panes.find((pane) => pane.paneId === paneId).inputEvents;
+    const afterInputs = requirePane(after, paneId).inputEvents;
     assert(afterInputs === beforeInputs + 1, `${shortcut} pasted ${afterInputs - beforeInputs} times in ${paneId}`);
   } finally {
     await instance.electronApp.evaluate(({ clipboard }, text) => clipboard.writeText(text), previousClipboard);
   }
 }
 
-async function verifyExecutedCommand(page, paneId, label, token) {
+async function verifyExecutedCommand(
+  page: Page,
+  paneId: string,
+  label: string,
+  token: string,
+): Promise<void> {
   const expected = `${label}-${token}`;
   const command = `printf '${label}-%s\\n' '${token}'\n`;
   assertMarkerIsNotEchoed(command, expected);
 
   const before = await getState(page);
-  const beforeInputEvents = before.panes.find((pane) => pane.paneId === paneId).inputEvents;
+  const beforeInputEvents = requirePane(before, paneId).inputEvents;
   await sendText(page, paneId, command);
   await waitForOutput(page, paneId, expected);
 
   const after = await getState(page);
-  const afterInputEvents = after.panes.find((pane) => pane.paneId === paneId).inputEvents;
+  const afterInputEvents = requirePane(after, paneId).inputEvents;
   assert(afterInputEvents === beforeInputEvents + 1, `${paneId} input event was not recorded exactly once`);
 }
 
-async function assertPaneLifecycles(instance, expectedLifecycle) {
+async function assertPaneLifecycles(
+  instance: ElectronTestInstance,
+  expectedLifecycle: SessionLifecycle,
+): Promise<void> {
   const state = await getState(instance.page);
   for (const pane of state.panes) {
     assert(
@@ -367,7 +502,12 @@ async function assertPaneLifecycles(instance, expectedLifecycle) {
   }
 }
 
-async function assertWorkspaceStatus(page, workspaceId, expectedState, expectedText) {
+async function assertWorkspaceStatus(
+  page: Page,
+  workspaceId: string,
+  expectedState: string,
+  expectedText: string,
+): Promise<void> {
   const status = page.getByTestId(`workspace-status-${workspaceId}`);
   assert(
     await status.getAttribute('data-state') === expectedState,
@@ -379,7 +519,7 @@ async function assertWorkspaceStatus(page, workspaceId, expectedState, expectedT
   );
 }
 
-async function switchWorkspace(page, workspaceId) {
+async function switchWorkspace(page: Page, workspaceId: string): Promise<void> {
   await page.evaluate((targetWorkspaceId) => window.neoncodeTest.switchWorkspace(targetWorkspaceId), workspaceId);
   await page.waitForFunction(
     (targetWorkspaceId) => {
@@ -393,7 +533,7 @@ async function switchWorkspace(page, workspaceId) {
   );
 }
 
-async function killAllPanes(instance) {
+async function killAllPanes(instance: ElectronTestInstance): Promise<void> {
   const targets = (await getState(instance.page)).panes.map((pane) => pane.paneId);
   await instance.page.evaluate(async (paneIds) => {
     await Promise.all(paneIds.map((paneId) => window.neoncodeTest.killPane(paneId)));
@@ -402,7 +542,7 @@ async function killAllPanes(instance) {
   assert(state.panes.every((pane) => pane.lifecycle === 'killed'), 'test sessions were not killed');
 }
 
-async function killAllWorkspaces(instance) {
+async function killAllWorkspaces(instance: ElectronTestInstance): Promise<void> {
   const workspaceIds = (await getState(instance.page)).configuration.workspaces.map((workspace) => workspace.id);
   for (const workspaceId of workspaceIds) {
     const state = await getState(instance.page);
@@ -413,19 +553,19 @@ async function killAllWorkspaces(instance) {
   }
 }
 
-async function closeInstance(instance) {
+async function closeInstance(instance: ElectronTestInstance | undefined): Promise<void> {
   if (!instance) {
     return;
   }
   await instance.electronApp.close();
 }
 
-async function assertSecondInstanceDoesNotTouchConfig(instance) {
+async function assertSecondInstanceDoesNotTouchConfig(instance: ElectronTestInstance): Promise<void> {
   const backupPath = path.join(instance.configDirectory, 'config.json.bak');
   const before = fs.statSync(backupPath);
   const secondInstanceEnvironment = { ...instance.launchEnvironment };
   delete secondInstanceEnvironment.NODE_OPTIONS;
-  const child = spawn(electronExecutable, [appRoot], {
+  const child = spawn(requireElectronExecutable(electronExecutable), [appRoot], {
     cwd: appRoot,
     env: secondInstanceEnvironment,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -433,7 +573,7 @@ async function assertSecondInstanceDoesNotTouchConfig(instance) {
   });
   let stderr = '';
   child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-  const exitCode = await new Promise((resolve, reject) => {
+  const exitCode = await new Promise<number | null>((resolve, reject) => {
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error('second Electron instance did not exit promptly'));
@@ -452,26 +592,38 @@ async function assertSecondInstanceDoesNotTouchConfig(instance) {
   assert(after.mtimeMs === before.mtimeMs, 'second Electron instance touched configuration backup');
 }
 
-async function cleanupSessions(sessionPrefix, configDirectory) {
-  let cleanupInstance;
+async function cleanupSessions(sessionPrefix: string, configDirectory: string): Promise<void> {
+  let cleanupInstance: ElectronTestInstance | undefined;
   try {
     cleanupInstance = await launchApp(sessionPrefix, configDirectory);
     await killAllWorkspaces(cleanupInstance);
   } catch (error) {
-    log('cleanup.failed', { message: error.message });
+    log('cleanup.failed', { message: errorMessage(error) });
   } finally {
     await closeInstance(cleanupInstance).catch(() => {});
   }
 }
 
-async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
+async function runFirstLaunchChecks(
+  instance: ElectronTestInstance,
+  sessionPrefix: string,
+  runToken: string,
+): Promise<void> {
   const { electronApp, page, configDirectory } = instance;
   const windowState = await electronApp.evaluate(({ app, BrowserWindow }) => {
-    const window = BrowserWindow.getAllWindows()[0];
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (!mainWindow) throw new Error('Electron main window is unavailable');
+    const webContents = mainWindow.webContents as unknown as {
+      getLastWebPreferences(): {
+        contextIsolation?: boolean;
+        nodeIntegration?: boolean;
+        sandbox?: boolean;
+      };
+    };
     return {
-      visible: window.isVisible(),
-      contentSize: window.getContentSize(),
-      webPreferences: window.webContents.getLastWebPreferences(),
+      visible: mainWindow.isVisible(),
+      contentSize: mainWindow.getContentSize(),
+      webPreferences: webContents.getLastWebPreferences(),
       userData: app.getPath('userData'),
     };
   });
@@ -490,7 +642,7 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
     return {
       configDeepFrozen: Object.isFrozen(window.neoncodeDesktop.config)
         && Object.isFrozen(window.neoncodeDesktop.config.workspaces)
-        && Object.isFrozen(window.neoncodeDesktop.config.workspaces[0].sessions[0].launchProfile),
+        && Object.isFrozen(window.neoncodeDesktop.config.workspaces[0]?.sessions[0]?.launchProfile),
       desktopKeys: Object.keys(window.neoncodeDesktop).sort(),
       nodeProcessType: typeof window.process,
       nodeRequireType: typeof window.require,
@@ -549,9 +701,9 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
     { paneId: 'tasks', sessionKey: 'tasks', sessionId: `${sessionPrefix}-tasks` },
   ];
   for (const expected of expectedPanes) {
-    const actual = initialState.panes.find((pane) => pane.paneId === expected.paneId);
-    for (const key of ['paneId', 'sessionKey', 'sessionId']) {
-      assert(actual?.[key] === expected[key], `${expected.paneId} expected ${key}=${expected[key]}, got ${actual?.[key]}`);
+    const actual = requirePane(initialState, expected.paneId);
+    for (const key of ['paneId', 'sessionKey', 'sessionId'] as const) {
+      assert(actual[key] === expected[key], `${expected.paneId} expected ${key}=${expected[key]}, got ${actual[key]}`);
     }
   }
   await assertPaneLifecycles(instance, 'started');
@@ -628,7 +780,7 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   }
   await waitForOutput(page, 'shell', 'keys-');
   const keyState = await getState(page);
-  const keyOutput = keyState.panes.find((pane) => pane.paneId === 'shell').recentOutput;
+  const keyOutput = requirePane(keyState, 'shell').recentOutput;
   const actualKeyHex = [...keyOutput.matchAll(/keys-([0-9a-f]+)/g)].at(-1)?.[1];
   assert(actualKeyHex === keyHex, `terminal key bytes expected ${keyHex}, got ${actualKeyHex}`);
 
@@ -660,7 +812,7 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   assert(Date.now() - heavyStarted < 30000, '20,000-line output soak exceeded 30 seconds');
   const heavyState = await getState(page);
   assert(
-    heavyState.panes.find((pane) => pane.paneId === 'tasks').outputGap === '',
+    requirePane(heavyState, 'tasks').outputGap === '',
     '20,000-line output soak produced a sequence gap',
   );
 
@@ -721,13 +873,20 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
 
   const beforeResize = await getState(page);
   await electronApp.evaluate(({ BrowserWindow }) => {
-    BrowserWindow.getAllWindows()[0].setContentSize(1400, 900);
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (!mainWindow) throw new Error('Electron main window is unavailable during resize');
+    mainWindow.setContentSize(1400, 900);
   });
   await page.waitForFunction(
     (before) => {
       const state = window.neoncodeTest.getState();
-      return state.panes.every((pane, index) => pane.resizeEvents > before[index].resizeEvents)
-        && state.panes.some((pane, index) => pane.rows !== before[index].rows || pane.cols !== before[index].cols);
+      return state.panes.every((pane, index) => {
+        const previous = before[index];
+        return previous !== undefined && pane.resizeEvents > previous.resizeEvents;
+      }) && state.panes.some((pane, index) => {
+        const previous = before[index];
+        return previous !== undefined && (pane.rows !== previous.rows || pane.cols !== previous.cols);
+      });
     },
     beforeResize.panes.map(({ resizeEvents, rows, cols }) => ({ resizeEvents, rows, cols })),
     { timeout },
@@ -749,7 +908,7 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   await waitForOutput(page, 'shell', seedExpected);
 
   const beforeReconnect = await getState(page);
-  const beforeReconnectPane = beforeReconnect.panes.find((pane) => pane.paneId === 'shell');
+  const beforeReconnectPane = requirePane(beforeReconnect, 'shell');
   const beforeReconnectEvents = beforeReconnectPane.reconnectEvents;
   await disconnectPaneSocket(page, 'shell');
   await page.waitForFunction(
@@ -765,7 +924,7 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   assertMarkerIsNotEchoed(reconnectCommand, reconnectExpected);
   await sendText(page, 'shell', reconnectCommand);
   await waitForOutput(page, 'shell', reconnectExpected);
-  const afterReconnectPane = (await getState(page)).panes.find((pane) => pane.paneId === 'shell');
+  const afterReconnectPane = requirePane(await getState(page), 'shell');
   assert(afterReconnectPane.sessionInstanceId === beforeReconnectPane.sessionInstanceId, 'reconnect changed session incarnation');
   assert(afterReconnectPane.replayResetEvents === 0, 'same-session reconnect reset terminal replay');
   assert(afterReconnectPane.replayTruncated === false, 'same-session reconnect reported truncated replay');
@@ -822,10 +981,16 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   log('tools', { tmux: tmuxResult, nvim: nvimResult });
 }
 
-async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
-  const restoredWindowSize = await instance.electronApp.evaluate(({ BrowserWindow }) => (
-    BrowserWindow.getAllWindows()[0].getContentSize()
-  ));
+async function runSecondLaunchChecks(
+  instance: ElectronTestInstance,
+  sessionPrefix: string,
+  runToken: string,
+): Promise<void> {
+  const restoredWindowSize = await instance.electronApp.evaluate(({ BrowserWindow }) => {
+    const mainWindow = BrowserWindow.getAllWindows()[0];
+    if (!mainWindow) throw new Error('Electron main window is unavailable after relaunch');
+    return mainWindow.getContentSize();
+  });
   assert(
     restoredWindowSize[0] === 1400 && restoredWindowSize[1] === 900,
     `window size was not restored: ${restoredWindowSize.join('x')}`,
@@ -853,21 +1018,27 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
     assert(summary.metadataComplete === true, `${summary.sessionId} metadata was incomplete`);
     assert(summary.lifecycleComplete === true, `${summary.sessionId} lifecycle metadata was incomplete`);
     assert(summary.instanceComplete === true, `${summary.sessionId} instance metadata was incomplete`);
-    assert(/^[0-9a-f]{32}$/.test(summary.instanceId), `${summary.sessionId} instance id was invalid`);
+    assert(
+      typeof summary.instanceId === 'string' && /^[0-9a-f]{32}$/.test(summary.instanceId),
+      `${summary.sessionId} instance id was invalid`,
+    );
     assert(summary.command === 'bash', `${summary.sessionId} command metadata was not bash`);
     assert(summary.persistent === true, `${summary.sessionId} was not reported persistent`);
     assert(summary.attachmentCount === 0, `${summary.sessionId} was unexpectedly attached during discovery`);
   }
   const agentSummary = summaries.find((summary) => summary.sessionId === `${sessionPrefix}-review-agent`);
+  assert(agentSummary, 'review agent summary was not retained by the hub');
   assert(agentSummary.state === 'exited', 'exited review agent was not retained by the hub');
   assert(agentSummary.latestExit?.status === 7, 'retained review agent exit status was not 7');
   assert(agentSummary.latestExit?.reason === 'process_exit', 'retained review agent exit reason was incorrect');
+  const shellSummary = summaries.find((summary) => summary.sessionId === `${sessionPrefix}-shell`);
+  assert(shellSummary, 'default shell summary was not retained by the hub');
+  assert(shellSummary.cwd === null, 'hub did not preserve the original default cwd metadata');
+  const firstWorkspace = state.configuration.workspaces[0];
+  const firstSession = firstWorkspace?.sessions[0];
+  assert(firstSession, 'recovered frontend configuration omitted the default session');
   assert(
-    summaries.find((summary) => summary.sessionId === `${sessionPrefix}-shell`).cwd === null,
-    'hub did not preserve the original default cwd metadata',
-  );
-  assert(
-    state.configuration.workspaces[0].sessions[0].launchProfile.cwd === '/changed-after-start',
+    firstSession.launchProfile.cwd === '/changed-after-start',
     'recovered frontend configuration did not contain the changed cwd',
   );
   const restoredLocation = instance.page.getByTestId('workspace-default').locator('.workspace-location');
@@ -890,7 +1061,8 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
   }
   await instance.page.getByTestId('workspace-acknowledge-review').click();
   await instance.page.waitForFunction(() => (
-    document.querySelector('[data-testid="workspace-status-review"]')?.dataset.state === 'running'
+    (document.querySelector('[data-testid="workspace-status-review"]') as HTMLElement | null)
+      ?.dataset.state === 'running'
   ), null, { timeout });
   await assertWorkspaceStatus(instance.page, 'review', 'running', '3 running');
   await instance.page.waitForFunction(() => (
@@ -911,7 +1083,7 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
     assert(pane.outputGap === '', `${pane.paneId} output sequence gap: ${pane.outputGap}`);
   }
   assert(
-    state.panes.find((pane) => pane.paneId === 'review-shell').recentOutput.includes(reviewSeedExpected),
+    requirePane(state, 'review-shell').recentOutput.includes(reviewSeedExpected),
     'active review workspace output was not replayed after relaunch',
   );
 
@@ -922,7 +1094,7 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
   await assertPaneLifecycles(instance, 'attached');
   const seedExpected = `seed-${runToken}`;
   assert(
-    state.panes.find((pane) => pane.paneId === 'shell').recentOutput.includes(seedExpected),
+    requirePane(state, 'shell').recentOutput.includes(seedExpected),
     'inactive default workspace output was not replayed after switching back',
   );
 
@@ -933,10 +1105,10 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
   await waitForOutput(instance.page, 'shell', restoredExpected);
 }
 
-async function runKillPolicyCheck(runToken) {
+async function runKillPolicyCheck(runToken: string): Promise<void> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-kill-policy-'));
   const sessionPrefix = `kill-policy-${runToken}`;
-  let instance;
+  let instance: ElectronTestInstance | undefined;
   try {
     writeTestConfig(directory, { persistencePolicy: 'kill' });
     instance = await launchApp(sessionPrefix, directory);
@@ -961,9 +1133,9 @@ async function runKillPolicyCheck(runToken) {
   }
 }
 
-async function runInvalidConfigurationCheck(runToken) {
+async function runInvalidConfigurationCheck(runToken: string): Promise<void> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-invalid-config-'));
-  let instance;
+  let instance: ElectronTestInstance | undefined;
   try {
     fs.writeFileSync(path.join(directory, 'config.json'), JSON.stringify({
       schemaVersion: 1,
@@ -985,13 +1157,13 @@ async function runInvalidConfigurationCheck(runToken) {
   }
 }
 
-async function main() {
+async function main(): Promise<void> {
   log('launch', { appRoot, endpoint });
   const runToken = `${Date.now()}`;
   const sessionPrefix = `electron-playwright-${runToken}`;
   const configDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-electron-config-'));
   writeTestConfig(configDirectory);
-  let instance;
+  let instance: ElectronTestInstance | undefined;
   let sessionsCleaned = false;
 
   try {
@@ -1000,7 +1172,10 @@ async function main() {
     await closeInstance(instance);
     instance = undefined;
 
-    const persistedState = JSON.parse(fs.readFileSync(path.join(configDirectory, 'state.json'), 'utf8'));
+    const persistedState = parseJson<PersistedTestState>(
+      fs.readFileSync(path.join(configDirectory, 'state.json'), 'utf8'),
+      'persisted state',
+    );
     assert(
       persistedState.window.width === 1400 && persistedState.window.height === 900,
       `window state was not persisted: ${JSON.stringify(persistedState.window)}`,
@@ -1008,8 +1183,13 @@ async function main() {
     assert(persistedState.schemaVersion === 2, 'workspace state schema was not persisted');
     assert(persistedState.activeWorkspaceId === 'review', 'active workspace was not persisted');
     const configBackupPath = path.join(configDirectory, 'config.json.bak');
-    const changedBackup = JSON.parse(fs.readFileSync(configBackupPath, 'utf8'));
-    changedBackup.launchProfiles['default-shell'].cwd = '/changed-after-start';
+    const changedBackup = parseJson<DesktopConfig>(
+      fs.readFileSync(configBackupPath, 'utf8'),
+      'configuration backup',
+    );
+    const defaultShellProfile = changedBackup.launchProfiles['default-shell'];
+    assert(defaultShellProfile, 'configuration backup omitted default-shell launch profile');
+    defaultShellProfile.cwd = '/changed-after-start';
     fs.writeFileSync(configBackupPath, `${JSON.stringify(changedBackup, null, 2)}\n`);
     fs.writeFileSync(path.join(configDirectory, 'config.json'), '{ intentionally invalid');
 
@@ -1026,7 +1206,7 @@ async function main() {
     await runInvalidConfigurationCheck(runToken);
     log('passed');
   } catch (error) {
-    log('failed', { message: error.message, consoleMessages: instance?.consoleMessages || [] });
+    log('failed', { message: errorMessage(error), consoleMessages: instance?.consoleMessages || [] });
     throw error;
   } finally {
     if (instance) {
