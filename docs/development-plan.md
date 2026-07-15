@@ -388,7 +388,8 @@ Status: complete.
 - [x] Reject contradictory or impossible replay checkpoint manifests.
 - [x] Run 100 same-incarnation reconnect cycles over 10,000 ordered/duplicate chunks with bounded renderer history.
 - [x] Run 20 authenticated real WebSocket reconnects against one persistent PTY with checkpoint cursors.
-- [x] Keep both deterministic soaks in `./dev check`/Rust tests.
+- [x] Script a boot-A/boot-B renderer race to reject stale callbacks, fall back from attach to start, and reset one replacement incarnation.
+- [x] Keep deterministic policy, timeout, race, and soak coverage in `./dev check`/Rust tests.
 
 Extended multi-minute wall-clock and long-session resource stability remain separate manual/CI soak gates.
 

@@ -79,6 +79,8 @@ class TerminalPane {
     setStatus,
     onLifecycleChange,
     onSessionExit,
+    hubClientFactory = (options) => new HubClient(options),
+    reconnectPolicy = new ReconnectPolicy(),
   }) {
     this.index = index;
     this.paneId = paneId;
@@ -95,6 +97,7 @@ class TerminalPane {
     this.setStatus = setStatus;
     this.onLifecycleChange = onLifecycleChange;
     this.onSessionExit = onSessionExit;
+    this.hubClientFactory = hubClientFactory;
     this.state = undefined;
     this.hubClient = undefined;
     this.resizeObserver = undefined;
@@ -102,7 +105,7 @@ class TerminalPane {
     this.pendingClose = undefined;
     this.closed = false;
     this.connectionGeneration = 0;
-    this.reconnectPolicy = new ReconnectPolicy();
+    this.reconnectPolicy = reconnectPolicy;
     this.pasteShortcutActive = false;
     this.pasteShortcutTimer = undefined;
     this.suppressedPasteTimer = undefined;
@@ -427,7 +430,7 @@ class TerminalPane {
 
   connect() {
     const generation = ++this.connectionGeneration;
-    this.hubClient = new HubClient({
+    this.hubClient = this.hubClientFactory({
       endpoint: this.endpoint,
       capabilityToken: this.capabilityToken,
       sessionId: this.sessionId,
