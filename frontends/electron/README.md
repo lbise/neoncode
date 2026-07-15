@@ -77,10 +77,10 @@ renderer/globals.d.ts
 shared/types.ts      shared protocol and renderer-state contracts
 tsconfig.*.json      strict Node, renderer, and test compiler boundaries
 dist/                ignored generated CommonJS and renderer bundle
-tests/               Node config/auth tests and hidden-window Playwright functional tests
+tests/               strict unit/fake-hub tests and hidden-window Playwright functional tests
 ```
 
-`npm run check` performs strict type-checking, creates a clean `dist/`, bundles the browser renderer, and runs unit tests from generated CommonJS. Published Electron also executes only `dist/` artifacts; no runtime TypeScript loader is used. Phase 3 completed the strict Electron/Node boundary migration, so both runtime compiler projects disable `allowJs`; JavaScript tests remain in the phase-4 test pipeline and continue importing generated CommonJS from `dist/`.
+`npm run check` performs strict type-checking, creates a clean `dist/`, bundles the browser renderer, and runs unit tests from generated CommonJS. Published Electron also executes only `dist/` artifacts; no runtime TypeScript loader is used. Node, renderer, and test compiler projects all disable `allowJs`, and no JavaScript source files remain in the Electron frontend.
 
 On startup, Electron main loads `%APPDATA%\\NeonCode\\config.json`, validates configured workspaces/sessions/process profiles, and sends a deeply frozen bootstrap object to the renderer. The renderer calls `list_sessions`, restores the active workspace, attaches matching stable sessions, and starts missing sessions with configured command/args/cwd. The sidebar switches workspaces through detach/reattach and shows hub-owned configured launch cwd when available (with frontend-config fallback) plus aggregate running/reconnecting/detached/available/in-use/error state and retained exit attention with explicit dismissal. The close policy waits for `detached` or `killed` acknowledgements. Attach replays up to 2 MiB of recent ordered terminal output before live output continues, so normal shell history and prompts reappear.
 

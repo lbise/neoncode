@@ -136,12 +136,12 @@ frontends/electron/renderer/        strict TypeScript renderer modules:
 frontends/electron/shared/types.ts  shared protocol and renderer-state contracts
 frontends/electron/tsconfig.*.json  strict Node, renderer, and test compiler boundaries
 frontends/electron/dist/            ignored generated CommonJS and renderer bundle
-frontends/electron/tests/           Node config/auth tests and hidden-window Playwright tests
+frontends/electron/tests/           strict TypeScript unit/fake-hub and Playwright tests
 scripts/electron-app.ps1            npm ci, strict build, Windows publish/start
 scripts/electron-test.ps1           Windows wrapper for Playwright tests
 ```
 
-The Electron frontend is migrating incrementally to strict TypeScript without introducing a runtime TypeScript loader. Phase 3 completed the Electron main, preload, configuration-store, and token-loader migration and disabled `allowJs` for both strict runtime projects. `tsc` still type-checks separate Node, renderer, and test projects; generated CommonJS and the esbuild browser bundle live only under ignored `dist/`. Remaining JavaScript tests stay in the phase-4 test project and execute against generated runtime artifacts rather than source files.
+The Electron frontend uses strict TypeScript throughout without a runtime TypeScript loader. Separate Node, DOM renderer, and test compiler projects all disable `allowJs`; generated CommonJS and the esbuild browser bundle live only under ignored `dist/`. Electron and every test execute generated artifacts rather than source files.
 
 ## Electron security boundary
 

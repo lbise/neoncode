@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Strict TypeScript migration phase 3 complete
+Stage: Strict TypeScript migration complete
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: migrate Electron tests and disable the final allowJs project
+Next focus: extended stability soaking, then richer live cwd/git metadata
 ```
 
 The Windows tech stack is now:
@@ -395,7 +395,7 @@ Extended multi-minute wall-clock and long-session resource stability remain sepa
 
 ### Milestone: strict TypeScript migration
 
-Status: phase 3 of 4 complete.
+Status: complete.
 
 - [x] Add strict, environment-specific Node/renderer/test TypeScript projects.
 - [x] Build all mixed JavaScript/TypeScript sources into an ignored clean `dist/` runtime tree.
@@ -405,7 +405,8 @@ Status: phase 3 of 4 complete.
 - [x] Preserve runtime JSON validation at configuration and WebSocket trust boundaries.
 - [x] Migrate renderer entry, app orchestration, terminal pane, and test API; disable renderer `allowJs`.
 - [x] Migrate Electron main, preload, configuration store, and token loader; disable Node `allowJs`.
-- [ ] Migrate tests and disable `allowJs` in every compiler project.
+- [x] Migrate all unit, fake-hub, soak, and Playwright tests; disable test `allowJs`.
+- [x] Remove all JavaScript source files from the Electron frontend while retaining generated CommonJS runtime output.
 
 The migration intentionally does not use a runtime TypeScript loader. Windows publish output contains generated JavaScript under `dist/`, and every phase must continue passing the real hidden-Electron relaunch suite.
 
