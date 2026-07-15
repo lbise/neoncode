@@ -120,9 +120,10 @@ hub/src/state.rs                   app state and session registry
 hub/src/ws.rs                      WebSocket handling and protocol dispatch
 hub/tests/                         real WebSocket and PTY integration tests
 
-frontends/electron/main.js          Electron main process, lifecycle, and state persistence
-frontends/electron/config-store.js  versioned config/state validation, migration, recovery, atomic IO
-frontends/electron/preload.js       narrow context-isolated desktop bridge
+frontends/electron/main.ts          Electron main process, lifecycle, and state persistence
+frontends/electron/config-store.ts  versioned config/state validation, migration, recovery, atomic IO
+frontends/electron/token-loader.ts  validated environment/WSL hub capability loading
+frontends/electron/preload.ts       narrow context-isolated desktop bridge
 frontends/electron/renderer.ts      typed browser-bundle bootstrap entrypoint
 frontends/electron/renderer/        strict TypeScript renderer modules:
   app.ts                            typed app/bootstrap and pane grid orchestration
@@ -140,7 +141,7 @@ scripts/electron-app.ps1            npm ci, strict build, Windows publish/start
 scripts/electron-test.ps1           Windows wrapper for Playwright tests
 ```
 
-The Electron frontend is migrating incrementally to strict TypeScript without introducing a runtime TypeScript loader. Phase 2 completed the browser renderer migration and disabled `allowJs` for its strict DOM project. `tsc` still type-checks separate Node, renderer, and test projects; generated CommonJS and the esbuild browser bundle live only under ignored `dist/`. Remaining Node/preload/configuration and test JavaScript is copied through the applicable build projects so published Electron and all tests execute generated artifacts rather than a mixture of source and output files.
+The Electron frontend is migrating incrementally to strict TypeScript without introducing a runtime TypeScript loader. Phase 3 completed the Electron main, preload, configuration-store, and token-loader migration and disabled `allowJs` for both strict runtime projects. `tsc` still type-checks separate Node, renderer, and test projects; generated CommonJS and the esbuild browser bundle live only under ignored `dist/`. Remaining JavaScript tests stay in the phase-4 test project and execute against generated runtime artifacts rather than source files.
 
 ## Electron security boundary
 

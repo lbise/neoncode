@@ -319,6 +319,13 @@ function testStrictValidation() {
     () => applyEnvironmentOverrides(defaultConfig(), { NEONCODE_TERMINAL_COUNT: '9' }),
     /between 1 and 8/,
   );
+
+  const processLikeEnvironment = Object.create({ inherited: true });
+  processLikeEnvironment.NEONCODE_HUB_ENDPOINT = 'ws://127.0.0.1:44999/ws';
+  assert.equal(
+    applyEnvironmentOverrides(defaultConfig(), processLikeEnvironment).hub.endpoint,
+    'ws://127.0.0.1:44999/ws',
+  );
 }
 
 function testStateClampAndPersistence() {

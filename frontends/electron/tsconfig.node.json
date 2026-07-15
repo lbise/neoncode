@@ -5,14 +5,13 @@
     "outDir": "dist",
     "lib": ["ES2022"],
     "types": ["node"],
-    "allowJs": true,
-    "checkJs": false
+    "allowJs": false
   },
   "include": [
-    "main.js",
-    "preload.js",
-    "config-store.js",
-    "token-loader.js",
+    "main.ts",
+    "preload.ts",
+    "config-store.ts",
+    "token-loader.ts",
     "shared/**/*.ts"
   ],
   "exclude": ["dist", "node_modules"]

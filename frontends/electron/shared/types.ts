@@ -3,6 +3,8 @@ import type { Terminal } from '@xterm/xterm';
 
 export type ActivationMode = 'attach' | 'start';
 export type PersistencePolicy = 'detach' | 'kill';
+export type ConfigStorageStatus = 'created' | 'error' | 'loaded' | 'migrated' | 'recovered';
+export type StateStorageStatus = ConfigStorageStatus;
 export type SessionLifecycle =
   | 'attached'
   | 'attaching'
@@ -97,6 +99,82 @@ export interface LaunchProfile {
   command: string;
   args: string[];
   cwd: string | null;
+}
+
+export interface DesktopLaunchProfile extends LaunchProfile {
+  type: 'process';
+}
+
+export interface DesktopSessionConfig {
+  id: string;
+  title: string;
+  launchProfile: string;
+}
+
+export interface DesktopWorkspaceConfig {
+  id: string;
+  name: string;
+  layout: { columns: number };
+  sessions: DesktopSessionConfig[];
+}
+
+export interface DesktopConfig {
+  schemaVersion: number;
+  hub: { endpoint: string };
+  sessionPrefix: string;
+  persistence: { onWindowClose: PersistencePolicy };
+  terminal: TerminalAppearance;
+  launchProfiles: Record<string, DesktopLaunchProfile>;
+  workspaces: DesktopWorkspaceConfig[];
+}
+
+export interface DesktopState {
+  schemaVersion: number;
+  window: {
+    width: number;
+    height: number;
+  };
+  activeWorkspaceId: string | null;
+}
+
+export interface DesktopDiagnostics {
+  configStatus: ConfigStorageStatus;
+  stateStatus: StateStorageStatus;
+  warnings: string[];
+  errors: string[];
+}
+
+export interface DesktopBootstrapResult {
+  config: DesktopConfig | null;
+  state: DesktopState;
+  diagnostics: DesktopDiagnostics;
+}
+
+export interface RendererBootstrapSession {
+  id: string;
+  title: string;
+  launchProfile: DesktopLaunchProfile;
+}
+
+export interface RendererBootstrapWorkspace {
+  id: string;
+  name: string;
+  layout: { columns: number };
+  sessions: RendererBootstrapSession[];
+}
+
+export interface RendererBootstrapConfig {
+  schemaVersion: number;
+  configurationValid: boolean;
+  endpoint: string;
+  capabilityToken: string;
+  sessionPrefix: string;
+  persistencePolicy: PersistencePolicy;
+  terminal: TerminalAppearance | null;
+  activeWorkspaceId: string | null;
+  workspaces: RendererBootstrapWorkspace[];
+  diagnostics: DesktopDiagnostics;
+  testMode: boolean;
 }
 
 export interface PaneDescriptor {
@@ -233,12 +311,14 @@ export interface RendererTestApi {
   simulatePasteShortcutRace(paneId: string, text: string): void;
 }
 
+export type PrepareCloseCallback = () => void | Promise<void>;
+
 export interface NeoncodeDesktopApi {
   readonly config: unknown;
   readClipboardText(): Promise<string>;
   writeClipboardText(text: string): Promise<void>;
-  setActiveWorkspace(workspaceId: string): Promise<void>;
-  onPrepareClose(callback: () => void | Promise<void>): void;
+  setActiveWorkspace(workspaceId: string): Promise<string>;
+  onPrepareClose(callback: PrepareCloseCallback): void;
 }
 
 export interface PaneState {

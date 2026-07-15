@@ -1,11 +1,28 @@
-const { app, BrowserWindow, Menu, clipboard, ipcMain, screen, session } = require('electron');
-const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const { pathToFileURL } = require('node:url');
-const fs = require('node:fs');
+import { spawnSync } from 'node:child_process';
+import fs = require('node:fs');
+import path = require('node:path');
+import { pathToFileURL } from 'node:url';
 
-const { ConfigStore, defaultState } = require('./config-store');
-const { loadHubToken } = require('./token-loader');
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  ipcMain,
+  Menu,
+  screen,
+  session,
+  type WebContents,
+} from 'electron';
+
+import { ConfigStore, defaultState } from './config-store';
+import type {
+  DesktopBootstrapResult,
+  DesktopState,
+  RendererBootstrapConfig,
+  RendererBootstrapWorkspace,
+  TerminalAppearance,
+} from './shared/types';
+import { loadHubToken } from './token-loader';
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu');
@@ -16,13 +33,17 @@ const testMode = process.env.NEONCODE_TEST_MODE === '1';
 const hubTokenResult = loadHubToken();
 const hubCapabilityToken = hubTokenResult.token;
 
-function resolveConfigDirectory() {
-  const testDirectory = process.env.NEONCODE_TEST_CONFIG_DIR;
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function resolveConfigDirectory(): string {
+  const testDirectory: unknown = process.env.NEONCODE_TEST_CONFIG_DIR;
   if (testDirectory) {
     if (!testMode) {
       throw new Error('NEONCODE_TEST_CONFIG_DIR is allowed only when NEONCODE_TEST_MODE=1');
     }
-    if (!path.isAbsolute(testDirectory)) {
+    if (typeof testDirectory !== 'string' || !path.isAbsolute(testDirectory)) {
       throw new Error('NEONCODE_TEST_CONFIG_DIR must be absolute');
     }
     return path.normalize(testDirectory);
@@ -35,9 +56,9 @@ fs.mkdirSync(configDirectory, { recursive: true });
 app.setPath('userData', configDirectory);
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
-let configStore;
-let desktopState = defaultState();
-let bootstrapResult = {
+let configStore: ConfigStore | undefined;
+let desktopState: DesktopState = defaultState();
+let bootstrapResult: DesktopBootstrapResult = {
   config: null,
   state: desktopState,
   diagnostics: {
@@ -60,29 +81,60 @@ if (hasSingleInstanceLock) {
         configStatus: 'error',
         stateStatus: 'error',
         warnings: [],
-        errors: [`configuration storage failed: ${error.message}`],
+        errors: [`configuration storage failed: ${errorMessage(error)}`],
       },
     };
   }
 }
 
-let mainWindow;
-let logFilePath;
+let mainWindow: BrowserWindow | undefined;
+let logFilePath: string | undefined;
 let allowWindowClose = false;
 let closeRequestInFlight = false;
-let closeTimeout;
-let stateSaveTimeout;
+let closeTimeout: ReturnType<typeof setTimeout> | undefined;
+let stateSaveTimeout: ReturnType<typeof setTimeout> | undefined;
 
-function processIntegrityLevel() {
+function processIntegrityLevel(): string {
   const result = spawnSync('whoami.exe', ['/groups'], { encoding: 'utf8', windowsHide: true });
   const match = (result.stdout || '').match(/Mandatory Label\\(Low|Medium|High|System) Mandatory Level/i);
-  return match ? match[1].toLowerCase() : 'unknown';
+  return match?.[1]?.toLowerCase() ?? 'unknown';
 }
 
-function rendererConfig() {
+function cloneTerminalAppearance(appearance: TerminalAppearance): TerminalAppearance {
+  return {
+    ...appearance,
+    theme: { ...appearance.theme },
+  };
+}
+
+function rendererWorkspaces(): RendererBootstrapWorkspace[] {
+  const config = bootstrapResult.config;
+  if (!config) return [];
+  return config.workspaces.map((workspace) => ({
+    id: workspace.id,
+    name: workspace.name,
+    layout: { ...workspace.layout },
+    sessions: workspace.sessions.map((configuredSession) => {
+      const launchProfile = config.launchProfiles[configuredSession.launchProfile];
+      if (!launchProfile) {
+        throw new Error(`validated launch profile is missing: ${configuredSession.launchProfile}`);
+      }
+      return {
+        id: configuredSession.id,
+        title: configuredSession.title,
+        launchProfile: {
+          ...launchProfile,
+          args: [...launchProfile.args],
+        },
+      };
+    }),
+  }));
+}
+
+function rendererConfig(): RendererBootstrapConfig {
   const config = bootstrapResult.config;
   const configuredWorkspaceIds = new Set((config?.workspaces || []).map((workspace) => workspace.id));
-  const activeWorkspaceId = configuredWorkspaceIds.has(desktopState.activeWorkspaceId)
+  const activeWorkspaceId = configuredWorkspaceIds.has(desktopState.activeWorkspaceId ?? '')
     ? desktopState.activeWorkspaceId
     : config?.workspaces[0]?.id || null;
   return {
@@ -92,20 +144,9 @@ function rendererConfig() {
     capabilityToken: hubCapabilityToken,
     sessionPrefix: config?.sessionPrefix || '',
     persistencePolicy: config?.persistence.onWindowClose || 'detach',
-    terminal: config ? JSON.parse(JSON.stringify(config.terminal)) : null,
+    terminal: config ? cloneTerminalAppearance(config.terminal) : null,
     activeWorkspaceId,
-    workspaces: config
-      ? config.workspaces.map((workspace) => ({
-        id: workspace.id,
-        name: workspace.name,
-        layout: { ...workspace.layout },
-        sessions: workspace.sessions.map((configuredSession) => ({
-          id: configuredSession.id,
-          title: configuredSession.title,
-          launchProfile: { ...config.launchProfiles[configuredSession.launchProfile] },
-        })),
-      }))
-      : [],
+    workspaces: rendererWorkspaces(),
     diagnostics: {
       configStatus: bootstrapResult.diagnostics.configStatus,
       stateStatus: bootstrapResult.diagnostics.stateStatus,
@@ -121,24 +162,27 @@ ipcMain.on('neoncode:get-renderer-config', (event) => {
 });
 
 ipcMain.handle('neoncode:read-clipboard-text', () => clipboard.readText());
-ipcMain.handle('neoncode:set-active-workspace', (_event, workspaceId) => {
+ipcMain.handle('neoncode:set-active-workspace', (_event, workspaceId: unknown) => {
   const workspaces = bootstrapResult.config?.workspaces || [];
   if (typeof workspaceId !== 'string' || !workspaces.some((workspace) => workspace.id === workspaceId)) {
     throw new Error('active workspace must reference a configured workspace');
+  }
+  if (!configStore) {
+    throw new Error('configuration storage is unavailable');
   }
   desktopState = configStore.saveState({ ...desktopState, activeWorkspaceId: workspaceId });
   log('state.active-workspace', { workspaceId });
   return workspaceId;
 });
 
-ipcMain.handle('neoncode:write-clipboard-text', (_event, text) => {
+ipcMain.handle('neoncode:write-clipboard-text', (_event, text: unknown) => {
   if (typeof text !== 'string' || Buffer.byteLength(text, 'utf8') > 1024 * 1024) {
     throw new Error('clipboard text must be a string no larger than 1 MiB');
   }
   clipboard.writeText(text);
 });
 
-function ensureLogFile() {
+function ensureLogFile(): string {
   if (logFilePath) {
     return logFilePath;
   }
@@ -146,11 +190,14 @@ function ensureLogFile() {
   const logDir = path.join(app.getPath('temp'), 'NeonCode');
   fs.mkdirSync(logDir, { recursive: true });
   logFilePath = path.join(logDir, 'electron-app-main.log');
-  fs.appendFileSync(logFilePath, `\n=== NeonCode Electron app start ${new Date().toISOString()} pid=${process.pid} ===\n`);
+  fs.appendFileSync(
+    logFilePath,
+    `\n=== NeonCode Electron app start ${new Date().toISOString()} pid=${process.pid} ===\n`,
+  );
   return logFilePath;
 }
 
-function log(message, details) {
+function log(message: string, details?: unknown): void {
   try {
     const payload = details === undefined ? '' : ` ${JSON.stringify(details)}`;
     fs.appendFileSync(ensureLogFile(), `${new Date().toISOString()} ${message}${payload}\n`);
@@ -159,31 +206,33 @@ function log(message, details) {
   }
 }
 
-function saveWindowState() {
-  if (!mainWindow || mainWindow.isDestroyed()) {
+function saveWindowState(): void {
+  const window = mainWindow;
+  const store = configStore;
+  if (!window || window.isDestroyed() || !store) {
     return;
   }
   clearTimeout(stateSaveTimeout);
   stateSaveTimeout = undefined;
-  const [width, height] = mainWindow.getContentSize();
+  const [width, height] = window.getContentSize();
   try {
-    desktopState = configStore.saveState({
+    desktopState = store.saveState({
       ...desktopState,
       schemaVersion: 2,
       window: { width, height },
     });
     log('state.saved', desktopState.window);
   } catch (error) {
-    log('state.save-failed', { message: error.message });
+    log('state.save-failed', { message: errorMessage(error) });
   }
 }
 
-function scheduleWindowStateSave() {
+function scheduleWindowStateSave(): void {
   clearTimeout(stateSaveTimeout);
   stateSaveTimeout = setTimeout(saveWindowState, 250);
 }
 
-function restoredWindowSize() {
+function restoredWindowSize(): { width: number; height: number } {
   const workArea = screen.getPrimaryDisplay().workAreaSize;
   return {
     width: Math.min(desktopState.window.width, workArea.width),
@@ -191,11 +240,12 @@ function restoredWindowSize() {
   };
 }
 
-function finishWindowClose(sender) {
-  if (!mainWindow || mainWindow.isDestroyed()) {
+function finishWindowClose(sender?: WebContents): void {
+  const window = mainWindow;
+  if (!window || window.isDestroyed()) {
     return;
   }
-  if (sender && sender !== mainWindow.webContents) {
+  if (sender && sender !== window.webContents) {
     return;
   }
 
@@ -203,21 +253,21 @@ function finishWindowClose(sender) {
   closeTimeout = undefined;
   saveWindowState();
   allowWindowClose = true;
-  mainWindow.close();
+  window.close();
 }
 
 ipcMain.on('neoncode:close-ready', (event) => {
   finishWindowClose(event.sender);
 });
 
-function configureSessionSecurity() {
+function configureSessionSecurity(): void {
   session.defaultSession.setPermissionCheckHandler(() => false);
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
     callback(false);
   });
 }
 
-function createWindow() {
+function createWindow(): void {
   Menu.setApplicationMenu(null);
   const indexPath = path.join(__dirname, '..', 'index.html');
   const appUrl = pathToFileURL(indexPath).toString();
@@ -225,7 +275,7 @@ function createWindow() {
   allowWindowClose = false;
   closeRequestInFlight = false;
 
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     ...windowSize,
     useContentSize: true,
     minWidth: 800,
@@ -241,23 +291,24 @@ function createWindow() {
       sandbox: true,
     },
   });
+  mainWindow = window;
 
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  mainWindow.webContents.on('will-attach-webview', (event) => event.preventDefault());
-  mainWindow.webContents.on('will-navigate', (event, url) => {
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-attach-webview', (event) => event.preventDefault());
+  window.webContents.on('will-navigate', (event, url) => {
     if (url !== appUrl) {
       event.preventDefault();
       log('navigation.blocked', { url });
     }
   });
-  mainWindow.webContents.on('will-redirect', (event, url) => {
+  window.webContents.on('will-redirect', (event, url) => {
     if (url !== appUrl) {
       event.preventDefault();
       log('redirect.blocked', { url });
     }
   });
 
-  mainWindow.loadFile(indexPath);
+  void window.loadFile(indexPath);
   log('window.create', {
     configStatus: bootstrapResult.diagnostics.configStatus,
     stateStatus: bootstrapResult.diagnostics.stateStatus,
@@ -267,25 +318,25 @@ function createWindow() {
     integrityLevel: processIntegrityLevel(),
   });
 
-  mainWindow.webContents.once('did-finish-load', () => {
+  window.webContents.once('did-finish-load', () => {
     log('window.did-finish-load');
   });
-  mainWindow.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
+  window.webContents.once('did-fail-load', (_event, errorCode, errorDescription) => {
     log('window.did-fail-load', { errorCode, errorDescription });
   });
-  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+  window.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     log('renderer.console', { level, message, line, sourceId });
   });
-  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+  window.webContents.on('render-process-gone', (_event, details) => {
     log('renderer.gone', details);
   });
-  mainWindow.on('focus', () => log('window.focus'));
-  mainWindow.on('blur', () => log('window.blur'));
-  mainWindow.on('resize', () => {
-    log('window.resize', { contentSize: mainWindow.getContentSize() });
+  window.on('focus', () => log('window.focus'));
+  window.on('blur', () => log('window.blur'));
+  window.on('resize', () => {
+    log('window.resize', { contentSize: window.getContentSize() });
     scheduleWindowStateSave();
   });
-  mainWindow.on('close', (event) => {
+  window.on('close', (event) => {
     if (allowWindowClose) {
       return;
     }
@@ -302,19 +353,21 @@ function createWindow() {
       log('window.prepare-close-timeout');
       finishWindowClose();
     }, 5000);
-    if (mainWindow.webContents.isDestroyed()) {
+    if (window.webContents.isDestroyed()) {
       finishWindowClose();
     } else {
-      mainWindow.webContents.send('neoncode:prepare-close');
+      window.webContents.send('neoncode:prepare-close');
     }
   });
-  mainWindow.on('closed', () => {
+  window.on('closed', () => {
     clearTimeout(closeTimeout);
     clearTimeout(stateSaveTimeout);
     closeTimeout = undefined;
     stateSaveTimeout = undefined;
     log('window.closed');
-    mainWindow = undefined;
+    if (mainWindow === window) {
+      mainWindow = undefined;
+    }
   });
 }
 
@@ -331,7 +384,7 @@ if (!hasSingleInstanceLock) {
     }
   });
 
-  app.whenReady().then(() => {
+  void app.whenReady().then(() => {
     configureSessionSecurity();
     createWindow();
   });

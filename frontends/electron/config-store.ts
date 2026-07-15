@@ -1,8 +1,21 @@
-const fs = require('node:fs');
-const path = require('node:path');
+import fs = require('node:fs');
+import path = require('node:path');
 
-const CONFIG_SCHEMA_VERSION = 4;
-const STATE_SCHEMA_VERSION = 2;
+import type {
+  ConfigStorageStatus,
+  DesktopBootstrapResult,
+  DesktopConfig,
+  DesktopDiagnostics,
+  DesktopLaunchProfile,
+  DesktopState,
+  DesktopWorkspaceConfig,
+  StateStorageStatus,
+  TerminalAppearance,
+  TerminalTheme,
+} from './shared/types';
+
+export const CONFIG_SCHEMA_VERSION = 4;
+export const STATE_SCHEMA_VERSION = 2;
 const MAX_CONFIG_BYTES = 64 * 1024;
 const MAX_STATE_BYTES = 16 * 1024;
 const MAX_WORKSPACES = 16;
@@ -17,21 +30,66 @@ const TERMINAL_COLOR_KEYS = [
   'black', 'red', 'green', 'yellow', 'blue', 'purple', 'cyan', 'white',
   'brightBlack', 'brightRed', 'brightGreen', 'brightYellow',
   'brightBlue', 'brightPurple', 'brightCyan', 'brightWhite',
-];
+] as const;
+const THEME_COLOR_KEYS = [
+  'background', 'foreground', 'cursorColor', 'selectionBackground',
+  ...TERMINAL_COLOR_KEYS,
+] as const;
 
-class ConfigurationError extends Error {
-  constructor(message, code = 'invalid') {
+type UnknownRecord = Record<string, unknown>;
+type MigrationSource =
+  | 'legacy_terminal'
+  | 'schema_0'
+  | 'schema_1'
+  | 'schema_1_legacy_terminal'
+  | 'schema_2'
+  | 'schema_3';
+
+interface ConfigMigrationResult {
+  document: unknown;
+  migrated: boolean;
+  migrationSource: MigrationSource | null;
+}
+
+export interface ConfigValidationResult {
+  value: DesktopConfig;
+  migrated: boolean;
+  migrationSource: MigrationSource | null;
+}
+
+interface ConfigLoadResult {
+  config: DesktopConfig | null;
+  status: ConfigStorageStatus;
+  warnings: string[];
+  errors: string[];
+}
+
+interface StateLoadResult {
+  state: DesktopState;
+  status: StateStorageStatus;
+  warnings: string[];
+}
+
+export class ConfigurationError extends Error {
+  readonly code: string;
+
+  constructor(message: string, code = 'invalid') {
     super(message);
     this.name = 'ConfigurationError';
     this.code = code;
   }
 }
 
-function cloneJson(value) {
-  return JSON.parse(JSON.stringify(value));
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
-function defaultTerminalAppearance() {
+function cloneJson<T>(value: T): T {
+  const cloned: unknown = JSON.parse(JSON.stringify(value));
+  return cloned as T;
+}
+
+export function defaultTerminalAppearance(): TerminalAppearance {
   return {
     fontFamily: 'Cascadia Mono, FiraCode Nerd Font Mono, Consolas, monospace',
     fontSize: 14,
@@ -62,7 +120,7 @@ function defaultTerminalAppearance() {
   };
 }
 
-function defaultConfig() {
+export function defaultConfig(): DesktopConfig {
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
     hub: {
@@ -103,7 +161,7 @@ function defaultConfig() {
   };
 }
 
-function defaultState() {
+export function defaultState(): DesktopState {
   return {
     schemaVersion: STATE_SCHEMA_VERSION,
     window: {
@@ -114,54 +172,63 @@ function defaultState() {
   };
 }
 
-function isPlainObject(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
+function isObjectRecord(value: unknown): value is UnknownRecord {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isPlainObject(value: unknown): value is UnknownRecord {
+  return isObjectRecord(value)
     && (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 }
 
-function requireObject(value, label) {
+function requireObject(value: unknown, label: string): UnknownRecord {
   if (!isPlainObject(value)) {
     throw new ConfigurationError(`${label} must be an object`);
   }
   return value;
 }
 
-function requireExactKeys(value, keys, label) {
-  requireObject(value, label);
-  const actual = Object.keys(value).sort();
+function requireExactKeys(value: unknown, keys: readonly string[], label: string): UnknownRecord {
+  const object = requireObject(value, label);
+  const actual = Object.keys(object).sort();
   const expected = [...keys].sort();
   if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
     throw new ConfigurationError(`${label} keys must be exactly: ${expected.join(', ')}`);
   }
+  return object;
 }
 
-function requireBoundedString(value, label, { min = 1, max = 4096 } = {}) {
+function requireBoundedString(
+  value: unknown,
+  label: string,
+  { min = 1, max = 4096 }: { min?: number; max?: number } = {},
+): string {
   if (typeof value !== 'string' || value.length < min || Buffer.byteLength(value, 'utf8') > max) {
     throw new ConfigurationError(`${label} must contain ${min}-${max} bytes`);
   }
   return value;
 }
 
-function requireIdentifier(value, label, max = 128) {
-  requireBoundedString(value, label, { max });
-  if (!IDENTIFIER_PATTERN.test(value)) {
+function requireIdentifier(value: unknown, label: string, max = 128): string {
+  const identifier = requireBoundedString(value, label, { max });
+  if (!IDENTIFIER_PATTERN.test(identifier)) {
     throw new ConfigurationError(`${label} may contain only ASCII letters, digits, '.', '_', or '-'`);
   }
-  return value;
+  return identifier;
 }
 
-function requireColor(value, label) {
+function requireColor(value: unknown, label: string): string {
   if (typeof value !== 'string' || !/^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(value)) {
     throw new ConfigurationError(`${label} must be a 6- or 8-digit CSS hex color`);
   }
   return value.toLowerCase();
 }
 
-function validateEndpoint(value) {
-  requireBoundedString(value, 'hub.endpoint', { max: 256 });
-  let endpoint;
+export function validateEndpoint(value: unknown): string {
+  const endpointText = requireBoundedString(value, 'hub.endpoint', { max: 256 });
+  let endpoint: URL;
   try {
-    endpoint = new URL(value);
+    endpoint = new URL(endpointText);
   } catch {
     throw new ConfigurationError('hub.endpoint must be a valid URL');
   }
@@ -179,47 +246,63 @@ function validateEndpoint(value) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new ConfigurationError('hub.endpoint port must be between 1 and 65535');
   }
-  return value;
+  return endpointText;
 }
 
-function migrateLegacyTerminal(rawTerminal) {
-  const appearance = defaultTerminalAppearance();
+function migrateLegacyTerminal(rawTerminal: UnknownRecord): UnknownRecord {
+  const defaults = defaultTerminalAppearance();
+  const theme: UnknownRecord = { ...defaults.theme };
+  const appearance: UnknownRecord = { ...defaults, theme };
   if (typeof rawTerminal.fontFace === 'string') appearance.fontFamily = rawTerminal.fontFace;
-  if (Number.isInteger(rawTerminal.fontSize)) appearance.fontSize = rawTerminal.fontSize;
-  if (typeof rawTerminal.cursorStyle === 'string') appearance.cursorBlink = rawTerminal.cursorStyle.toLowerCase().includes('blinking');
-  for (const key of ['background', 'foreground', 'selectionBackground']) {
-    if (typeof rawTerminal[key] === 'string') appearance.theme[key] = rawTerminal[key];
+  if (typeof rawTerminal.fontSize === 'number' && Number.isInteger(rawTerminal.fontSize)) {
+    appearance.fontSize = rawTerminal.fontSize;
   }
-  if (Array.isArray(rawTerminal.colorTable) && rawTerminal.colorTable.length === 16) {
+  if (typeof rawTerminal.cursorStyle === 'string') {
+    appearance.cursorBlink = rawTerminal.cursorStyle.toLowerCase().includes('blinking');
+  }
+  for (const key of ['background', 'foreground', 'selectionBackground'] as const) {
+    if (typeof rawTerminal[key] === 'string') theme[key] = rawTerminal[key];
+  }
+  const colorTable = rawTerminal.colorTable;
+  if (Array.isArray(colorTable) && colorTable.length === 16) {
     TERMINAL_COLOR_KEYS.forEach((key, index) => {
-      appearance.theme[key] = rawTerminal.colorTable[index];
+      theme[key] = colorTable[index];
     });
   }
   return appearance;
 }
 
-function migrateSchemaTwoTerminal(terminal) {
-  const appearance = defaultTerminalAppearance();
-  appearance.fontFamily = terminal.fontFamily;
-  appearance.fontSize = terminal.fontSize;
-  appearance.cursorBlink = terminal.cursorBlink;
-  appearance.theme.background = terminal.theme.background;
-  appearance.theme.foreground = terminal.theme.foreground;
-  appearance.theme.cursorColor = terminal.theme.cursor;
-  appearance.theme.selectionBackground = terminal.theme.selectionBackground;
+function migrateSchemaTwoTerminal(rawTerminal: unknown): UnknownRecord {
+  const terminal = requireObject(rawTerminal, 'schema 2 terminal');
+  const oldTheme = requireObject(terminal.theme, 'schema 2 terminal.theme');
+  const defaults = defaultTerminalAppearance();
+  const theme: UnknownRecord = {
+    ...defaults.theme,
+    background: oldTheme.background,
+    foreground: oldTheme.foreground,
+    cursorColor: oldTheme.cursor,
+    selectionBackground: oldTheme.selectionBackground,
+  };
+  const ansi = oldTheme.ansi;
   TERMINAL_COLOR_KEYS.forEach((key, index) => {
-    appearance.theme[key] = terminal.theme.ansi[index];
+    theme[key] = Array.isArray(ansi) ? ansi[index] : undefined;
   });
-  return appearance;
+  return {
+    ...defaults,
+    fontFamily: terminal.fontFamily,
+    fontSize: terminal.fontSize,
+    cursorBlink: terminal.cursorBlink,
+    theme,
+  };
 }
 
-function requireLegacyDesktopConfigKeys(document, { terminal }) {
+function requireLegacyDesktopConfigKeys(document: UnknownRecord, { terminal }: { terminal: boolean }): void {
   const keys = ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'launchProfiles', 'sessions'];
   if (terminal) keys.push('terminal');
-  requireExactKeys(document, keys, `schema ${document.schemaVersion} config`);
+  requireExactKeys(document, keys, `schema ${String(document.schemaVersion)} config`);
 }
 
-function migrateSchemaThreeConfig(document) {
+function migrateSchemaThreeConfig(document: UnknownRecord): UnknownRecord {
   const { sessions, ...rest } = document;
   return {
     ...rest,
@@ -227,49 +310,52 @@ function migrateSchemaThreeConfig(document) {
     workspaces: [{
       id: 'default',
       name: 'Default',
-      layout: { columns: Math.min(2, sessions.length) },
+      layout: { columns: Array.isArray(sessions) ? Math.min(2, sessions.length) : 0 },
       sessions,
     }],
   };
 }
 
-function migrateConfig(raw, legacyTerminal) {
-  requireObject(raw, 'config');
-  if (raw.schemaVersion === CONFIG_SCHEMA_VERSION) {
-    return { document: raw, migrated: false, migrationSource: null };
+function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigrationResult {
+  const document = requireObject(raw, 'config');
+  if (document.schemaVersion === CONFIG_SCHEMA_VERSION) {
+    return { document, migrated: false, migrationSource: null };
   }
-  if (raw.schemaVersion === undefined
-      && Object.keys(raw).length === 1
-      && isPlainObject(raw.terminal)) {
+  if (document.schemaVersion === undefined
+      && Object.keys(document).length === 1
+      && isPlainObject(document.terminal)) {
     const migrated = defaultConfig();
-    migrated.terminal = migrateLegacyTerminal(raw.terminal);
     return {
-      document: migrated,
+      document: { ...migrated, terminal: migrateLegacyTerminal(document.terminal) },
       migrated: true,
       migrationSource: 'legacy_terminal',
     };
   }
-  if (raw.schemaVersion === 3) {
-    requireLegacyDesktopConfigKeys(raw, { terminal: true });
+  if (document.schemaVersion === 3) {
+    requireLegacyDesktopConfigKeys(document, { terminal: true });
     return {
-      document: migrateSchemaThreeConfig(raw),
+      document: migrateSchemaThreeConfig(document),
       migrated: true,
       migrationSource: 'schema_3',
     };
   }
-  if (raw.schemaVersion === 2) {
-    requireLegacyDesktopConfigKeys(raw, { terminal: true });
-    const schemaThree = { ...raw, schemaVersion: 3, terminal: migrateSchemaTwoTerminal(raw.terminal) };
+  if (document.schemaVersion === 2) {
+    requireLegacyDesktopConfigKeys(document, { terminal: true });
+    const schemaThree = {
+      ...document,
+      schemaVersion: 3,
+      terminal: migrateSchemaTwoTerminal(document.terminal),
+    };
     return {
       document: migrateSchemaThreeConfig(schemaThree),
       migrated: true,
       migrationSource: 'schema_2',
     };
   }
-  if (raw.schemaVersion === 1) {
-    requireLegacyDesktopConfigKeys(raw, { terminal: false });
+  if (document.schemaVersion === 1) {
+    requireLegacyDesktopConfigKeys(document, { terminal: false });
     const schemaThree = {
-      ...raw,
+      ...document,
       schemaVersion: 3,
       terminal: legacyTerminal ? migrateLegacyTerminal(legacyTerminal) : defaultTerminalAppearance(),
     };
@@ -279,41 +365,61 @@ function migrateConfig(raw, legacyTerminal) {
       migrationSource: legacyTerminal ? 'schema_1_legacy_terminal' : 'schema_1',
     };
   }
-  if (Number.isInteger(raw.schemaVersion) && raw.schemaVersion > CONFIG_SCHEMA_VERSION) {
+  if (typeof document.schemaVersion === 'number'
+      && Number.isInteger(document.schemaVersion)
+      && document.schemaVersion > CONFIG_SCHEMA_VERSION) {
     throw new ConfigurationError(
-      `config schema ${raw.schemaVersion} is newer than supported schema ${CONFIG_SCHEMA_VERSION}`,
+      `config schema ${document.schemaVersion} is newer than supported schema ${CONFIG_SCHEMA_VERSION}`,
       'future_schema',
     );
   }
-  if (raw.schemaVersion !== 0) {
+  if (document.schemaVersion !== 0) {
     throw new ConfigurationError('config.schemaVersion must be 0, 1, 2, 3, or 4');
   }
 
   requireExactKeys(
-    raw,
+    document,
     ['schemaVersion', 'endpoint', 'persistSessions', 'sessionPrefix', 'terminalCount'],
     'legacy config',
   );
-  if (typeof raw.persistSessions !== 'boolean') {
+  if (typeof document.persistSessions !== 'boolean') {
     throw new ConfigurationError('legacy persistSessions must be boolean');
   }
-  if (!Number.isInteger(raw.terminalCount) || raw.terminalCount < 1 || raw.terminalCount > 2) {
+  if (typeof document.terminalCount !== 'number'
+      || !Number.isInteger(document.terminalCount)
+      || document.terminalCount < 1
+      || document.terminalCount > 2) {
     throw new ConfigurationError('legacy terminalCount must be between 1 and 2');
   }
 
-  const migrated = defaultConfig();
-  migrated.hub.endpoint = raw.endpoint;
-  migrated.sessionPrefix = raw.sessionPrefix;
-  migrated.persistence.onWindowClose = raw.persistSessions ? 'detach' : 'kill';
-  migrated.workspaces[0].sessions = migrated.workspaces[0].sessions.slice(0, raw.terminalCount);
-  migrated.workspaces[0].layout.columns = raw.terminalCount;
-  return { document: migrated, migrated: true, migrationSource: 'schema_0' };
+  const defaults = defaultConfig();
+  const terminalCount = document.terminalCount;
+  return {
+    document: {
+      ...defaults,
+      hub: { endpoint: document.endpoint },
+      sessionPrefix: document.sessionPrefix,
+      persistence: { onWindowClose: document.persistSessions ? 'detach' : 'kill' },
+      workspaces: defaults.workspaces.map((workspace, index) => index === 0
+        ? {
+            ...workspace,
+            layout: { columns: terminalCount },
+            sessions: workspace.sessions.slice(0, terminalCount),
+          }
+        : workspace),
+    },
+    migrated: true,
+    migrationSource: 'schema_0',
+  };
 }
 
-function validateConfig(raw, { legacyTerminal } = {}) {
-  const { document, migrated, migrationSource } = migrateConfig(raw, legacyTerminal);
-  requireExactKeys(
-    document,
+export function validateConfig(
+  raw: unknown,
+  { legacyTerminal }: { legacyTerminal?: UnknownRecord | undefined } = {},
+): ConfigValidationResult {
+  const { document: migratedDocument, migrated, migrationSource } = migrateConfig(raw, legacyTerminal);
+  const document = requireExactKeys(
+    migratedDocument,
     ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'terminal', 'launchProfiles', 'workspaces'],
     'config',
   );
@@ -321,38 +427,44 @@ function validateConfig(raw, { legacyTerminal } = {}) {
     throw new ConfigurationError(`config.schemaVersion must be ${CONFIG_SCHEMA_VERSION}`);
   }
 
-  requireExactKeys(document.hub, ['endpoint'], 'config.hub');
-  const endpoint = validateEndpoint(document.hub.endpoint);
+  const hub = requireExactKeys(document.hub, ['endpoint'], 'config.hub');
+  const endpoint = validateEndpoint(hub.endpoint);
   const sessionPrefix = requireIdentifier(document.sessionPrefix, 'config.sessionPrefix', 96);
 
-  requireExactKeys(document.persistence, ['onWindowClose'], 'config.persistence');
-  if (!['detach', 'kill'].includes(document.persistence.onWindowClose)) {
+  const persistence = requireExactKeys(document.persistence, ['onWindowClose'], 'config.persistence');
+  const onWindowClose = persistence.onWindowClose;
+  if (onWindowClose !== 'detach' && onWindowClose !== 'kill') {
     throw new ConfigurationError('config.persistence.onWindowClose must be detach or kill');
   }
 
-  requireExactKeys(document.terminal, ['fontFamily', 'fontSize', 'cursorBlink', 'theme'], 'config.terminal');
-  const fontFamily = requireBoundedString(document.terminal.fontFamily, 'config.terminal.fontFamily', { max: 256 });
-  if (!Number.isInteger(document.terminal.fontSize) || document.terminal.fontSize < 8 || document.terminal.fontSize > 32) {
+  const terminalDocument = requireExactKeys(
+    document.terminal,
+    ['fontFamily', 'fontSize', 'cursorBlink', 'theme'],
+    'config.terminal',
+  );
+  const fontFamily = requireBoundedString(
+    terminalDocument.fontFamily,
+    'config.terminal.fontFamily',
+    { max: 256 },
+  );
+  const fontSize = terminalDocument.fontSize;
+  if (typeof fontSize !== 'number' || !Number.isInteger(fontSize) || fontSize < 8 || fontSize > 32) {
     throw new ConfigurationError('config.terminal.fontSize must be an integer between 8 and 32');
   }
-  if (typeof document.terminal.cursorBlink !== 'boolean') {
+  if (typeof terminalDocument.cursorBlink !== 'boolean') {
     throw new ConfigurationError('config.terminal.cursorBlink must be boolean');
   }
-  const themeKeys = [
-    'name', 'background', 'foreground', 'cursorColor', 'selectionBackground',
-    ...TERMINAL_COLOR_KEYS,
-  ];
-  requireExactKeys(document.terminal.theme, themeKeys, 'config.terminal.theme');
-  const theme = {
-    name: requireBoundedString(document.terminal.theme.name, 'config.terminal.theme.name', { max: 128 }),
-  };
-  for (const key of themeKeys.filter((key) => key !== 'name')) {
-    theme[key] = requireColor(document.terminal.theme[key], `config.terminal.theme.${key}`);
+  const themeKeys = ['name', ...THEME_COLOR_KEYS] as const;
+  const themeDocument = requireExactKeys(terminalDocument.theme, themeKeys, 'config.terminal.theme');
+  const theme: TerminalTheme = defaultTerminalAppearance().theme;
+  theme.name = requireBoundedString(themeDocument.name, 'config.terminal.theme.name', { max: 128 });
+  for (const key of THEME_COLOR_KEYS) {
+    theme[key] = requireColor(themeDocument[key], `config.terminal.theme.${key}`);
   }
-  const terminal = {
+  const terminal: TerminalAppearance = {
     fontFamily,
-    fontSize: document.terminal.fontSize,
-    cursorBlink: document.terminal.cursorBlink,
+    fontSize,
+    cursorBlink: terminalDocument.cursorBlink,
     theme,
   };
 
@@ -361,70 +473,82 @@ function validateConfig(raw, { legacyTerminal } = {}) {
   if (profileEntries.length < 1 || profileEntries.length > 16) {
     throw new ConfigurationError('config.launchProfiles must contain 1-16 profiles');
   }
-  const launchProfiles = Object.fromEntries(profileEntries.map(([profileId, rawProfile]) => {
-    requireIdentifier(profileId, `launch profile id '${profileId}'`, 64);
-    if (RESERVED_PROFILE_IDS.has(profileId)) {
-      throw new ConfigurationError(`launch profile id is reserved: ${profileId}`);
-    }
-    requireExactKeys(rawProfile, ['type', 'command', 'args', 'cwd'], `launchProfiles.${profileId}`);
-    if (rawProfile.type !== 'process') {
-      throw new ConfigurationError(`launchProfiles.${profileId}.type must be process`);
-    }
-    const command = requireBoundedString(rawProfile.command, `launchProfiles.${profileId}.command`);
-    if (!Array.isArray(rawProfile.args) || rawProfile.args.length > 128) {
-      throw new ConfigurationError(`launchProfiles.${profileId}.args must contain at most 128 strings`);
-    }
-    const args = rawProfile.args.map((argument, index) => (
-      requireBoundedString(argument, `launchProfiles.${profileId}.args[${index}]`, { min: 0 })
-    ));
-    const cwd = rawProfile.cwd === null
-      ? null
-      : requireBoundedString(rawProfile.cwd, `launchProfiles.${profileId}.cwd`);
-    return [profileId, { type: 'process', command, args, cwd }];
-  }));
+  const launchProfiles: Record<string, DesktopLaunchProfile> = Object.fromEntries(
+    profileEntries.map(([profileId, rawProfile]) => {
+      requireIdentifier(profileId, `launch profile id '${profileId}'`, 64);
+      if (RESERVED_PROFILE_IDS.has(profileId)) {
+        throw new ConfigurationError(`launch profile id is reserved: ${profileId}`);
+      }
+      const profile = requireExactKeys(
+        rawProfile,
+        ['type', 'command', 'args', 'cwd'],
+        `launchProfiles.${profileId}`,
+      );
+      if (profile.type !== 'process') {
+        throw new ConfigurationError(`launchProfiles.${profileId}.type must be process`);
+      }
+      const command = requireBoundedString(profile.command, `launchProfiles.${profileId}.command`);
+      if (!Array.isArray(profile.args) || profile.args.length > 128) {
+        throw new ConfigurationError(`launchProfiles.${profileId}.args must contain at most 128 strings`);
+      }
+      const args = profile.args.map((argument, index) => (
+        requireBoundedString(argument, `launchProfiles.${profileId}.args[${index}]`, { min: 0 })
+      ));
+      const cwd = profile.cwd === null
+        ? null
+        : requireBoundedString(profile.cwd, `launchProfiles.${profileId}.cwd`);
+      return [profileId, { type: 'process' as const, command, args, cwd }];
+    }),
+  );
 
   if (!Array.isArray(document.workspaces)
       || document.workspaces.length < 1
       || document.workspaces.length > MAX_WORKSPACES) {
     throw new ConfigurationError(`config.workspaces must contain 1-${MAX_WORKSPACES} workspaces`);
   }
-  const seenWorkspaceIds = new Set();
-  const seenSessionIds = new Set();
+  const seenWorkspaceIds = new Set<string>();
+  const seenSessionIds = new Set<string>();
   let configuredSessionCount = 0;
-  const workspaces = document.workspaces.map((rawWorkspace, workspaceIndex) => {
+  const workspaces: DesktopWorkspaceConfig[] = document.workspaces.map((rawWorkspace, workspaceIndex) => {
     const workspaceLabel = `config.workspaces[${workspaceIndex}]`;
-    requireExactKeys(rawWorkspace, ['id', 'name', 'layout', 'sessions'], workspaceLabel);
-    const id = requireIdentifier(rawWorkspace.id, `${workspaceLabel}.id`, 64);
+    const workspace = requireExactKeys(rawWorkspace, ['id', 'name', 'layout', 'sessions'], workspaceLabel);
+    const id = requireIdentifier(workspace.id, `${workspaceLabel}.id`, 64);
     if (seenWorkspaceIds.has(id)) {
       throw new ConfigurationError(`duplicate workspace id: ${id}`);
     }
     seenWorkspaceIds.add(id);
-    const name = requireBoundedString(rawWorkspace.name, `${workspaceLabel}.name`, { max: 64 });
-    requireExactKeys(rawWorkspace.layout, ['columns'], `${workspaceLabel}.layout`);
-    if (!Array.isArray(rawWorkspace.sessions)
-        || rawWorkspace.sessions.length < 1
-        || rawWorkspace.sessions.length > MAX_PANES_PER_WORKSPACE) {
+    const name = requireBoundedString(workspace.name, `${workspaceLabel}.name`, { max: 64 });
+    const layout = requireExactKeys(workspace.layout, ['columns'], `${workspaceLabel}.layout`);
+    if (!Array.isArray(workspace.sessions)
+        || workspace.sessions.length < 1
+        || workspace.sessions.length > MAX_PANES_PER_WORKSPACE) {
       throw new ConfigurationError(`${workspaceLabel}.sessions must contain 1-${MAX_PANES_PER_WORKSPACE} sessions`);
     }
-    configuredSessionCount += rawWorkspace.sessions.length;
+    configuredSessionCount += workspace.sessions.length;
     if (configuredSessionCount > MAX_CONFIGURED_SESSIONS) {
       throw new ConfigurationError(`config.workspaces may contain at most ${MAX_CONFIGURED_SESSIONS} sessions in total`);
     }
-    if (!Number.isInteger(rawWorkspace.layout.columns)
-        || rawWorkspace.layout.columns < 1
-        || rawWorkspace.layout.columns > rawWorkspace.sessions.length) {
+    const columns = layout.columns;
+    if (typeof columns !== 'number'
+        || !Number.isInteger(columns)
+        || columns < 1
+        || columns > workspace.sessions.length) {
       throw new ConfigurationError(`${workspaceLabel}.layout.columns must be between 1 and the session count`);
     }
-    const sessions = rawWorkspace.sessions.map((rawSession, sessionIndex) => {
+    const sessions = workspace.sessions.map((rawSession, sessionIndex) => {
       const sessionLabel = `${workspaceLabel}.sessions[${sessionIndex}]`;
-      requireExactKeys(rawSession, ['id', 'title', 'launchProfile'], sessionLabel);
-      const sessionId = requireIdentifier(rawSession.id, `${sessionLabel}.id`, 64);
+      const session = requireExactKeys(rawSession, ['id', 'title', 'launchProfile'], sessionLabel);
+      const sessionId = requireIdentifier(session.id, `${sessionLabel}.id`, 64);
       if (seenSessionIds.has(sessionId)) {
         throw new ConfigurationError(`duplicate session id across workspaces: ${sessionId}`);
       }
       seenSessionIds.add(sessionId);
-      const title = requireBoundedString(rawSession.title, `${sessionLabel}.title`, { max: 64 });
-      const launchProfile = requireIdentifier(rawSession.launchProfile, `${sessionLabel}.launchProfile`, 64);
+      const title = requireBoundedString(session.title, `${sessionLabel}.title`, { max: 64 });
+      const launchProfile = requireIdentifier(
+        session.launchProfile,
+        `${sessionLabel}.launchProfile`,
+        64,
+      );
       if (!Object.hasOwn(launchProfiles, launchProfile)) {
         throw new ConfigurationError(`unknown launch profile '${launchProfile}' for session '${sessionId}'`);
       }
@@ -433,7 +557,7 @@ function validateConfig(raw, { legacyTerminal } = {}) {
       }
       return { id: sessionId, title, launchProfile };
     });
-    return { id, name, layout: { columns: rawWorkspace.layout.columns }, sessions };
+    return { id, name, layout: { columns }, sessions };
   });
 
   return {
@@ -441,7 +565,7 @@ function validateConfig(raw, { legacyTerminal } = {}) {
       schemaVersion: CONFIG_SCHEMA_VERSION,
       hub: { endpoint },
       sessionPrefix,
-      persistence: { onWindowClose: document.persistence.onWindowClose },
+      persistence: { onWindowClose },
       terminal,
       launchProfiles,
       workspaces,
@@ -451,47 +575,72 @@ function validateConfig(raw, { legacyTerminal } = {}) {
   };
 }
 
-function validateState(raw) {
-  requireObject(raw, 'state');
-  let document = raw;
-  if (raw.schemaVersion === 1) {
-    requireExactKeys(raw, ['schemaVersion', 'window'], 'state');
-    document = { ...raw, schemaVersion: STATE_SCHEMA_VERSION, activeWorkspaceId: null };
+function requireWindowDimension(value: unknown, dimension: 'width' | 'height'): number {
+  if (typeof value !== 'number'
+      || !Number.isInteger(value)
+      || value < 1
+      || value > MAX_WINDOW_DIMENSION) {
+    throw new ConfigurationError(
+      `state.window.${dimension} must be an integer between 1 and ${MAX_WINDOW_DIMENSION}`,
+    );
   }
-  requireExactKeys(document, ['schemaVersion', 'window', 'activeWorkspaceId'], 'state');
+  return value;
+}
+
+export function validateState(raw: unknown): DesktopState {
+  const rawDocument = requireObject(raw, 'state');
+  let migratedDocument: unknown = rawDocument;
+  if (rawDocument.schemaVersion === 1) {
+    requireExactKeys(rawDocument, ['schemaVersion', 'window'], 'state');
+    migratedDocument = {
+      ...rawDocument,
+      schemaVersion: STATE_SCHEMA_VERSION,
+      activeWorkspaceId: null,
+    };
+  }
+  const document = requireExactKeys(
+    migratedDocument,
+    ['schemaVersion', 'window', 'activeWorkspaceId'],
+    'state',
+  );
   if (document.schemaVersion !== STATE_SCHEMA_VERSION) {
     throw new ConfigurationError(`state.schemaVersion must be ${STATE_SCHEMA_VERSION}`);
   }
-  requireExactKeys(document.window, ['width', 'height'], 'state.window');
-  for (const dimension of ['width', 'height']) {
-    const value = document.window[dimension];
-    if (!Number.isInteger(value) || value < 1 || value > MAX_WINDOW_DIMENSION) {
-      throw new ConfigurationError(`state.window.${dimension} must be an integer between 1 and ${MAX_WINDOW_DIMENSION}`);
-    }
-  }
+  const window = requireExactKeys(document.window, ['width', 'height'], 'state.window');
+  const width = requireWindowDimension(window.width, 'width');
+  const height = requireWindowDimension(window.height, 'height');
   const activeWorkspaceId = document.activeWorkspaceId === null
     ? null
     : requireIdentifier(document.activeWorkspaceId, 'state.activeWorkspaceId', 64);
   return {
     schemaVersion: STATE_SCHEMA_VERSION,
     window: {
-      width: Math.max(MIN_WINDOW_WIDTH, document.window.width),
-      height: Math.max(MIN_WINDOW_HEIGHT, document.window.height),
+      width: Math.max(MIN_WINDOW_WIDTH, width),
+      height: Math.max(MIN_WINDOW_HEIGHT, height),
     },
     activeWorkspaceId,
   };
 }
 
-function applyEnvironmentOverrides(config, env) {
+export function applyEnvironmentOverrides(config: DesktopConfig, env: unknown): DesktopConfig {
+  if (!isObjectRecord(env)) {
+    throw new ConfigurationError('environment must be an object');
+  }
+  const environment = env;
   const effective = cloneJson(config);
-  if (env.NEONCODE_HUB_ENDPOINT) {
-    effective.hub.endpoint = env.NEONCODE_HUB_ENDPOINT;
+  if (environment.NEONCODE_HUB_ENDPOINT) {
+    effective.hub.endpoint = validateEndpoint(environment.NEONCODE_HUB_ENDPOINT);
   }
-  if (env.NEONCODE_SESSION_PREFIX) {
-    effective.sessionPrefix = env.NEONCODE_SESSION_PREFIX;
+  if (environment.NEONCODE_SESSION_PREFIX) {
+    effective.sessionPrefix = requireIdentifier(
+      environment.NEONCODE_SESSION_PREFIX,
+      'config.sessionPrefix',
+      96,
+    );
   }
-  if (env.NEONCODE_TERMINAL_COUNT) {
-    const count = Number.parseInt(env.NEONCODE_TERMINAL_COUNT, 10);
+  if (environment.NEONCODE_TERMINAL_COUNT) {
+    const countText = environment.NEONCODE_TERMINAL_COUNT;
+    const count = typeof countText === 'string' ? Number.parseInt(countText, 10) : Number.NaN;
     if (!Number.isInteger(count) || count < 1 || count > MAX_PANES_PER_WORKSPACE) {
       throw new ConfigurationError(`NEONCODE_TERMINAL_COUNT must be between 1 and ${MAX_PANES_PER_WORKSPACE}`);
     }
@@ -501,22 +650,28 @@ function applyEnvironmentOverrides(config, env) {
       sessions: workspace.sessions.slice(0, count),
     }));
   }
-  if (env.NEONCODE_PERSIST_SESSIONS) {
-    effective.persistence.onWindowClose = env.NEONCODE_PERSIST_SESSIONS === '0' ? 'kill' : 'detach';
+  if (environment.NEONCODE_PERSIST_SESSIONS) {
+    if (typeof environment.NEONCODE_PERSIST_SESSIONS !== 'string') {
+      throw new ConfigurationError('NEONCODE_PERSIST_SESSIONS must be a string');
+    }
+    effective.persistence.onWindowClose = environment.NEONCODE_PERSIST_SESSIONS === '0'
+      ? 'kill'
+      : 'detach';
   }
   return validateConfig(effective).value;
 }
 
-function readJsonFile(filePath, maximumBytes) {
+function readJsonFile(filePath: string, maximumBytes: number): unknown {
   const stat = fs.statSync(filePath);
   if (stat.size > maximumBytes) {
     throw new ConfigurationError(`${path.basename(filePath)} exceeds ${maximumBytes} bytes`);
   }
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const document: unknown = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  return document;
 }
 
-function flushDirectory(directory) {
-  let descriptor;
+function flushDirectory(directory: string): void {
+  let descriptor: number | undefined;
   try {
     descriptor = fs.openSync(directory, 'r');
     fs.fsyncSync(descriptor);
@@ -529,7 +684,7 @@ function flushDirectory(directory) {
   }
 }
 
-function writeJsonAtomic(filePath, value) {
+export function writeJsonAtomic(filePath: string, value: unknown): void {
   const directory = path.dirname(filePath);
   fs.mkdirSync(directory, { recursive: true });
   const temporary = path.join(
@@ -537,7 +692,7 @@ function writeJsonAtomic(filePath, value) {
     `.${path.basename(filePath)}.tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
   );
   const payload = `${JSON.stringify(value, null, 2)}\n`;
-  let descriptor;
+  let descriptor: number | undefined;
   try {
     descriptor = fs.openSync(temporary, 'wx', 0o600);
     fs.writeFileSync(descriptor, payload, 'utf8');
@@ -555,9 +710,15 @@ function writeJsonAtomic(filePath, value) {
   }
 }
 
-class ConfigStore {
-  constructor(directory) {
-    if (!path.isAbsolute(directory)) {
+export class ConfigStore {
+  readonly directory: string;
+  readonly configPath: string;
+  readonly configBackupPath: string;
+  readonly statePath: string;
+  readonly stateBackupPath: string;
+
+  constructor(directory: unknown) {
+    if (typeof directory !== 'string' || !path.isAbsolute(directory)) {
       throw new ConfigurationError('configuration directory must be absolute');
     }
     this.directory = directory;
@@ -567,7 +728,7 @@ class ConfigStore {
     this.stateBackupPath = `${this.statePath}.bak`;
   }
 
-  cleanTemporaryFiles() {
+  cleanTemporaryFiles(): void {
     if (!fs.existsSync(this.directory)) {
       return;
     }
@@ -578,7 +739,7 @@ class ConfigStore {
     }
   }
 
-  preserveInvalid(filePath) {
+  preserveInvalid(filePath: string): string | undefined {
     if (!fs.existsSync(filePath)) {
       return undefined;
     }
@@ -587,7 +748,7 @@ class ConfigStore {
     return preserved;
   }
 
-  loadPreservedLegacyTerminal() {
+  loadPreservedLegacyTerminal(): UnknownRecord | undefined {
     if (!fs.existsSync(this.directory)) return undefined;
     const candidates = fs.readdirSync(this.directory)
       .filter((name) => name.startsWith('config.json.pre-migration-'))
@@ -604,23 +765,23 @@ class ConfigStore {
     return undefined;
   }
 
-  validateStoredConfig(filePath) {
+  validateStoredConfig(filePath: string): ConfigValidationResult {
     return validateConfig(readJsonFile(filePath, MAX_CONFIG_BYTES), {
       legacyTerminal: this.loadPreservedLegacyTerminal(),
     });
   }
 
-  preserveForMigration(warnings) {
+  preserveForMigration(warnings: string[]): void {
     const preserved = `${this.configPath}.pre-migration-${Date.now()}`;
     try {
       fs.copyFileSync(this.configPath, preserved, fs.constants.COPYFILE_EXCL);
       warnings.push(`legacy config.json was preserved as ${path.basename(preserved)}`);
     } catch (error) {
-      warnings.push(`legacy config.json could not be preserved before migration: ${error.message}`);
+      warnings.push(`legacy config.json could not be preserved before migration: ${errorMessage(error)}`);
     }
   }
 
-  preserveInvalidSafely(filePath, warnings, label) {
+  preserveInvalidSafely(filePath: string, warnings: string[], label: string): string | undefined {
     try {
       const preserved = this.preserveInvalid(filePath);
       if (preserved) {
@@ -628,13 +789,13 @@ class ConfigStore {
       }
       return preserved;
     } catch (error) {
-      warnings.push(`${label} could not be preserved: ${error.message}`);
+      warnings.push(`${label} could not be preserved: ${errorMessage(error)}`);
       return undefined;
     }
   }
 
-  loadConfig() {
-    const warnings = [];
+  loadConfig(): ConfigLoadResult {
+    const warnings: string[] = [];
     if (!fs.existsSync(this.configPath)) {
       if (!fs.existsSync(this.configBackupPath)) {
         const created = defaultConfig();
@@ -642,12 +803,12 @@ class ConfigStore {
         try {
           writeJsonAtomic(this.configBackupPath, created);
         } catch (error) {
-          warnings.push(`config.json.bak could not be created: ${error.message}`);
+          warnings.push(`config.json.bak could not be created: ${errorMessage(error)}`);
         }
         return { config: created, status: 'created', warnings, errors: [] };
       }
 
-      let recovered;
+      let recovered: DesktopConfig;
       try {
         recovered = this.validateStoredConfig(this.configBackupPath).value;
       } catch (backupError) {
@@ -656,19 +817,19 @@ class ConfigStore {
           config: null,
           status: 'error',
           warnings,
-          errors: [`config.json is missing and config.json.bak is unusable: ${backupError.message}`],
+          errors: [`config.json is missing and config.json.bak is unusable: ${errorMessage(backupError)}`],
         };
       }
       try {
         writeJsonAtomic(this.configPath, recovered);
         warnings.push('config.json was missing and was restored from config.json.bak');
       } catch (error) {
-        warnings.push(`config.json could not be restored from its valid backup: ${error.message}`);
+        warnings.push(`config.json could not be restored from its valid backup: ${errorMessage(error)}`);
       }
       return { config: recovered, status: 'recovered', warnings, errors: [] };
     }
 
-    let primaryResult;
+    let primaryResult: ConfigValidationResult;
     try {
       primaryResult = this.validateStoredConfig(this.configPath);
     } catch (primaryError) {
@@ -682,11 +843,11 @@ class ConfigStore {
           config: null,
           status: 'error',
           warnings,
-          errors: [`config.json is invalid: ${primaryError.message}`],
+          errors: [`config.json is invalid: ${errorMessage(primaryError)}`],
         };
       }
 
-      let recovered;
+      let recovered: DesktopConfig;
       try {
         recovered = this.validateStoredConfig(this.configBackupPath).value;
       } catch (backupError) {
@@ -695,8 +856,8 @@ class ConfigStore {
           status: 'error',
           warnings,
           errors: [
-            `config.json is invalid: ${primaryError.message}`,
-            `config.json.bak is unusable: ${backupError.message}`,
+            `config.json is invalid: ${errorMessage(primaryError)}`,
+            `config.json.bak is unusable: ${errorMessage(backupError)}`,
           ],
         };
       }
@@ -704,7 +865,7 @@ class ConfigStore {
         writeJsonAtomic(this.configPath, recovered);
         warnings.push('config.json was restored from config.json.bak');
       } catch (error) {
-        warnings.push(`config.json could not be restored from its valid backup: ${error.message}`);
+        warnings.push(`config.json could not be restored from its valid backup: ${errorMessage(error)}`);
       }
       return { config: recovered, status: 'recovered', warnings, errors: [] };
     }
@@ -713,18 +874,20 @@ class ConfigStore {
       this.preserveForMigration(warnings);
       try {
         writeJsonAtomic(this.configPath, primaryResult.value);
-        const migrationDetail = ['legacy_terminal', 'schema_1_legacy_terminal'].includes(primaryResult.migrationSource)
+        const importedLegacyTerminal = primaryResult.migrationSource === 'legacy_terminal'
+          || primaryResult.migrationSource === 'schema_1_legacy_terminal';
+        const migrationDetail = importedLegacyTerminal
           ? '; compatible legacy terminal appearance settings were imported'
           : '';
         warnings.push(`config.json was migrated to schema ${CONFIG_SCHEMA_VERSION}${migrationDetail}`);
       } catch (error) {
-        warnings.push(`migrated config.json could not be persisted: ${error.message}`);
+        warnings.push(`migrated config.json could not be persisted: ${errorMessage(error)}`);
       }
     }
     try {
       writeJsonAtomic(this.configBackupPath, primaryResult.value);
     } catch (error) {
-      warnings.push(`config.json.bak could not be refreshed: ${error.message}`);
+      warnings.push(`config.json.bak could not be refreshed: ${errorMessage(error)}`);
     }
     return {
       config: primaryResult.value,
@@ -734,18 +897,18 @@ class ConfigStore {
     };
   }
 
-  loadState() {
-    const warnings = [];
+  loadState(): StateLoadResult {
+    const warnings: string[] = [];
     if (fs.existsSync(this.statePath)) {
-      let state;
+      let state: DesktopState | undefined;
       let stateMigrated = false;
       try {
         const rawState = readJsonFile(this.statePath, MAX_STATE_BYTES);
-        stateMigrated = rawState.schemaVersion !== STATE_SCHEMA_VERSION;
+        stateMigrated = !isPlainObject(rawState) || rawState.schemaVersion !== STATE_SCHEMA_VERSION;
         state = validateState(rawState);
       } catch (error) {
         this.preserveInvalidSafely(this.statePath, warnings, 'invalid state.json');
-        warnings.push(`state.json will be recovered or reset: ${error.message}`);
+        warnings.push(`state.json will be recovered or reset: ${errorMessage(error)}`);
       }
       if (state) {
         if (stateMigrated) {
@@ -753,13 +916,13 @@ class ConfigStore {
             writeJsonAtomic(this.statePath, state);
             warnings.push(`state.json was migrated to schema ${STATE_SCHEMA_VERSION}`);
           } catch (error) {
-            warnings.push(`migrated state.json could not be persisted: ${error.message}`);
+            warnings.push(`migrated state.json could not be persisted: ${errorMessage(error)}`);
           }
         }
         try {
           writeJsonAtomic(this.stateBackupPath, state);
         } catch (error) {
-          warnings.push(`state.json.bak could not be refreshed: ${error.message}`);
+          warnings.push(`state.json.bak could not be refreshed: ${errorMessage(error)}`);
         }
         return { state, status: stateMigrated ? 'migrated' : 'loaded', warnings };
       }
@@ -772,12 +935,12 @@ class ConfigStore {
           writeJsonAtomic(this.statePath, recovered);
           warnings.push('state.json was restored from state.json.bak');
         } catch (error) {
-          warnings.push(`state.json could not be restored from its valid backup: ${error.message}`);
+          warnings.push(`state.json could not be restored from its valid backup: ${errorMessage(error)}`);
         }
         return { state: recovered, status: 'recovered', warnings };
       } catch (error) {
         this.preserveInvalidSafely(this.stateBackupPath, warnings, 'unusable state.json.bak');
-        warnings.push(`state.json.bak could not be used: ${error.message}`);
+        warnings.push(`state.json.bak could not be used: ${errorMessage(error)}`);
       }
     }
 
@@ -786,12 +949,12 @@ class ConfigStore {
     try {
       writeJsonAtomic(this.stateBackupPath, state);
     } catch (error) {
-      warnings.push(`state.json.bak could not be created: ${error.message}`);
+      warnings.push(`state.json.bak could not be created: ${errorMessage(error)}`);
     }
     return { state, status: 'created', warnings };
   }
 
-  load(env = process.env) {
+  load(env: unknown = process.env): DesktopBootstrapResult {
     fs.mkdirSync(this.directory, { recursive: true });
     this.cleanTemporaryFiles();
     const configResult = this.loadConfig();
@@ -803,22 +966,23 @@ class ConfigStore {
         effectiveConfig = applyEnvironmentOverrides(effectiveConfig, env);
       } catch (error) {
         effectiveConfig = null;
-        errors.push(`environment override is invalid: ${error.message}`);
+        errors.push(`environment override is invalid: ${errorMessage(error)}`);
       }
     }
+    const diagnostics: DesktopDiagnostics = {
+      configStatus: configResult.status,
+      stateStatus: stateResult.status,
+      warnings: [...configResult.warnings, ...stateResult.warnings],
+      errors,
+    };
     return {
       config: effectiveConfig,
       state: stateResult.state,
-      diagnostics: {
-        configStatus: configResult.status,
-        stateStatus: stateResult.status,
-        warnings: [...configResult.warnings, ...stateResult.warnings],
-        errors,
-      },
+      diagnostics,
     };
   }
 
-  saveState(state) {
+  saveState(state: unknown): DesktopState {
     const validated = validateState(state);
     if (fs.existsSync(this.statePath)) {
       try {
@@ -832,18 +996,3 @@ class ConfigStore {
     return validated;
   }
 }
-
-module.exports = {
-  CONFIG_SCHEMA_VERSION,
-  STATE_SCHEMA_VERSION,
-  ConfigStore,
-  ConfigurationError,
-  applyEnvironmentOverrides,
-  defaultConfig,
-  defaultState,
-  defaultTerminalAppearance,
-  validateConfig,
-  validateEndpoint,
-  validateState,
-  writeJsonAtomic,
-};
