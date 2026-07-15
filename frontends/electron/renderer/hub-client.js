@@ -94,6 +94,8 @@ function normalizeSessionSummaries(sessions) {
         state: 'running',
         latestExit: null,
         lifecycleComplete: false,
+        instanceId: null,
+        instanceComplete: false,
       };
     }
 
@@ -113,6 +115,15 @@ function normalizeSessionSummaries(sessions) {
         || summary.attachment_count < 0
         || summary.attachment_count > 128) {
       throw new Error(`session_list attachment_count is invalid for ${sessionId}`);
+    }
+    let instanceId = null;
+    let instanceComplete = false;
+    if (Object.hasOwn(summary, 'instance_id')) {
+      if (typeof summary.instance_id !== 'string' || !/^[0-9a-f]{32}$/.test(summary.instance_id)) {
+        throw new Error(`session_list instance_id is invalid for ${sessionId}`);
+      }
+      instanceId = summary.instance_id;
+      instanceComplete = true;
     }
     const lifecycleKeys = ['state', 'latest_exit'];
     const lifecycleFields = lifecycleKeys.filter((key) => Object.hasOwn(summary, key)).length;
@@ -143,6 +154,8 @@ function normalizeSessionSummaries(sessions) {
       state,
       latestExit,
       lifecycleComplete: lifecycleFields === lifecycleKeys.length,
+      instanceId,
+      instanceComplete,
     };
   });
 }
@@ -154,6 +167,33 @@ function base64ToBytes(data) {
     bytes[index] = binary.charCodeAt(index);
   }
   return bytes;
+}
+
+function parseReplayCheckpoint(message) {
+  const fields = [
+    'instance_id', 'first_available_seq', 'replay_through_seq',
+    'replay_truncated', 'reset_required',
+  ];
+  const present = fields.filter((field) => Object.hasOwn(message, field)).length;
+  if (present === 0) return null;
+  if (present !== fields.length
+      || typeof message.instance_id !== 'string'
+      || !/^[0-9a-f]{32}$/.test(message.instance_id)
+      || !Number.isSafeInteger(message.first_available_seq)
+      || message.first_available_seq < 1
+      || !Number.isSafeInteger(message.replay_through_seq)
+      || message.replay_through_seq < 0
+      || typeof message.replay_truncated !== 'boolean'
+      || typeof message.reset_required !== 'boolean') {
+    throw new Error('Invalid attach replay checkpoint');
+  }
+  return {
+    instanceId: message.instance_id,
+    firstAvailableSeq: message.first_available_seq,
+    replayThroughSeq: message.replay_through_seq,
+    replayTruncated: message.replay_truncated,
+    resetRequired: message.reset_required,
+  };
 }
 
 class HubClient {
@@ -296,10 +336,14 @@ class HubClient {
     });
   }
 
-  attach() {
+  attach({ instanceId, afterOutputSeq } = {}) {
+    const cursor = instanceId && Number.isSafeInteger(afterOutputSeq)
+      ? { instance_id: instanceId, after_output_seq: afterOutputSeq }
+      : {};
     return this.send({
       type: 'attach',
       session_id: this.sessionId,
+      ...cursor,
     });
   }
 
@@ -368,4 +412,5 @@ module.exports = {
   decoder,
   encoder,
   normalizeSessionSummaries,
+  parseReplayCheckpoint,
 };

@@ -192,6 +192,37 @@ async fn wait_for_session_type(
     }
 }
 
+async fn wait_for_output_after(
+    socket: &mut TestSocket,
+    session_id: &str,
+    expected: &str,
+    after_seq: u64,
+) -> u64 {
+    let deadline = Instant::now() + MESSAGE_TIMEOUT;
+    let mut output = String::new();
+    loop {
+        let message = next_json_before(socket, deadline).await;
+        match message["type"].as_str() {
+            Some("output") if message["session_id"] == session_id => {
+                let seq = message["seq"].as_u64().expect("output seq");
+                assert!(
+                    seq > after_seq,
+                    "replayed output sequence {seq} was not after {after_seq}"
+                );
+                let bytes = BASE64
+                    .decode(message["data_b64"].as_str().expect("output data_b64"))
+                    .expect("valid output base64");
+                output.push_str(&String::from_utf8_lossy(&bytes));
+                if output.contains(expected) {
+                    return seq;
+                }
+            }
+            Some("error") => panic!("unexpected hub error: {message}"),
+            _ => {}
+        }
+    }
+}
+
 async fn wait_for_output(socket: &mut TestSocket, session_id: &str, expected: &str) {
     let deadline = Instant::now() + MESSAGE_TIMEOUT;
     let mut output = String::new();
@@ -570,6 +601,102 @@ async fn fast_command_preserves_output_reports_exit_and_reuses_id() {
     )
     .await;
     wait_for_session_type(&mut socket, "attention_acknowledged", session_id).await;
+    send_json(
+        &mut socket,
+        json!({ "type": "kill", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut socket, "killed", session_id).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn attach_checkpoint_replays_only_missed_output_and_detects_instance_reset() {
+    let hub = TestHub::start().await;
+    let session_id = "checkpoint-resync";
+    let mut socket = hub.connect().await;
+    send_json(
+        &mut socket,
+        json!({
+            "type": "start",
+            "session_id": session_id,
+            "command": "sh",
+            "persistent": true,
+            "rows": 24,
+            "cols": 80
+        }),
+    )
+    .await;
+    let started = wait_for_session_type(&mut socket, "started", session_id).await;
+    let instance_id = started["instance_id"]
+        .as_str()
+        .expect("instance id")
+        .to_string();
+    assert_eq!(instance_id.len(), 32);
+    send_input(&mut socket, session_id, "printf 'checkpoint-before\\n'\n").await;
+    let before_seq = wait_for_output_after(&mut socket, session_id, "checkpoint-before", 0).await;
+    send_json(
+        &mut socket,
+        json!({ "type": "detach", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut socket, "detached", session_id).await;
+    send_input(&mut socket, session_id, "printf 'checkpoint-missed\\n'\n").await;
+    sleep(Duration::from_millis(100)).await;
+
+    send_json(
+        &mut socket,
+        json!({
+            "type": "attach",
+            "session_id": session_id,
+            "after_output_seq": before_seq
+        }),
+    )
+    .await;
+    let invalid_cursor = next_json_before(&mut socket, Instant::now() + MESSAGE_TIMEOUT).await;
+    assert_eq!(invalid_cursor["type"], "error");
+    assert!(
+        invalid_cursor["message"]
+            .as_str()
+            .unwrap()
+            .contains("incomplete or invalid")
+    );
+
+    send_json(
+        &mut socket,
+        json!({
+            "type": "attach",
+            "session_id": session_id,
+            "instance_id": instance_id.clone(),
+            "after_output_seq": before_seq
+        }),
+    )
+    .await;
+    let attached = wait_for_session_type(&mut socket, "attached", session_id).await;
+    assert_eq!(attached["reset_required"], false);
+    assert_eq!(attached["replay_truncated"], false);
+    assert!(attached["replay_through_seq"].as_u64().unwrap() > before_seq);
+    let missed_seq =
+        wait_for_output_after(&mut socket, session_id, "checkpoint-missed", before_seq).await;
+
+    send_json(
+        &mut socket,
+        json!({ "type": "detach", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut socket, "detached", session_id).await;
+    send_json(
+        &mut socket,
+        json!({
+            "type": "attach",
+            "session_id": session_id,
+            "instance_id": "ffffffffffffffffffffffffffffffff",
+            "after_output_seq": missed_seq
+        }),
+    )
+    .await;
+    let reset = wait_for_session_type(&mut socket, "attached", session_id).await;
+    assert_eq!(reset["reset_required"], true);
+    assert_eq!(reset["instance_id"], instance_id);
     send_json(
         &mut socket,
         json!({ "type": "kill", "session_id": session_id }),

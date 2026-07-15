@@ -10,7 +10,7 @@ use tracing::debug;
 
 use crate::{
     protocol::{ExitSummary, SessionState, SessionSummary},
-    session::{Session, SessionSubscription, default_shell},
+    session::{ReplayCursor, Session, SessionSubscription, default_shell},
 };
 
 const DEFAULT_ROWS: u16 = 24;
@@ -144,6 +144,7 @@ impl SessionRegistry {
             .iter()
             .map(|(session_id, entry)| SessionSummary {
                 session_id: session_id.clone(),
+                instance_id: entry.session.instance_id().to_string(),
                 command: entry.command.clone(),
                 cwd: entry.cwd.clone(),
                 persistent: entry.persistent,
@@ -162,6 +163,7 @@ impl SessionRegistry {
                 .filter(|(session_id, _)| !sessions.contains_key(*session_id))
                 .map(|(session_id, record)| SessionSummary {
                     session_id: session_id.clone(),
+                    instance_id: record.instance_id.clone(),
                     command: record.command.clone(),
                     cwd: record.cwd.clone(),
                     persistent: record.persistent,
@@ -178,6 +180,7 @@ impl SessionRegistry {
         &self,
         session_id: &str,
         connection_id: &str,
+        cursor: Option<ReplayCursor>,
     ) -> Result<SessionSubscription> {
         validate_session_id(session_id)?;
         let mut sessions = self
@@ -194,7 +197,7 @@ impl SessionRegistry {
                 "session already attached by this connection: {session_id}"
             ));
         }
-        let subscription = entry.session.subscribe()?;
+        let subscription = entry.session.subscribe(cursor)?;
         entry.attachments.insert(connection_id.to_string());
         Ok(subscription)
     }
@@ -401,6 +404,7 @@ impl SessionRegistry {
             retained.insert(
                 session_id,
                 RetainedExitRecord {
+                    instance_id: entry.session.instance_id().to_string(),
                     command: entry.command,
                     cwd: entry.cwd,
                     persistent: entry.persistent,
@@ -503,6 +507,7 @@ struct SessionEntry {
 }
 
 struct RetainedExitRecord {
+    instance_id: String,
     command: String,
     cwd: Option<String>,
     persistent: bool,
@@ -562,6 +567,7 @@ mod tests {
             retained.insert(
                 format!("session-{index}"),
                 RetainedExitRecord {
+                    instance_id: format!("{index:032x}"),
                     command: "sh".to_string(),
                     cwd: None,
                     persistent: true,
@@ -578,6 +584,7 @@ mod tests {
         retained.insert(
             "session-10".to_string(),
             RetainedExitRecord {
+                instance_id: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".to_string(),
                 command: "bash".to_string(),
                 cwd: Some("/tmp".to_string()),
                 persistent: true,
@@ -602,6 +609,7 @@ mod tests {
                 retained.insert(
                     format!("retained-{index}"),
                     RetainedExitRecord {
+                        instance_id: format!("{index:032x}"),
                         command: "sh".to_string(),
                         cwd: None,
                         persistent: true,

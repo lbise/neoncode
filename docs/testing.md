@@ -33,6 +33,7 @@ Current coverage:
 - sessions still owned by a disconnected WebSocket are removed and killed;
 - detached sessions survive owner disconnect;
 - output produced while detached is replayed after attach;
+- a matching incarnation/sequence cursor replays only missed output and stale incarnations request reset;
 - a new WebSocket can list, attach, resize, send input, receive ordered output, and kill a detached session;
 - missing/foreign WebSocket origins are rejected;
 - missing/incorrect capability challenge responses are rejected without sending the token;
@@ -42,7 +43,7 @@ Current coverage:
 - natural exits expose typed reasons, retain bounded attention across ID reuse, acknowledge independently of replacements, and explicit kills create no attention;
 - invalid/overlong session IDs, invalid sizes, oversized decoded input, and oversized transport messages are rejected;
 - non-loopback bind addresses and excess WebSocket permits are rejected by unit tests;
-- replay is bounded by both raw bytes and entry count;
+- replay is bounded by both raw bytes and entry count, and an expired cursor reports truncation;
 - the capability token is removed from PTY child environments.
 
 Run:
@@ -139,7 +140,8 @@ Then assert `result-token`. Other options are base64-decoding a random token in 
 - [x] Remove the old focus-sensitive PowerShell functional smoke scripts.
 - [x] Add close/reopen/reattach coverage using a stable session prefix and a real test hub.
 - [x] Verify pre-close output is replayed with contiguous output sequence numbers after reattach.
+- [x] Verify forced same-incarnation reconnect uses missed-only replay without resetting renderer sequence state.
 - [x] Use an isolated desktop config directory for every Electron test run.
 - [x] Verify configured pane titles and process cwd, real xterm Ctrl+D/Ctrl+Z/navigation/function-key byte paths, selection/clipboard copy, first-use shortcut/DOM paste-race deduplication in both panes, interactive tmux/Neovim workflows, SGR mouse press/release reports, tmux split selection and wheel-activated copy mode, Neovim click positioning and wheel scrolling, Unicode and 20,000-line output with a completion bound and no sequence gap, hub-authoritative session metadata, retained status-7 workspace attention/acknowledgement across relaunch, dynamic two-/three-pane workspace switching with idle/running/detached/available sidebar status transitions, detach/reattach continuity, active-workspace restoration, detach/kill close policies across visited workspaces, forced-socket reconnect with PTY-state continuity, single-instance storage ownership, atomic window/workspace-state restoration, malformed-config backup recovery, and visible unrecoverable-config errors.
-- [ ] Add renderer tests with a fake hub for errors, timeouts, and reconnect state transitions.
+- [ ] Add renderer tests with a fake hub for errors, timeouts, malformed checkpoint manifests, restart races, and reconnect state transitions.
 - [ ] Add a narrow PowerShell window-launch/desktop compatibility smoke when installer/DPI/multi-monitor work begins.

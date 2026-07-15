@@ -22,6 +22,8 @@ pub enum ClientMessage {
     ListSessions,
     Attach {
         session_id: String,
+        instance_id: Option<String>,
+        after_output_seq: Option<u64>,
     },
     Detach {
         session_id: String,
@@ -60,12 +62,18 @@ pub enum ServerMessage {
     },
     Started {
         session_id: String,
+        instance_id: String,
     },
     SessionList {
         sessions: Vec<SessionSummary>,
     },
     Attached {
         session_id: String,
+        instance_id: String,
+        first_available_seq: u64,
+        replay_through_seq: u64,
+        replay_truncated: bool,
+        reset_required: bool,
     },
     Detached {
         session_id: String,
@@ -119,6 +127,7 @@ pub struct ExitSummary {
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionSummary {
     pub session_id: String,
+    pub instance_id: String,
     pub command: String,
     pub cwd: Option<String>,
     pub persistent: bool,

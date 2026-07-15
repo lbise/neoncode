@@ -90,7 +90,7 @@ Detailed docs:
 
 Current protocol is authenticated JSON over WebSocket with base64 terminal bytes. An authenticated `welcome` supplies protocol version 1 and a per-process hub `boot_id` before session operations begin.
 
-`session_list` includes additive hub-owned effective-command, configured-cwd, persistence, attachment-count, lifecycle, and retained latest-exit metadata while remaining protocol v1 compatible with ID-only clients. `welcome.capabilities` advertises these additive features.
+`session_list` includes additive hub-owned effective-command, configured-cwd, persistence, attachment-count, incarnation, lifecycle, and retained latest-exit metadata while remaining protocol v1 compatible with ID-only clients. `welcome.capabilities` advertises these additive features. Attach supports incarnation-aware output cursors and returns an atomic bounded-replay checkpoint manifest.
 
 Important current messages:
 
@@ -211,7 +211,7 @@ Current prototype has working but incomplete session lifecycle:
 - configured workspaces and sessions use stable frontend IDs instead of deriving identity from pane indexes;
 - sessions live in an in-process hub registry;
 - detached sessions survive normal Electron app close and can be reattached on the next launch;
-- attach replays up to 2 MiB of ordered raw terminal output before live output continues;
+- attach replays up to 2 MiB of ordered raw terminal output before live output continues; same-surface reconnect supplies its incarnation/sequence cursor and transfers only missed chunks;
 - startup reattach is automatic for stable configured session IDs and restores recent terminal output;
 - panes automatically reconnect with bounded exponential backoff, attach persistent sessions first, and start a replacement after a hub reboot when attach reports the session missing.
 
@@ -227,7 +227,7 @@ frontend starts
   -> consume ordered events
 ```
 
-A terminal pane should be an attachment/surface for a session, not the session identity itself.
+A terminal pane should be an attachment/surface for a session, not the session identity itself. The checkpoint protocol makes incarnation changes and replay truncation explicit, but does not serialize xterm emulator state; canonical full-screen snapshotting remains future work.
 
 ## Workspace model
 

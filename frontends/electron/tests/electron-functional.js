@@ -221,11 +221,8 @@ async function verifyTmuxMouseBehavior(page, paneId, token) {
   await waitForOutput(page, paneId, leftClickExpected);
 
   const resultPath = `/tmp/neoncode-tmux-wheel-${token}`;
-  const wheelWatcher = `rm -f '${resultPath}'; (i=0; while [ "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_in_mode}')" != 1 ] && [ $i -lt 100 ]; do sleep 0.05; i=$((i+1)); done; [ "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_in_mode}')" = 1 ] && printf 1 > '${resultPath}') &\n`;
-  await sendText(page, paneId, wheelWatcher);
-
   const historyExpected = `tmux-history-${token}`;
-  const historyCommand = `i=0; while [ $i -lt 120 ]; do printf 'tmux-line-%03d\\n' "$i"; i=$((i+1)); done; printf 'tmux-history-%s\\n' '${token}'\n`;
+  const historyCommand = `rm -f '${resultPath}'; (j=0; while [ "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_in_mode}')" != 1 ] && [ $j -lt 100 ]; do sleep 0.05; j=$((j+1)); done; [ "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_in_mode}')" = 1 ] && printf 1 > '${resultPath}') & i=0; while [ $i -lt 120 ]; do printf 'tmux-line-%03d\\n' "$i"; i=$((i+1)); done; printf 'tmux-history-%s\\n' '${token}'\n`;
   assertMarkerIsNotEchoed(historyCommand, historyExpected);
   await sendText(page, paneId, historyCommand);
   await waitForOutput(page, paneId, historyExpected);
@@ -741,7 +738,8 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   await waitForOutput(page, 'shell', seedExpected);
 
   const beforeReconnect = await getState(page);
-  const beforeReconnectEvents = beforeReconnect.panes.find((pane) => pane.paneId === 'shell').reconnectEvents;
+  const beforeReconnectPane = beforeReconnect.panes.find((pane) => pane.paneId === 'shell');
+  const beforeReconnectEvents = beforeReconnectPane.reconnectEvents;
   await disconnectPaneSocket(page, 'shell');
   await page.waitForFunction(
     ({ previousEvents }) => {
@@ -756,6 +754,10 @@ async function runFirstLaunchChecks(instance, sessionPrefix, runToken) {
   assertMarkerIsNotEchoed(reconnectCommand, reconnectExpected);
   await sendText(page, 'shell', reconnectCommand);
   await waitForOutput(page, 'shell', reconnectExpected);
+  const afterReconnectPane = (await getState(page)).panes.find((pane) => pane.paneId === 'shell');
+  assert(afterReconnectPane.sessionInstanceId === beforeReconnectPane.sessionInstanceId, 'reconnect changed session incarnation');
+  assert(afterReconnectPane.replayResetEvents === 0, 'same-session reconnect reset terminal replay');
+  assert(afterReconnectPane.replayTruncated === false, 'same-session reconnect reported truncated replay');
 
   await switchWorkspace(page, 'review');
   let workspaceState = await getState(page);
@@ -839,6 +841,8 @@ async function runSecondLaunchChecks(instance, sessionPrefix, runToken) {
   for (const summary of summaries) {
     assert(summary.metadataComplete === true, `${summary.sessionId} metadata was incomplete`);
     assert(summary.lifecycleComplete === true, `${summary.sessionId} lifecycle metadata was incomplete`);
+    assert(summary.instanceComplete === true, `${summary.sessionId} instance metadata was incomplete`);
+    assert(/^[0-9a-f]{32}$/.test(summary.instanceId), `${summary.sessionId} instance id was invalid`);
     assert(summary.command === 'bash', `${summary.sessionId} command metadata was not bash`);
     assert(summary.persistent === true, `${summary.sessionId} was not reported persistent`);
     assert(summary.attachmentCount === 0, `${summary.sessionId} was unexpectedly attached during discovery`);

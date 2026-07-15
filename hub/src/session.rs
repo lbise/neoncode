@@ -38,9 +38,19 @@ pub enum SessionEvent {
     },
 }
 
+pub struct ReplayCursor {
+    pub instance_id: String,
+    pub after_output_seq: u64,
+}
+
 pub struct SessionSubscription {
     pub replay: Vec<SessionEvent>,
     pub events: broadcast::Receiver<SessionEvent>,
+    pub instance_id: String,
+    pub first_available_seq: u64,
+    pub replay_through_seq: u64,
+    pub replay_truncated: bool,
+    pub reset_required: bool,
 }
 
 #[derive(Default)]
@@ -55,8 +65,17 @@ struct ReplayEntry {
     bytes: usize,
 }
 
+struct ReplaySelection {
+    replay: Vec<SessionEvent>,
+    first_available_seq: u64,
+    replay_through_seq: u64,
+    replay_truncated: bool,
+    reset_required: bool,
+}
+
 pub struct Session {
     id: String,
+    instance_id: String,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
@@ -78,6 +97,10 @@ impl Session {
         rows: u16,
         cols: u16,
     ) -> Result<(Self, SessionSubscription)> {
+        let mut instance_id_bytes = [0_u8; 16];
+        getrandom::fill(&mut instance_id_bytes)
+            .map_err(|error| anyhow!("failed to generate session instance id: {error}"))?;
+        let instance_id = hex::encode(instance_id_bytes);
         let (event_tx, events) = broadcast::channel(SESSION_EVENT_BUFFER);
         let event_state = Arc::new(Mutex::new(SessionEventState {
             next_output_seq: 1,
@@ -235,6 +258,7 @@ impl Session {
         Ok((
             Self {
                 id,
+                instance_id: instance_id.clone(),
                 writer: Arc::new(Mutex::new(writer)),
                 master: Arc::new(Mutex::new(pair.master)),
                 child_killer: Mutex::new(child_killer),
@@ -248,22 +272,35 @@ impl Session {
             SessionSubscription {
                 replay: Vec::new(),
                 events,
+                instance_id,
+                first_available_seq: 1,
+                replay_through_seq: 0,
+                replay_truncated: false,
+                reset_required: false,
             },
         ))
     }
 
-    pub fn subscribe(&self) -> Result<SessionSubscription> {
+    pub fn subscribe(&self, cursor: Option<ReplayCursor>) -> Result<SessionSubscription> {
         let state = self
             .event_state
             .lock()
             .map_err(|_| anyhow!("session event state mutex poisoned"))?;
         let events = self.event_tx.subscribe();
-        let replay = state
-            .replay
-            .iter()
-            .map(|entry| entry.event.clone())
-            .collect();
-        Ok(SessionSubscription { replay, events })
+        let selection = select_replay(&state, &self.instance_id, cursor);
+        Ok(SessionSubscription {
+            replay: selection.replay,
+            events,
+            instance_id: self.instance_id.clone(),
+            first_available_seq: selection.first_available_seq,
+            replay_through_seq: selection.replay_through_seq,
+            replay_truncated: selection.replay_truncated,
+            reset_required: selection.reset_required,
+        })
+    }
+
+    pub fn instance_id(&self) -> &str {
+        &self.instance_id
     }
 
     pub fn is_running(&self) -> bool {
@@ -319,6 +356,55 @@ impl Session {
             }
             Err(_) => warn!(session_id = %self.id, "child mutex poisoned while killing session"),
         }
+    }
+}
+
+fn select_replay(
+    state: &SessionEventState,
+    instance_id: &str,
+    cursor: Option<ReplayCursor>,
+) -> ReplaySelection {
+    let first_available_seq = state
+        .replay
+        .front()
+        .and_then(|entry| output_seq(&entry.event))
+        .unwrap_or(state.next_output_seq);
+    let replay_through_seq = state.next_output_seq.saturating_sub(1);
+    let (reset_required, replay_truncated, after_output_seq) = match cursor {
+        None => (false, false, None),
+        Some(cursor)
+            if cursor.instance_id != instance_id
+                || cursor.after_output_seq > replay_through_seq =>
+        {
+            (true, false, None)
+        }
+        Some(cursor) if cursor.after_output_seq.saturating_add(1) < first_available_seq => {
+            (false, true, None)
+        }
+        Some(cursor) => (false, false, Some(cursor.after_output_seq)),
+    };
+    let replay = state
+        .replay
+        .iter()
+        .filter(|entry| {
+            after_output_seq
+                .is_none_or(|after| output_seq(&entry.event).is_some_and(|seq| seq > after))
+        })
+        .map(|entry| entry.event.clone())
+        .collect();
+    ReplaySelection {
+        replay,
+        first_available_seq,
+        replay_through_seq,
+        replay_truncated,
+        reset_required,
+    }
+}
+
+fn output_seq(event: &SessionEvent) -> Option<u64> {
+    match event {
+        SessionEvent::Output { seq, .. } => Some(*seq),
+        _ => None,
     }
 }
 
@@ -393,8 +479,8 @@ mod tests {
     use tokio::sync::broadcast;
 
     use super::{
-        SESSION_REPLAY_BUFFER_ENTRIES, SessionEventState, publish_output,
-        remove_control_environment,
+        ReplayCursor, SESSION_REPLAY_BUFFER_ENTRIES, SessionEventState, publish_output,
+        remove_control_environment, select_replay,
     };
 
     #[test]
@@ -405,6 +491,43 @@ mod tests {
         remove_control_environment(&mut command);
 
         assert!(command.get_env("NEONCODE_HUB_TOKEN").is_none());
+    }
+
+    #[test]
+    fn replay_checkpoint_reports_truncation_and_instance_reset() {
+        let (events, _receiver) = broadcast::channel(1);
+        let state = Mutex::new(SessionEventState {
+            next_output_seq: 1,
+            ..SessionEventState::default()
+        });
+        for _ in 0..(SESSION_REPLAY_BUFFER_ENTRIES + 100) {
+            publish_output("checkpoint", &events, &state, b"x");
+        }
+        let state = state.lock().unwrap();
+        let truncated = select_replay(
+            &state,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            Some(ReplayCursor {
+                instance_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+                after_output_seq: 0,
+            }),
+        );
+        assert!(truncated.replay_truncated);
+        assert!(!truncated.reset_required);
+        assert!(truncated.first_available_seq > 1);
+        assert_eq!(truncated.replay.len(), SESSION_REPLAY_BUFFER_ENTRIES);
+
+        let reset = select_replay(
+            &state,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            Some(ReplayCursor {
+                instance_id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".to_string(),
+                after_output_seq: truncated.replay_through_seq,
+            }),
+        );
+        assert!(reset.reset_required);
+        assert!(!reset.replay_truncated);
+        assert_eq!(reset.replay.len(), SESSION_REPLAY_BUFFER_ENTRIES);
     }
 
     #[test]

@@ -1,7 +1,13 @@
 const { Terminal } = require('@xterm/xterm');
 const { FitAddon } = require('@xterm/addon-fit');
 
-const { HubClient, base64ToBytes, decoder, encoder } = require('./hub-client');
+const {
+  HubClient,
+  base64ToBytes,
+  decoder,
+  encoder,
+  parseReplayCheckpoint,
+} = require('./hub-client');
 const {
   RECONNECT_INITIAL_DELAY_MS,
   RECONNECT_MAX_DELAY_MS,
@@ -448,8 +454,14 @@ class TerminalPane {
     this.activationMode = mode;
     this.sessionModel.setActivationMode(this.state, mode);
     this.setLifecycle(mode === 'attach' ? 'attaching' : 'starting');
+    const replayCursor = this.state.sessionInstanceId
+      ? {
+        instanceId: this.state.sessionInstanceId,
+        afterOutputSeq: this.state.lastOutputSeq,
+      }
+      : undefined;
     const sent = mode === 'attach'
-      ? this.hubClient.attach()
+      ? this.hubClient.attach(replayCursor)
       : this.hubClient.start({
         command: this.launchProfile.command,
         args: this.launchProfile.args,
@@ -484,8 +496,50 @@ class TerminalPane {
     if (message.type === 'output' && message.session_id === this.sessionId) {
       this.handleHubOutput(message);
     } else if (message.type === 'started' && message.session_id === this.sessionId) {
+      if (Object.hasOwn(message, 'instance_id') && !/^[0-9a-f]{32}$/.test(message.instance_id)) {
+        this.handleInvalidHubMessage(new Error('Invalid started session instance'));
+        this.hubClient?.close();
+        return;
+      }
+      const instanceChanged = /^[0-9a-f]{32}$/.test(message.instance_id || '')
+        && this.state.sessionInstanceId
+        && this.state.sessionInstanceId !== message.instance_id;
+      if (instanceChanged) {
+        this.state.terminal.reset();
+        this.state.terminal.writeln('\x1b[33mReplacement session started; terminal replay reset\x1b[0m');
+        this.sessionModel.applyReplayCheckpoint(this.state, {
+          instanceId: message.instance_id,
+          firstAvailableSeq: 1,
+          replayThroughSeq: 0,
+          replayTruncated: false,
+          resetRequired: true,
+        });
+      } else {
+        this.sessionModel.setSessionInstance(this.state, message.instance_id);
+      }
       this.handleHubActive('started');
     } else if (message.type === 'attached' && message.session_id === this.sessionId) {
+      let checkpoint;
+      try {
+        checkpoint = parseReplayCheckpoint(message);
+      } catch (error) {
+        this.handleInvalidHubMessage(error);
+        this.hubClient?.close();
+        return;
+      }
+      if (checkpoint) {
+        if (checkpoint.resetRequired) {
+          this.state.terminal.reset();
+          this.state.terminal.writeln('\x1b[33mSession incarnation changed; terminal replay reset\x1b[0m');
+        }
+        this.sessionModel.applyReplayCheckpoint(this.state, checkpoint);
+        if (checkpoint.replayTruncated
+            || (checkpoint.resetRequired && checkpoint.firstAvailableSeq > 1)) {
+          this.state.terminal.writeln(
+            `\x1b[33mReplay truncated before output sequence ${checkpoint.firstAvailableSeq}\x1b[0m`,
+          );
+        }
+      }
       this.handleHubActive('attached');
     } else if (message.type === 'detached' && message.session_id === this.sessionId) {
       this.finishClose('detached');

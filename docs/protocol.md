@@ -105,9 +105,13 @@ Returns `session_list` with active session IDs plus hub-owned launch/lifecycle m
 ```json
 {
   "type": "attach",
-  "session_id": "shell-1"
+  "session_id": "shell-1",
+  "instance_id": "<optional 32-hex session incarnation>",
+  "after_output_seq": 41
 }
 ```
+
+`instance_id` and `after_output_seq` must be supplied together or both omitted. With a matching cursor, the hub replays only output after that sequence. Omitting the cursor preserves legacy full bounded replay.
 
 Subscribes this WebSocket to the session. The hub sends `attached`, replays its bounded recent terminal output in sequence order, and then forwards live output/exit/error events without a replay/live gap.
 
@@ -196,7 +200,7 @@ The client verifies this server proof, then waits for `welcome` before sending s
   "type": "welcome",
   "protocol_version": 1,
   "boot_id": "<64-hex-character hub boot identity>",
-  "capabilities": ["session_metadata", "session_exit_attention"]
+  "capabilities": ["session_metadata", "session_exit_attention", "session_replay_checkpoint"]
 }
 ```
 
@@ -207,7 +211,8 @@ The client verifies this server proof, then waits for `welcome` before sending s
 ```json
 {
   "type": "started",
-  "session_id": "shell-1"
+  "session_id": "shell-1",
+  "instance_id": "<32-hex session incarnation>"
 }
 ```
 
@@ -219,6 +224,7 @@ The client verifies this server proof, then waits for `welcome` before sending s
   "sessions": [
     {
       "session_id": "shell-1",
+      "instance_id": "<32-hex session incarnation>",
       "command": "bash",
       "cwd": "/home/me/src/project",
       "persistent": true,
@@ -232,7 +238,8 @@ The client verifies this server proof, then waits for `welcome` before sending s
 
 Summary fields:
 
-- `session_id`: stable active-session ID.
+- `session_id`: stable configured session ID.
+- `instance_id`: opaque identity for one process incarnation; changes when the same session ID starts a replacement.
 - `command`: effective executable launched by the hub. Arguments are deliberately omitted because they can contain sensitive values.
 - `cwd`: configured launch cwd, or `null` for the hub/default inherited cwd. It is not the shell's current working directory after launch.
 - `persistent`: whether the session survives its creating connection disappearing.
@@ -240,16 +247,30 @@ Summary fields:
 - `state`: `running` for an active PTY or `exited` for a retained exit record.
 - `latest_exit`: `null` or the latest bounded attention record `{ "attention_id": "<32-hex>", "status": 7, "reason": "process_exit" }`. A running replacement may retain an older non-null exit until acknowledgement.
 
-The four launch/attachment fields and two lifecycle fields are emitted as atomic additive bundles within protocol v1. Updated clients accept legacy ID-only summaries and treat their metadata as unavailable, but reject partially populated bundles as malformed.
+The four launch/attachment fields and two lifecycle fields are emitted as atomic additive bundles within protocol v1; `instance_id` is an independent additive field. Updated clients accept legacy ID-only summaries and treat their metadata as unavailable, but reject partially populated bundles or malformed incarnation IDs.
 
 ### Session attached
 
 ```json
 {
   "type": "attached",
-  "session_id": "shell-1"
+  "session_id": "shell-1",
+  "instance_id": "<32-hex session incarnation>",
+  "first_available_seq": 10,
+  "replay_through_seq": 42,
+  "replay_truncated": false,
+  "reset_required": false
 }
 ```
+
+The manifest is captured atomically with the replay/live subscription:
+
+- `first_available_seq`: oldest raw-output chunk still retained, or the next sequence when replay is empty.
+- `replay_through_seq`: latest output included in the captured checkpoint.
+- `replay_truncated`: the requested cursor predates retained history; replay starts at `first_available_seq` and the client must show that continuity is incomplete.
+- `reset_required`: the supplied incarnation differs or its cursor is ahead; the client must reset terminal/sequence state before applying bounded replay.
+
+A matching cursor receives only missed chunks through `replay_through_seq`, followed by live output without a gap. This is a bounded raw-output checkpoint, **not** a canonical emulator/full-screen snapshot; replay can begin inside terminal control state and cannot exactly reconstruct arbitrary tmux/Neovim screens.
 
 ### Session detached
 

@@ -42,7 +42,7 @@ Current capabilities:
 Current limitations:
 
 - Electron panes automatically reconnect/attach with bounded exponential backoff; other clients still manage reconnect explicitly;
-- output replay is bounded to 2 MiB per session and is raw terminal bytes, not a canonical screen snapshot;
+- output replay is bounded to 2 MiB per session and now has incarnation-aware cursor/checkpoint semantics, but remains raw terminal bytes rather than a canonical screen snapshot;
 - the session registry is in-process only and does not persist across hub restarts;
 - session IDs are currently frontend-provided;
 - natural process exits report a typed reason and exit code when `portable-pty` provides one; signal-specific fidelity remains unavailable;
@@ -240,9 +240,9 @@ Frontend sends `list_sessions` to get active session IDs and hub-owned metadata 
 
 Frontend sends `attach` with a `session_id` to subscribe the current WebSocket to that session. The registry records the authenticated connection as an attachment so later session lists report the count accurately.
 
-The hub atomically captures a live broadcast receiver and the session's bounded output history. It sends `attached`, queues replayed output in sequence order, and then forwards live events. Holding the same event-state lock while subscribing and snapshotting prevents gaps or duplicates at the replay/live boundary.
+The hub atomically captures a live broadcast receiver, replay bounds, session incarnation, and the session's bounded output history. It sends an `attached` checkpoint manifest, queues selected replay output in sequence order, and then forwards live events. Holding the same event-state lock while subscribing and snapshotting prevents gaps or duplicates at the replay/live boundary.
 
-The replay buffer retains up to 2 MiB of raw terminal output per session. This restores normal shell history and prompts but is not a canonical terminal-screen snapshot; output older than the bound is discarded.
+The replay buffer retains up to 2 MiB/4,096 raw-output chunks per session. A matching `instance_id`/`after_output_seq` cursor receives only missed output. Cursors older than retained history report truncation; mismatched incarnations or ahead cursors require renderer reset. Fresh/legacy attaches still receive full bounded replay. This restores normal shell history and prompts but is not a canonical terminal-screen snapshot; output older than the bound is discarded and arbitrary full-screen state cannot be reconstructed exactly.
 
 ### Detach
 

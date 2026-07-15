@@ -42,13 +42,51 @@ class MockWebSocket {
 
 global.WebSocket = MockWebSocket;
 
-const { HubClient, normalizeSessionSummaries } = require('../renderer/hub-client');
+const {
+  HubClient,
+  normalizeSessionSummaries,
+  parseReplayCheckpoint,
+} = require('../renderer/hub-client');
 
 const TOKEN = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const SERVER_NONCE = 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
 
 function hmac(payload) {
   return createHmac('sha256', Buffer.from(TOKEN, 'hex')).update(payload).digest('hex');
+}
+
+function validatesReplayCheckpoints() {
+  assert.deepEqual(parseReplayCheckpoint({
+    instance_id: 'ab'.repeat(16),
+    first_available_seq: 10,
+    replay_through_seq: 42,
+    replay_truncated: true,
+    reset_required: false,
+  }), {
+    instanceId: 'ab'.repeat(16),
+    firstAvailableSeq: 10,
+    replayThroughSeq: 42,
+    replayTruncated: true,
+    resetRequired: false,
+  });
+  assert.equal(parseReplayCheckpoint({ type: 'attached' }), null);
+  assert.throws(
+    () => parseReplayCheckpoint({
+      instance_id: 'ab'.repeat(16),
+      first_available_seq: 1,
+    }),
+    /Invalid attach replay checkpoint/,
+  );
+  assert.throws(
+    () => parseReplayCheckpoint({
+      instance_id: 'not-an-instance',
+      first_available_seq: 1,
+      replay_through_seq: 0,
+      replay_truncated: false,
+      reset_required: false,
+    }),
+    /Invalid attach replay checkpoint/,
+  );
 }
 
 function validatesSessionSummaries() {
@@ -69,6 +107,8 @@ function validatesSessionSummaries() {
     state: 'running',
     latestExit: null,
     lifecycleComplete: false,
+    instanceId: null,
+    instanceComplete: false,
   }]);
 
   assert.deepEqual(normalizeSessionSummaries([{ session_id: 'legacy' }]), [{
@@ -81,6 +121,8 @@ function validatesSessionSummaries() {
     state: 'running',
     latestExit: null,
     lifecycleComplete: false,
+    instanceId: null,
+    instanceComplete: false,
   }]);
   assert.throws(
     () => normalizeSessionSummaries([{ session_id: 'duplicate' }, { session_id: 'duplicate' }]),
@@ -233,6 +275,7 @@ async function rejectsFakeHubProof() {
 
 Promise.resolve()
   .then(validatesSessionSummaries)
+  .then(validatesReplayCheckpoints)
   .then(validMutualAuthentication)
   .then(rejectsMalformedWelcomeCapabilities)
   .then(rejectsFakeHubProof)

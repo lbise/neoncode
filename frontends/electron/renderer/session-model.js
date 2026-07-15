@@ -91,6 +91,10 @@ class SessionModel {
       reconnectAttempts: 0,
       reconnectEvents: 0,
       latestExit: null,
+      sessionInstanceId: '',
+      replayTruncated: false,
+      replayWarning: '',
+      replayResetEvents: 0,
     };
 
     const publicPane = {
@@ -121,6 +125,10 @@ class SessionModel {
       magenta: terminal.options.theme.magenta,
       brightMagenta: terminal.options.theme.brightMagenta,
       latestExit: null,
+      sessionInstanceId: '',
+      replayTruncated: false,
+      replayWarning: '',
+      replayResetEvents: 0,
     };
     this.publicState.panes[index] = publicPane;
     state.publicPane = publicPane;
@@ -156,7 +164,7 @@ class SessionModel {
   }
 
   beginHubBoot(state, bootId) {
-    if (state.hubBootId && state.hubBootId !== bootId) {
+    if (state.hubBootId && state.hubBootId !== bootId && !state.sessionInstanceId) {
       state.firstOutputSeq = 0;
       state.lastOutputSeq = 0;
       const pane = this.pane(state);
@@ -166,6 +174,43 @@ class SessionModel {
     }
     state.hubBootId = bootId;
     this.pane(state).hubBootId = bootId;
+  }
+
+  applyReplayCheckpoint(state, checkpoint) {
+    const pane = this.pane(state);
+    if (checkpoint.resetRequired) {
+      const replayBaseline = Math.max(0, checkpoint.firstAvailableSeq - 1);
+      state.firstOutputSeq = 0;
+      state.lastOutputSeq = replayBaseline;
+      state.outputEvents = 0;
+      pane.firstOutputSeq = 0;
+      pane.lastOutputSeq = replayBaseline;
+      pane.outputEvents = 0;
+      pane.outputGap = '';
+      pane.recentOutput = '';
+      pane.replayResetEvents += 1;
+    }
+    if (checkpoint.replayTruncated) {
+      const beforeFirst = Math.max(0, checkpoint.firstAvailableSeq - 1);
+      state.firstOutputSeq = 0;
+      state.lastOutputSeq = beforeFirst;
+      pane.firstOutputSeq = 0;
+      pane.lastOutputSeq = beforeFirst;
+      pane.outputGap = '';
+    }
+    pane.replayWarning = (checkpoint.replayTruncated
+        || (checkpoint.resetRequired && checkpoint.firstAvailableSeq > 1))
+      ? `Output before sequence ${checkpoint.firstAvailableSeq} is unavailable`
+      : '';
+    state.sessionInstanceId = checkpoint.instanceId;
+    pane.sessionInstanceId = checkpoint.instanceId;
+    pane.replayTruncated = checkpoint.replayTruncated;
+  }
+
+  setSessionInstance(state, instanceId) {
+    if (!/^[0-9a-f]{32}$/.test(instanceId || '')) return;
+    state.sessionInstanceId = instanceId;
+    this.pane(state).sessionInstanceId = instanceId;
   }
 
   recordReconnect(state, attempts, delayMs) {

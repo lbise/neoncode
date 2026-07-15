@@ -32,7 +32,7 @@ const MAX_ATTACHMENTS_PER_CONNECTION: usize = 64;
 
 use crate::{
     protocol::{ClientMessage, PROTOCOL_VERSION, ServerMessage},
-    session::{SessionEvent, SessionSubscription},
+    session::{ReplayCursor, SessionEvent, SessionSubscription},
     state::{AppState, StartSessionRequest},
 };
 
@@ -174,6 +174,7 @@ async fn handle_socket(
             capabilities: vec![
                 "session_metadata".to_string(),
                 "session_exit_attention".to_string(),
+                "session_replay_checkpoint".to_string(),
             ],
         },
     )
@@ -322,9 +323,11 @@ async fn handle_client_text(
                     persistent,
                 },
             )?;
+            let instance_id = subscription.instance_id.clone();
             if let Err(err) = outgoing
                 .send(ServerMessage::Started {
                     session_id: session_id.clone(),
+                    instance_id,
                 })
                 .await
             {
@@ -351,7 +354,11 @@ async fn handle_client_text(
                 .send(ServerMessage::SessionList { sessions })
                 .await?;
         }
-        ClientMessage::Attach { session_id } => {
+        ClientMessage::Attach {
+            session_id,
+            instance_id,
+            after_output_seq,
+        } => {
             if session_forwarders.len() >= MAX_ATTACHMENTS_PER_CONNECTION {
                 return Err(anyhow!("connection attachment limit reached"));
             }
@@ -361,15 +368,32 @@ async fn handle_client_text(
                 ));
             }
 
-            let subscription = state
-                .registry()
-                .subscribe_session(&session_id, connection_id)?;
-            if let Err(err) = outgoing
-                .send(ServerMessage::Attached {
-                    session_id: session_id.clone(),
-                })
-                .await
-            {
+            let cursor = match (instance_id, after_output_seq) {
+                (None, None) => None,
+                (Some(instance_id), Some(after_output_seq))
+                    if instance_id.len() == 32
+                        && instance_id.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
+                {
+                    Some(ReplayCursor {
+                        instance_id,
+                        after_output_seq,
+                    })
+                }
+                _ => return Err(anyhow!("attach replay cursor is incomplete or invalid")),
+            };
+            let subscription =
+                state
+                    .registry()
+                    .subscribe_session(&session_id, connection_id, cursor)?;
+            let attached = ServerMessage::Attached {
+                session_id: session_id.clone(),
+                instance_id: subscription.instance_id.clone(),
+                first_available_seq: subscription.first_available_seq,
+                replay_through_seq: subscription.replay_through_seq,
+                replay_truncated: subscription.replay_truncated,
+                reset_required: subscription.reset_required,
+            };
+            if let Err(err) = outgoing.send(attached).await {
                 let _ = state
                     .registry()
                     .remove_attachment(&session_id, connection_id);

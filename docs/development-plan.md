@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Retained workspace exit attention ready for manual preview
+Stage: Incarnation-aware bounded replay checkpoints complete
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: checkpoint/resync, then extended reconnect and output stability soaking
+Next focus: extended reconnect and output stability soaking, then richer live metadata
 ```
 
 The Windows tech stack is now:
@@ -316,8 +316,9 @@ Manual preview: run two configured workspaces, switch between them, and observe 
 Inspired by wmux/cmux/t3code analysis:
 
 - [x] Add authenticated `welcome` with protocol version and hub `boot_id`.
-- [ ] Add ordered event sequence numbers.
-- [ ] Add snapshot/resync flow.
+- [x] Add ordered raw-output sequence numbers.
+- [x] Add incarnation-aware bounded raw-output checkpoint/resync flow.
+- [ ] Add canonical terminal-emulator snapshot/resync if later requirements justify it.
 - [ ] Add attachment IDs and per-attachment resize semantics.
 - [x] Add hub-owned effective command, configured cwd, persistence, and attachment-count metadata.
 - [x] Add typed session exit status/reason and bounded retained attention.
@@ -361,6 +362,21 @@ Status: complete.
 - [x] Extract bounded attach/start fallback decisions.
 - [x] Add fake-clock tests for 250/500/1000…5000 ms backoff, duplicate suppression, cancellation, reset, and one-time fallback.
 - [x] Run the deterministic suite under `./dev check` without wall-clock sleeps.
+
+### Milestone: incarnation-aware replay checkpoints
+
+Status: complete.
+
+- [x] Assign each process incarnation a random opaque ID independent of its configured session ID.
+- [x] Let attach provide an atomic incarnation/output-sequence cursor.
+- [x] Replay only missed chunks when cursor continuity is valid.
+- [x] Report retained replay bounds, truncation, and required renderer resets.
+- [x] Preserve full bounded replay for fresh and legacy attaches.
+- [x] Validate cursor pairs and checkpoint manifests at protocol boundaries.
+- [x] Cover missed-only replay, stale incarnation reset, and bounded-history truncation in Rust tests.
+- [x] Verify same-incarnation reconnect and close/reopen attachment in hidden Electron.
+
+This is intentionally not described as a canonical screen snapshot. Raw terminal bytes may begin inside emulator control state and cannot exactly restore every tmux/Neovim screen.
 
 ### 6. CLI/API
 
