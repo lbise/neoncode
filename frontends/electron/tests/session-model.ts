@@ -1,11 +1,22 @@
-const assert = require('node:assert/strict');
+import assert = require('node:assert/strict');
+import type { FitAddon } from '@xterm/addon-fit';
+import type { Terminal } from '@xterm/xterm';
 
-const { SessionModel } = require('../renderer/session-model');
+import { SessionModel } from '../renderer/session-model';
+import type { PaneState, PublicPaneState } from '../shared/types';
 
-function createState() {
+type TerminalMock = Pick<Terminal, 'rows' | 'cols' | 'options'>;
+
+interface TestState {
+  model: SessionModel;
+  state: PaneState;
+  pane: PublicPaneState;
+}
+
+function createState(): TestState {
   const model = new SessionModel({ windowRef: {} });
   const publicState = model.publicState;
-  const terminal = {
+  const terminal: TerminalMock = {
     rows: 24,
     cols: 80,
     options: {
@@ -21,10 +32,12 @@ function createState() {
     sessionKey: 'shell',
     sessionId: 'shell',
     activationMode: 'attach',
-    terminal,
-    fitAddon: null,
+    terminal: terminal as Terminal,
+    fitAddon: null as unknown as FitAddon,
   });
-  return { model, state, pane: publicState.panes[0] };
+  const pane = publicState.panes[0];
+  assert(pane);
+  return { model, state, pane };
 }
 
 {

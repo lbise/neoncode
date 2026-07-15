@@ -1,9 +1,13 @@
-const assert = require('node:assert/strict');
+import assert = require('node:assert/strict');
+import type { FitAddon } from '@xterm/addon-fit';
+import type { Terminal } from '@xterm/xterm';
 
-const { SessionModel } = require('../renderer/session-model');
+import { SessionModel } from '../renderer/session-model';
+
+type TerminalMock = Pick<Terminal, 'rows' | 'cols' | 'options'>;
 
 const model = new SessionModel({ windowRef: {} });
-const terminal = {
+const terminal: TerminalMock = {
   rows: 24,
   cols: 80,
   options: {
@@ -19,10 +23,11 @@ const state = model.createPaneState({
   sessionKey: 'soak',
   sessionId: 'soak',
   activationMode: 'attach',
-  terminal,
-  fitAddon: null,
+  terminal: terminal as Terminal,
+  fitAddon: null as unknown as FitAddon,
 });
 const pane = model.publicState.panes[0];
+assert(pane);
 const instanceId = 'ab'.repeat(16);
 model.setSessionInstance(state, instanceId);
 model.beginHubBoot(state, '01'.repeat(32));

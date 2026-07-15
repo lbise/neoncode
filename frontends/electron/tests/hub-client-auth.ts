@@ -1,65 +1,89 @@
-const assert = require('node:assert/strict');
-const { createHmac, webcrypto } = require('node:crypto');
+import assert = require('node:assert/strict');
+import { createHmac, webcrypto } from 'node:crypto';
 
-Object.defineProperty(global, 'crypto', { configurable: true, value: webcrypto });
+import {
+  HubClient,
+  normalizeSessionSummaries,
+  parseReplayCheckpoint,
+} from '../renderer/hub-client';
+
+Object.defineProperty(globalThis, 'crypto', {
+  configurable: true,
+  value: webcrypto as unknown as Crypto,
+});
+
+type MockSocketEvent = { data?: string };
+type MockSocketListener = (event: MockSocketEvent) => void | Promise<void>;
 
 class MockWebSocket {
-  static CONNECTING = 0;
-  static OPEN = 1;
-  static CLOSED = 3;
-  static instances = [];
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSED = 3;
+  static readonly instances: MockWebSocket[] = [];
 
-  constructor(endpoint, protocols) {
+  readonly endpoint: string | URL;
+  readonly protocols: string | string[] | undefined;
+  readyState: number;
+  readonly listeners = new Map<string, MockSocketListener[]>();
+  readonly sent: string[] = [];
+
+  constructor(endpoint: string | URL, protocols?: string | string[]) {
     this.endpoint = endpoint;
     this.protocols = protocols;
     this.readyState = MockWebSocket.OPEN;
-    this.listeners = new Map();
-    this.sent = [];
     MockWebSocket.instances.push(this);
   }
 
-  addEventListener(type, callback) {
-    const callbacks = this.listeners.get(type) || [];
+  addEventListener(type: string, callback: MockSocketListener): void {
+    const callbacks = this.listeners.get(type) ?? [];
     callbacks.push(callback);
     this.listeners.set(type, callbacks);
   }
 
-  async emit(type, event = {}) {
-    for (const callback of this.listeners.get(type) || []) {
+  async emit(type: string, event: MockSocketEvent = {}): Promise<void> {
+    for (const callback of this.listeners.get(type) ?? []) {
       await callback(event);
     }
   }
 
-  send(payload) {
+  send(payload: string): void {
     this.sent.push(payload);
   }
 
-  close() {
+  close(): Promise<void> {
     this.readyState = MockWebSocket.CLOSED;
-    return this.emit('close', {});
+    return this.emit('close');
   }
 }
 
-Object.defineProperty(global, 'WebSocket', { configurable: true, value: MockWebSocket });
+Object.defineProperty(globalThis, 'WebSocket', {
+  configurable: true,
+  value: MockWebSocket as unknown as typeof WebSocket,
+});
+
+type TimerHandle = ReturnType<typeof setTimeout>;
+
+interface FakeTimer {
+  callback: () => void;
+  due: number;
+}
 
 class FakeClock {
-  constructor() {
-    this.now = 0;
-    this.nextId = 1;
-    this.timers = new Map();
-  }
+  now = 0;
+  nextId = 1;
+  readonly timers = new Map<TimerHandle, FakeTimer>();
 
-  setTimeout(callback, delayMs) {
-    const id = this.nextId++;
+  setTimeout(callback: () => void, delayMs: number): TimerHandle {
+    const id = this.nextId++ as unknown as TimerHandle;
     this.timers.set(id, { callback, due: this.now + delayMs });
     return id;
   }
 
-  clearTimeout(id) {
+  clearTimeout(id: TimerHandle): void {
     this.timers.delete(id);
   }
 
-  advance(delayMs) {
+  advance(delayMs: number): void {
     this.now += delayMs;
     const due = [...this.timers.entries()]
       .filter(([, timer]) => timer.due <= this.now)
@@ -71,20 +95,20 @@ class FakeClock {
   }
 }
 
-const {
-  HubClient,
-  normalizeSessionSummaries,
-  parseReplayCheckpoint,
-} = require('../renderer/hub-client');
+function latestSocket(): MockWebSocket {
+  const socket = MockWebSocket.instances.at(-1);
+  assert(socket, 'HubClient did not create a WebSocket');
+  return socket;
+}
 
 const TOKEN = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const SERVER_NONCE = 'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
 
-function hmac(payload) {
+function hmac(payload: string): string {
   return createHmac('sha256', Buffer.from(TOKEN, 'hex')).update(payload).digest('hex');
 }
 
-function validatesReplayCheckpoints() {
+function validatesReplayCheckpoints(): void {
   assert.deepEqual(parseReplayCheckpoint({
     instance_id: 'ab'.repeat(16),
     first_available_seq: 10,
@@ -132,7 +156,7 @@ function validatesReplayCheckpoints() {
   }
 }
 
-async function handshakeTimeoutsAreDeterministic() {
+async function handshakeTimeoutsAreDeterministic(): Promise<void> {
   {
     const clock = new FakeClock();
     let invalid = 0;
@@ -142,6 +166,7 @@ async function handshakeTimeoutsAreDeterministic() {
       sessionId: 'timeout-authentication',
       onInvalidMessage: (error) => {
         invalid += 1;
+        assert(error instanceof Error);
         assert.match(error.message, /authentication timed out/);
       },
       setTimer: (callback, delayMs) => clock.setTimeout(callback, delayMs),
@@ -149,7 +174,7 @@ async function handshakeTimeoutsAreDeterministic() {
       authenticationTimeoutMs: 10,
     });
     client.connect();
-    const socket = MockWebSocket.instances.at(-1);
+    const socket = latestSocket();
     clock.advance(9);
     assert.equal(socket.readyState, MockWebSocket.OPEN);
     clock.advance(1);
@@ -169,6 +194,7 @@ async function handshakeTimeoutsAreDeterministic() {
       onOpen: () => { opened += 1; },
       onInvalidMessage: (error) => {
         invalid += 1;
+        assert(error instanceof Error);
         assert.match(error.message, /welcome timed out/);
       },
       setTimer: (callback, delayMs) => clock.setTimeout(callback, delayMs),
@@ -177,11 +203,13 @@ async function handshakeTimeoutsAreDeterministic() {
       welcomeTimeoutMs: 10,
     });
     client.connect();
-    const socket = MockWebSocket.instances.at(-1);
+    const socket = latestSocket();
     await socket.emit('message', {
       data: JSON.stringify({ type: 'auth_challenge', nonce: SERVER_NONCE }),
     });
-    const authenticate = JSON.parse(socket.sent[0]);
+    const authenticatePayload = socket.sent[0];
+    assert(authenticatePayload);
+    const authenticate = JSON.parse(authenticatePayload) as { client_nonce: string };
     await socket.emit('message', {
       data: JSON.stringify({
         type: 'authenticated',
@@ -215,11 +243,13 @@ async function handshakeTimeoutsAreDeterministic() {
       welcomeTimeoutMs: 10,
     });
     client.connect();
-    const socket = MockWebSocket.instances.at(-1);
+    const socket = latestSocket();
     await socket.emit('message', {
       data: JSON.stringify({ type: 'auth_challenge', nonce: SERVER_NONCE }),
     });
-    const authenticate = JSON.parse(socket.sent[0]);
+    const authenticatePayload = socket.sent[0];
+    assert(authenticatePayload);
+    const authenticate = JSON.parse(authenticatePayload) as { client_nonce: string };
     await socket.emit('message', {
       data: JSON.stringify({
         type: 'authenticated',
@@ -238,7 +268,7 @@ async function handshakeTimeoutsAreDeterministic() {
   }
 }
 
-function validatesSessionSummaries() {
+function validatesSessionSummaries(): void {
   const complete = normalizeSessionSummaries([{
     session_id: 'shell',
     command: 'bash',
@@ -292,11 +322,13 @@ function validatesSessionSummaries() {
       attention_id: 'ab'.repeat(16), status: 7, reason: 'process_exit',
     },
   }]);
-  assert.deepEqual(exited[0].latestExit, {
+  const exitedSummary = exited[0];
+  assert(exitedSummary);
+  assert.deepEqual(exitedSummary.latestExit, {
     attentionId: 'ab'.repeat(16), status: 7, reason: 'process_exit',
   });
-  assert.equal(exited[0].state, 'exited');
-  assert.equal(exited[0].lifecycleComplete, true);
+  assert.equal(exitedSummary.state, 'exited');
+  assert.equal(exitedSummary.lifecycleComplete, true);
   assert.throws(
     () => normalizeSessionSummaries([{
       session_id: 'partial-lifecycle',
@@ -320,7 +352,7 @@ function validatesSessionSummaries() {
   );
 }
 
-async function validMutualAuthentication() {
+async function validMutualAuthentication(): Promise<void> {
   let opened = 0;
   let invalid = 0;
   const client = new HubClient({
@@ -331,7 +363,7 @@ async function validMutualAuthentication() {
   });
   client.connect();
 
-  const socket = MockWebSocket.instances.at(-1);
+  const socket = latestSocket();
   assert.deepEqual(socket.protocols, ['neoncode.v1']);
   await socket.emit('message', {
     data: JSON.stringify({ type: 'auth_challenge', nonce: SERVER_NONCE }),
@@ -339,8 +371,14 @@ async function validMutualAuthentication() {
 
   assert.equal(opened, 0, 'client opened before server proof');
   assert.equal(socket.sent.length, 1);
-  assert(!socket.sent[0].includes(TOKEN), 'raw capability token crossed the socket');
-  const response = JSON.parse(socket.sent[0]);
+  const responsePayload = socket.sent[0];
+  assert(responsePayload);
+  assert(!responsePayload.includes(TOKEN), 'raw capability token crossed the socket');
+  const response = JSON.parse(responsePayload) as {
+    type: string;
+    client_nonce: string;
+    hmac: string;
+  };
   assert.equal(response.type, 'authenticate');
   assert.match(response.client_nonce, /^[0-9a-f]{64}$/);
   assert.equal(response.hmac, hmac(`client:${SERVER_NONCE}`));
@@ -365,7 +403,7 @@ async function validMutualAuthentication() {
   assert.equal(client.isOpen(), true);
 }
 
-async function rejectsMalformedWelcomeCapabilities() {
+async function rejectsMalformedWelcomeCapabilities(): Promise<void> {
   let opened = 0;
   let invalid = 0;
   const client = new HubClient({
@@ -376,11 +414,13 @@ async function rejectsMalformedWelcomeCapabilities() {
   });
   client.connect();
 
-  const socket = MockWebSocket.instances.at(-1);
+  const socket = latestSocket();
   await socket.emit('message', {
     data: JSON.stringify({ type: 'auth_challenge', nonce: SERVER_NONCE }),
   });
-  const response = JSON.parse(socket.sent[0]);
+  const responsePayload = socket.sent[0];
+  assert(responsePayload);
+  const response = JSON.parse(responsePayload) as { client_nonce: string };
   await socket.emit('message', {
     data: JSON.stringify({ type: 'authenticated', hmac: hmac(`server:${response.client_nonce}`) }),
   });
@@ -397,7 +437,7 @@ async function rejectsMalformedWelcomeCapabilities() {
   assert.equal(socket.readyState, MockWebSocket.CLOSED);
 }
 
-async function rejectsFakeHubProof() {
+async function rejectsFakeHubProof(): Promise<void> {
   let opened = 0;
   let invalid = 0;
   const client = new HubClient({
@@ -408,7 +448,7 @@ async function rejectsFakeHubProof() {
   });
   client.connect();
 
-  const socket = MockWebSocket.instances.at(-1);
+  const socket = latestSocket();
   await socket.emit('message', {
     data: JSON.stringify({ type: 'auth_challenge', nonce: SERVER_NONCE }),
   });
