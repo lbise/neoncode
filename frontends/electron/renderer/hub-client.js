@@ -1,5 +1,7 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const AUTHENTICATION_TIMEOUT_MS = 5000;
+const WELCOME_TIMEOUT_MS = 3000;
 
 function bytesToBase64(bytes) {
   let binary = '';
@@ -183,8 +185,10 @@ function parseReplayCheckpoint(message) {
       || message.first_available_seq < 1
       || !Number.isSafeInteger(message.replay_through_seq)
       || message.replay_through_seq < 0
+      || message.first_available_seq > message.replay_through_seq + 1
       || typeof message.replay_truncated !== 'boolean'
-      || typeof message.reset_required !== 'boolean') {
+      || typeof message.reset_required !== 'boolean'
+      || (message.replay_truncated && message.reset_required)) {
     throw new Error('Invalid attach replay checkpoint');
   }
   return {
@@ -197,7 +201,20 @@ function parseReplayCheckpoint(message) {
 }
 
 class HubClient {
-  constructor({ endpoint, capabilityToken, sessionId, onOpen, onMessage, onInvalidMessage, onClose, onError }) {
+  constructor({
+    endpoint,
+    capabilityToken,
+    sessionId,
+    onOpen,
+    onMessage,
+    onInvalidMessage,
+    onClose,
+    onError,
+    setTimer = (callback, delayMs) => setTimeout(callback, delayMs),
+    clearTimer = (timer) => clearTimeout(timer),
+    authenticationTimeoutMs = AUTHENTICATION_TIMEOUT_MS,
+    welcomeTimeoutMs = WELCOME_TIMEOUT_MS,
+  }) {
     this.endpoint = endpoint;
     this.capabilityToken = capabilityToken;
     this.sessionId = sessionId;
@@ -211,13 +228,41 @@ class HubClient {
     this.ready = false;
     this.clientNonce = undefined;
     this.welcome = undefined;
+    this.setTimer = setTimer;
+    this.clearTimer = clearTimer;
+    this.authenticationTimeoutMs = authenticationTimeoutMs;
+    this.welcomeTimeoutMs = welcomeTimeoutMs;
+    this.handshakeTimer = undefined;
+  }
+
+  clearHandshakeTimer() {
+    if (this.handshakeTimer !== undefined) {
+      this.clearTimer(this.handshakeTimer);
+      this.handshakeTimer = undefined;
+    }
+  }
+
+  armHandshakeTimer(socket, phase, delayMs) {
+    this.clearHandshakeTimer();
+    this.handshakeTimer = this.setTimer(() => {
+      this.handshakeTimer = undefined;
+      if (socket !== this.socket || this.ready || socket.readyState === WebSocket.CLOSED) return;
+      this.onInvalidMessage?.(new Error(`Hub ${phase} timed out`));
+      socket.close();
+    }, delayMs);
   }
 
   connect() {
     const socket = new WebSocket(this.endpoint, ['neoncode.v1']);
     this.socket = socket;
+    this.authenticated = false;
+    this.ready = false;
+    this.clientNonce = undefined;
+    this.welcome = undefined;
+    this.armHandshakeTimer(socket, 'authentication', this.authenticationTimeoutMs);
 
     socket.addEventListener('message', async (event) => {
+      if (socket !== this.socket || socket.readyState === WebSocket.CLOSED) return;
       let message;
       try {
         message = JSON.parse(event.data);
@@ -237,6 +282,9 @@ class HubClient {
               this.capabilityToken,
               `client:${message.nonce}`,
             );
+            if (socket !== this.socket || socket.readyState !== WebSocket.OPEN || this.authenticated) {
+              return;
+            }
             socket.send(JSON.stringify({
               type: 'authenticate',
               client_nonce: this.clientNonce,
@@ -250,15 +298,19 @@ class HubClient {
         }
         if (message.type === 'authenticated' && typeof message.hmac === 'string') {
           try {
-            if (!this.clientNonce || !await verifyAuthenticationHmac(
+            const clientNonce = this.clientNonce;
+            const proofValid = clientNonce && await verifyAuthenticationHmac(
               this.capabilityToken,
-              `server:${this.clientNonce}`,
+              `server:${clientNonce}`,
               message.hmac,
-            )) {
+            );
+            if (socket !== this.socket || socket.readyState !== WebSocket.OPEN) return;
+            if (!proofValid) {
               throw new Error('Hub authentication proof is invalid');
             }
             this.clientNonce = undefined;
             this.authenticated = true;
+            this.armHandshakeTimer(socket, 'welcome', this.welcomeTimeoutMs);
           } catch (error) {
             this.onInvalidMessage?.(error, event.data);
             socket.close();
@@ -284,6 +336,7 @@ class HubClient {
           }
           this.welcome = { ...message, capabilities: [...capabilities] };
           this.ready = true;
+          this.clearHandshakeTimer();
           this.onOpen?.(this.welcome);
           return;
         }
@@ -305,6 +358,8 @@ class HubClient {
     });
 
     socket.addEventListener('close', (event) => {
+      if (socket !== this.socket) return;
+      this.clearHandshakeTimer();
       this.authenticated = false;
       this.ready = false;
       this.clientNonce = undefined;
@@ -407,7 +462,9 @@ class HubClient {
 }
 
 module.exports = {
+  AUTHENTICATION_TIMEOUT_MS,
   HubClient,
+  WELCOME_TIMEOUT_MS,
   base64ToBytes,
   decoder,
   encoder,

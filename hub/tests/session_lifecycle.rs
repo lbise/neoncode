@@ -706,6 +706,61 @@ async fn attach_checkpoint_replays_only_missed_output_and_detects_instance_reset
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn persistent_session_survives_repeated_checkpoint_reconnects() {
+    let hub = TestHub::start().await;
+    let session_id = "checkpoint-reconnect-soak";
+    let mut socket = hub.connect().await;
+    send_json(
+        &mut socket,
+        json!({
+            "type": "start",
+            "session_id": session_id,
+            "command": "sh",
+            "persistent": true,
+            "rows": 24,
+            "cols": 80
+        }),
+    )
+    .await;
+    let started = wait_for_session_type(&mut socket, "started", session_id).await;
+    let instance_id = started["instance_id"].as_str().unwrap().to_string();
+    send_input(&mut socket, session_id, "printf 'soak-00\\n'\n").await;
+    let mut last_seq = wait_for_output_after(&mut socket, session_id, "soak-00", 0).await;
+    socket.close(None).await.expect("close initial socket");
+
+    for reconnect in 1..=20 {
+        socket = hub.connect().await;
+        send_json(
+            &mut socket,
+            json!({
+                "type": "attach",
+                "session_id": session_id,
+                "instance_id": instance_id.clone(),
+                "after_output_seq": last_seq
+            }),
+        )
+        .await;
+        let attached = wait_for_session_type(&mut socket, "attached", session_id).await;
+        assert_eq!(attached["instance_id"], instance_id);
+        assert_eq!(attached["reset_required"], false);
+        assert_eq!(attached["replay_truncated"], false);
+        let marker = format!("soak-{reconnect:02}");
+        send_input(&mut socket, session_id, &format!("printf '{marker}\\n'\n")).await;
+        last_seq = wait_for_output_after(&mut socket, session_id, &marker, last_seq).await;
+        if reconnect < 20 {
+            socket.close(None).await.expect("close reconnect socket");
+        }
+    }
+
+    send_json(
+        &mut socket,
+        json!({ "type": "kill", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut socket, "killed", session_id).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn session_metadata_tracks_persistence_and_attachments() {
     let hub = TestHub::start().await;
     let session_id = "metadata-attachments";

@@ -270,6 +270,8 @@ The manifest is captured atomically with the replay/live subscription:
 - `replay_truncated`: the requested cursor predates retained history; replay starts at `first_available_seq` and the client must show that continuity is incomplete.
 - `reset_required`: the supplied incarnation differs or its cursor is ahead; the client must reset terminal/sequence state before applying bounded replay.
 
+`first_available_seq` must be at most `replay_through_seq + 1`; `replay_truncated` and `reset_required` are mutually exclusive. Updated clients reject malformed or contradictory manifests.
+
 A matching cursor receives only missed chunks through `replay_through_seq`, followed by live output without a gap. This is a bounded raw-output checkpoint, **not** a canonical emulator/full-screen snapshot; replay can begin inside terminal control state and cannot exactly reconstruct arbitrary tmux/Neovim screens.
 
 ### Session detached

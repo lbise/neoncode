@@ -278,6 +278,7 @@ Still needed:
 - [x] application-specific mouse behavior: tmux split selection/copy-mode wheel and Neovim cursor/viewport interaction;
 - [x] Initial 2,000-line heavy-output continuity test;
 - [x] 20,000-line output soak under 30 seconds with no sequence gap;
+- [x] Deterministic 100-reconnect/10,000-chunk renderer-state soak and 20-reconnect real WebSocket/PTY soak;
 - [ ] Extended multi-minute performance soak;
 - [ ] long-session stability.
 
@@ -377,6 +378,19 @@ Status: complete.
 - [x] Verify same-incarnation reconnect and close/reopen attachment in hidden Electron.
 
 This is intentionally not described as a canonical screen snapshot. Raw terminal bytes may begin inside emulator control state and cannot exactly restore every tmux/Neovim screen.
+
+### Milestone: deterministic timeout and reconnect soaking
+
+Status: complete.
+
+- [x] Add explicit renderer authentication and welcome deadlines with receiver-safe injectable timers.
+- [x] Ignore late proof/welcome traffic after timeout and avoid duplicate failure callbacks.
+- [x] Reject contradictory or impossible replay checkpoint manifests.
+- [x] Run 100 same-incarnation reconnect cycles over 10,000 ordered/duplicate chunks with bounded renderer history.
+- [x] Run 20 authenticated real WebSocket reconnects against one persistent PTY with checkpoint cursors.
+- [x] Keep both deterministic soaks in `./dev check`/Rust tests.
+
+Extended multi-minute wall-clock and long-session resource stability remain separate manual/CI soak gates.
 
 ### 6. CLI/API
 

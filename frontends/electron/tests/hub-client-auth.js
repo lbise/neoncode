@@ -42,6 +42,35 @@ class MockWebSocket {
 
 global.WebSocket = MockWebSocket;
 
+class FakeClock {
+  constructor() {
+    this.now = 0;
+    this.nextId = 1;
+    this.timers = new Map();
+  }
+
+  setTimeout(callback, delayMs) {
+    const id = this.nextId++;
+    this.timers.set(id, { callback, due: this.now + delayMs });
+    return id;
+  }
+
+  clearTimeout(id) {
+    this.timers.delete(id);
+  }
+
+  advance(delayMs) {
+    this.now += delayMs;
+    const due = [...this.timers.entries()]
+      .filter(([, timer]) => timer.due <= this.now)
+      .sort((left, right) => left[1].due - right[1].due);
+    for (const [id, timer] of due) {
+      if (!this.timers.delete(id)) continue;
+      timer.callback();
+    }
+  }
+}
+
 const {
   HubClient,
   normalizeSessionSummaries,
@@ -77,16 +106,136 @@ function validatesReplayCheckpoints() {
     }),
     /Invalid attach replay checkpoint/,
   );
-  assert.throws(
-    () => parseReplayCheckpoint({
-      instance_id: 'not-an-instance',
-      first_available_seq: 1,
-      replay_through_seq: 0,
-      replay_truncated: false,
-      reset_required: false,
-    }),
-    /Invalid attach replay checkpoint/,
-  );
+  const malformed = [
+    {
+      instance_id: 'not-an-instance', first_available_seq: 1, replay_through_seq: 0,
+      replay_truncated: false, reset_required: false,
+    },
+    {
+      instance_id: 'ab'.repeat(16), first_available_seq: 4, replay_through_seq: 2,
+      replay_truncated: false, reset_required: false,
+    },
+    {
+      instance_id: 'ab'.repeat(16), first_available_seq: 1, replay_through_seq: 2,
+      replay_truncated: true, reset_required: true,
+    },
+    {
+      instance_id: 'ab'.repeat(16), first_available_seq: Number.MAX_SAFE_INTEGER + 1,
+      replay_through_seq: 0, replay_truncated: false, reset_required: false,
+    },
+  ];
+  for (const checkpoint of malformed) {
+    assert.throws(
+      () => parseReplayCheckpoint(checkpoint),
+      /Invalid attach replay checkpoint/,
+    );
+  }
+}
+
+async function handshakeTimeoutsAreDeterministic() {
+  {
+    const clock = new FakeClock();
+    let invalid = 0;
+    const client = new HubClient({
+      endpoint: 'ws://127.0.0.1:44777/ws',
+      capabilityToken: TOKEN,
+      sessionId: 'timeout-authentication',
+      onInvalidMessage: (error) => {
+        invalid += 1;
+        assert.match(error.message, /authentication timed out/);
+      },
+      setTimer: (callback, delayMs) => clock.setTimeout(callback, delayMs),
+      clearTimer: (timer) => clock.clearTimeout(timer),
+      authenticationTimeoutMs: 10,
+    });
+    client.connect();
+    const socket = MockWebSocket.instances.at(-1);
+    clock.advance(9);
+    assert.equal(socket.readyState, MockWebSocket.OPEN);
+    clock.advance(1);
+    assert.equal(socket.readyState, MockWebSocket.CLOSED);
+    assert.equal(invalid, 1);
+    assert.equal(clock.timers.size, 0);
+  }
+
+  {
+    const clock = new FakeClock();
+    let opened = 0;
+    let invalid = 0;
+    const client = new HubClient({
+      endpoint: 'ws://127.0.0.1:44777/ws',
+      capabilityToken: TOKEN,
+      sessionId: 'timeout-welcome',
+      onOpen: () => { opened += 1; },
+      onInvalidMessage: (error) => {
+        invalid += 1;
+        assert.match(error.message, /welcome timed out/);
+      },
+      setTimer: (callback, delayMs) => clock.setTimeout(callback, delayMs),
+      clearTimer: (timer) => clock.clearTimeout(timer),
+      authenticationTimeoutMs: 20,
+      welcomeTimeoutMs: 10,
+    });
+    client.connect();
+    const socket = MockWebSocket.instances.at(-1);
+    await socket.emit('message', {
+      data: JSON.stringify({ type: 'auth_challenge', nonce: SERVER_NONCE }),
+    });
+    const authenticate = JSON.parse(socket.sent[0]);
+    await socket.emit('message', {
+      data: JSON.stringify({
+        type: 'authenticated',
+        hmac: hmac(`server:${authenticate.client_nonce}`),
+      }),
+    });
+    clock.advance(10);
+    assert.equal(socket.readyState, MockWebSocket.CLOSED);
+    assert.equal(opened, 0);
+    assert.equal(invalid, 1);
+    await socket.emit('message', {
+      data: JSON.stringify({
+        type: 'welcome', protocol_version: 1, boot_id: '12'.repeat(32), capabilities: [],
+      }),
+    });
+    assert.equal(opened, 0);
+    assert.equal(invalid, 1);
+  }
+
+  {
+    const clock = new FakeClock();
+    let opened = 0;
+    const client = new HubClient({
+      endpoint: 'ws://127.0.0.1:44777/ws',
+      capabilityToken: TOKEN,
+      sessionId: 'welcome-cancels-timeout',
+      onOpen: () => { opened += 1; },
+      setTimer: (callback, delayMs) => clock.setTimeout(callback, delayMs),
+      clearTimer: (timer) => clock.clearTimeout(timer),
+      authenticationTimeoutMs: 20,
+      welcomeTimeoutMs: 10,
+    });
+    client.connect();
+    const socket = MockWebSocket.instances.at(-1);
+    await socket.emit('message', {
+      data: JSON.stringify({ type: 'auth_challenge', nonce: SERVER_NONCE }),
+    });
+    const authenticate = JSON.parse(socket.sent[0]);
+    await socket.emit('message', {
+      data: JSON.stringify({
+        type: 'authenticated',
+        hmac: hmac(`server:${authenticate.client_nonce}`),
+      }),
+    });
+    await socket.emit('message', {
+      data: JSON.stringify({
+        type: 'welcome', protocol_version: 1, boot_id: '34'.repeat(32), capabilities: [],
+      }),
+    });
+    assert.equal(opened, 1);
+    assert.equal(clock.timers.size, 0);
+    clock.advance(100);
+    assert.equal(socket.readyState, MockWebSocket.OPEN);
+  }
 }
 
 function validatesSessionSummaries() {
@@ -276,6 +425,7 @@ async function rejectsFakeHubProof() {
 Promise.resolve()
   .then(validatesSessionSummaries)
   .then(validatesReplayCheckpoints)
+  .then(handshakeTimeoutsAreDeterministic)
   .then(validMutualAuthentication)
   .then(rejectsMalformedWelcomeCapabilities)
   .then(rejectsFakeHubProof)
