@@ -28,9 +28,13 @@ for (const metadata of listCommandMetadata()) {
   assert.equal(metadata.owningLayer, 'renderer');
   assert.equal(typeof metadata.externalInvocation, 'boolean');
 }
-assert.equal(getCommandMetadata('workspace.open').externalInvocation, true);
-assert.equal(getCommandMetadata('workspace.dismissAttention').externalInvocation, true);
-assert.equal(getCommandMetadata('palette.open').externalInvocation, false);
+for (const metadata of listCommandMetadata()) {
+  assert.equal(
+    metadata.externalInvocation,
+    !metadata.id.startsWith('palette.'),
+    `${metadata.id} has incorrect future CLI eligibility`,
+  );
+}
 
 const metadataCopy = getCommandMetadata('workspace.open');
 metadataCopy.title = 'Mutated';

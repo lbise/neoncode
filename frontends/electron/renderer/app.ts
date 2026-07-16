@@ -495,8 +495,6 @@ export class NeonCodeApp {
       });
     };
 
-    add({ id: 'palette.open' }, getCommandMetadata('palette.open').title);
-    add({ id: 'palette.close' }, getCommandMetadata('palette.close').title);
     add({ id: 'workspace.next' }, getCommandMetadata('workspace.next').title);
     add({ id: 'workspace.previous' }, getCommandMetadata('workspace.previous').title);
     for (const workspace of this.config.workspaces) {

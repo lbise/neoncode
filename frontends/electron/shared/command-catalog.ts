@@ -139,7 +139,7 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     context: 'workspace',
     searchTerms: ['switch', 'cycle', 'forward'],
     owningLayer: 'renderer',
-    externalInvocation: false,
+    externalInvocation: true,
   }),
   'workspace.previous': Object.freeze({
     id: 'workspace.previous',
@@ -148,7 +148,7 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     context: 'workspace',
     searchTerms: ['switch', 'cycle', 'back'],
     owningLayer: 'renderer',
-    externalInvocation: false,
+    externalInvocation: true,
   }),
   'workspace.dismissAttention': Object.freeze({
     id: 'workspace.dismissAttention',
@@ -166,7 +166,7 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     context: 'pane',
     searchTerms: ['terminal', 'select', 'activate'],
     owningLayer: 'renderer',
-    externalInvocation: false,
+    externalInvocation: true,
   }),
   'pane.next': Object.freeze({
     id: 'pane.next',
@@ -175,7 +175,7 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     context: 'pane',
     searchTerms: ['terminal', 'cycle', 'forward'],
     owningLayer: 'renderer',
-    externalInvocation: false,
+    externalInvocation: true,
   }),
   'pane.previous': Object.freeze({
     id: 'pane.previous',
@@ -184,7 +184,7 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     context: 'pane',
     searchTerms: ['terminal', 'cycle', 'back'],
     owningLayer: 'renderer',
-    externalInvocation: false,
+    externalInvocation: true,
   }),
 });
 
