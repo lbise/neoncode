@@ -55,6 +55,8 @@ cargo test -p neoncode-hub
 
 Future hub integration coverage should include transport-level oversized frames, saturated backpressure behavior, attachment/session-limit boundaries, multiple concurrent attachments, and graceful shutdown.
 
+For an explicit wall-clock stability run, `./dev soak [seconds]` repeatedly exercises a persistent PTY through 20 authenticated checkpoint reconnects plus shell/foreground runtime-cwd transitions. It defaults to 300 seconds and is intentionally excluded from `./dev check`; use longer durations on a dedicated worker.
+
 ### 2. Renderer unit/integration tests
 
 The strict TypeScript build checks separate Node, DOM renderer, and test projects with `allowJs` disabled, emits generated artifacts into a clean ignored `frontends/electron/dist/`, and runs tests against generated CommonJS. This prevents source/output resolution differences and keeps runtime TypeScript tooling out of Electron.

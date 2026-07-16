@@ -15,7 +15,8 @@ Daily commands:
   ./dev app          Publish/start Electron + xterm.js app
   ./dev publish      Publish Electron app to %USERPROFILE%\neoncode-electron
   ./dev hub          Run the Rust NeonCode hub
-  ./dev check        Run Electron JS checks + Rust tests/fmt/check/clippy
+  ./dev check        Run strict TypeScript + Rust tests/fmt/check/clippy
+  ./dev soak [secs]  Repeat real PTY metadata/reconnect tests (default: 300)
 
 Electron app commands:
   ./dev electron-publish              Publish Electron app
@@ -152,6 +153,25 @@ case "$command" in
   hub)
     ensure_hub_token
     cargo run -p neoncode-hub
+    ;;
+
+  soak)
+    duration="${1:-300}"
+    if [[ ! "$duration" =~ ^[0-9]+$ ]] || (( duration < 1 || duration > 86400 )); then
+      echo "soak duration must be an integer between 1 and 86400 seconds" >&2
+      exit 2
+    fi
+    started=$SECONDS
+    iterations=0
+    while (( SECONDS - started < duration )); do
+      cargo test -p neoncode-hub --test session_lifecycle \
+        persistent_session_survives_repeated_checkpoint_reconnects -- --exact
+      cargo test -p neoncode-hub --test session_lifecycle \
+        session_metadata_tracks_persistence_and_attachments -- --exact
+      iterations=$((iterations + 1))
+      echo "soak iteration $iterations complete ($((SECONDS - started))s/${duration}s)"
+    done
+    echo "soak passed: $iterations iterations in $((SECONDS - started))s"
     ;;
 
   check)

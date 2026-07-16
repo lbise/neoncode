@@ -279,7 +279,7 @@ Still needed:
 - [x] Initial 2,000-line heavy-output continuity test;
 - [x] 20,000-line output soak under 30 seconds with no sequence gap;
 - [x] Deterministic 100-reconnect/10,000-chunk renderer-state soak and 20-reconnect real WebSocket/PTY soak;
-- [ ] Extended multi-minute performance soak;
+- [ ] Extended multi-minute performance soak (`./dev soak` infrastructure ready; full gate not yet recorded);
 - [ ] long-session stability.
 
 ### 4. Workspace model
