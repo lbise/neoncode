@@ -177,6 +177,7 @@ async fn handle_socket(
                 "session_replay_checkpoint".to_string(),
                 "session_runtime_cwd".to_string(),
                 "session_runtime_git".to_string(),
+                "session_notifications".to_string(),
             ],
         },
     )
@@ -454,6 +455,38 @@ async fn handle_client_text(
             }
             state.registry().kill_session(&session_id)?;
             outgoing.send(ServerMessage::Killed { session_id }).await?;
+        }
+        ClientMessage::PublishNotification {
+            session_id,
+            kind,
+            level,
+            title,
+            message,
+        } => {
+            let notification_id =
+                state
+                    .registry()
+                    .publish_notification(&session_id, kind, level, title, message)?;
+            outgoing
+                .send(ServerMessage::NotificationPublished {
+                    session_id,
+                    notification_id,
+                })
+                .await?;
+        }
+        ClientMessage::AcknowledgeNotification {
+            session_id,
+            notification_id,
+        } => {
+            state
+                .registry()
+                .acknowledge_notification(&session_id, &notification_id)?;
+            outgoing
+                .send(ServerMessage::NotificationAcknowledged {
+                    session_id,
+                    notification_id,
+                })
+                .await?;
         }
         ClientMessage::AcknowledgeAttention {
             session_id,

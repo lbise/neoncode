@@ -25,6 +25,9 @@ type WorkspaceSessionLifecycle = SessionLifecycle | 'available' | 'idle' | 'in_u
 interface WorkspaceAttention extends ExitSummary {
   sessionId: string;
   title: string;
+  notificationId?: string;
+  notificationMessage?: string;
+  notificationLevel?: 'info' | 'warning' | 'error';
 }
 
 interface WorkspaceSessionState {
@@ -57,7 +60,8 @@ interface WorkspaceSwitchOptions {
 
 interface AttentionTarget {
   pane: PaneDescriptor;
-  attentionId: string;
+  kind: 'exit' | 'notification';
+  id: string;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -174,6 +178,8 @@ function isNormalizedSessionSummary(value: unknown): value is NormalizedSessionS
     && typeof value.metadataComplete === 'boolean'
     && (value.state === 'running' || value.state === 'exited')
     && isExitSummary(value.latestExit)
+    && typeof value.notificationComplete === 'boolean'
+    && (value.latestNotification === null || isRecord(value.latestNotification))
     && typeof value.lifecycleComplete === 'boolean'
     && (value.instanceId === null || typeof value.instanceId === 'string')
     && typeof value.instanceComplete === 'boolean';
@@ -394,11 +400,13 @@ export class NeonCodeApp {
     const firstAttention = states.find((state) => state.attention)?.attention;
     if (firstAttention) {
       const attentionCount = states.filter((state) => state.attention).length;
-      const status = firstAttention.status === null ? 'unknown status' : `status ${firstAttention.status}`;
+      const detail = firstAttention.notificationId
+        ? `${firstAttention.title}: ${firstAttention.notificationMessage ?? 'Notification'}`
+        : `${firstAttention.title} exited with ${firstAttention.status === null ? 'unknown status' : `status ${firstAttention.status}`} (${firstAttention.reason.replaceAll('_', ' ')})`;
       return {
         state: 'attention',
         label: attentionCount === 1 ? 'Needs attention' : `${attentionCount} need attention`,
-        detail: `${firstAttention.title} exited with ${status} (${firstAttention.reason.replaceAll('_', ' ')})`,
+        detail,
       };
     }
     const errors = states.filter((state) => state.error).map((state) => state.error);
@@ -484,6 +492,8 @@ export class NeonCodeApp {
         metadataComplete: true,
         state: 'running',
         latestExit: existing?.latestExit ?? null,
+        latestNotification: existing?.latestNotification ?? null,
+        notificationComplete: existing?.notificationComplete ?? false,
         lifecycleComplete: true,
         instanceId: existing?.instanceId ?? null,
         instanceComplete: existing?.instanceComplete ?? false,
@@ -521,6 +531,8 @@ export class NeonCodeApp {
       metadataComplete: true,
       state: 'exited',
       latestExit: outcome.attentionId ? { ...latestExit, attentionId: outcome.attentionId } : null,
+      latestNotification: existing?.latestNotification ?? null,
+      notificationComplete: existing?.notificationComplete ?? false,
       lifecycleComplete: true,
       instanceId: existing?.instanceId ?? null,
       instanceComplete: existing?.instanceComplete ?? false,
@@ -616,6 +628,25 @@ export class NeonCodeApp {
     }
   }
 
+  attentionFor(session: NormalizedSessionSummary, title: string): WorkspaceAttention | null {
+    if (session.latestExit) {
+      return { ...session.latestExit, sessionId: session.sessionId, title };
+    }
+    if (session.latestNotification) {
+      return {
+        sessionId: session.sessionId,
+        title: session.latestNotification.title || title,
+        attentionId: null,
+        status: null,
+        reason: 'process_exit',
+        notificationId: session.latestNotification.notificationId,
+        notificationMessage: session.latestNotification.message,
+        notificationLevel: session.latestNotification.level,
+      };
+    }
+    return null;
+  }
+
   async start(): Promise<void> {
     this.showConfigurationDiagnostics();
     if (!this.config.configurationValid) {
@@ -642,9 +673,7 @@ export class NeonCodeApp {
         const pane = this.config.workspaces
           .flatMap((workspace) => workspace.panes)
           .find((candidate) => candidate.sessionId === session.sessionId);
-        const attention: WorkspaceAttention | null = session.latestExit
-          ? { ...session.latestExit, sessionId: session.sessionId, title: pane?.title || session.sessionId }
-          : null;
+        const attention = this.attentionFor(session, pane?.title || session.sessionId);
         this.workspaceSessionStates.set(session.sessionId, { ...current, lifecycle, error: '', attention });
       }
     }
@@ -676,13 +705,11 @@ export class NeonCodeApp {
             const pane = this.config.workspaces
               .flatMap((workspace) => workspace.panes)
               .find((candidate) => candidate.sessionId === session.sessionId);
-            const attention: WorkspaceAttention | null = session.latestExit
-              ? { ...session.latestExit, sessionId: session.sessionId, title: pane?.title || session.sessionId }
-              : null;
+            const attention = this.attentionFor(session, pane?.title || session.sessionId);
             this.workspaceSessionStates.set(session.sessionId, { ...current, attention });
           }
-          this.updateWorkspaceStatuses();
           this.renderWorkspaceSelector();
+          this.updateWorkspaceStatuses();
         })
         .finally(() => {
           this.metadataRefreshPending = false;
@@ -926,31 +953,73 @@ export class NeonCodeApp {
     });
   }
 
+  acknowledgeSessionNotification(sessionId: string, notificationId: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timeoutHandle!: TimerHandle;
+      let client!: HubClient;
+      const finish = (error?: Error): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutHandle);
+        client.close();
+        if (error) reject(error); else resolve();
+      };
+      timeoutHandle = setTimeout(() => finish(new Error('notification acknowledgement timed out')), CONTROL_OPERATION_TIMEOUT_MS);
+      client = new HubClient({
+        endpoint: this.config.endpoint,
+        capabilityToken: this.config.capabilityToken,
+        sessionId,
+        onOpen: () => {
+          if (!client.acknowledgeNotification(notificationId)) finish(new Error('failed to send notification acknowledgement'));
+        },
+        onMessage: (message) => {
+          if (message.type === 'notification_acknowledged'
+              && message.session_id === sessionId
+              && message.notification_id === notificationId) finish();
+          else if (message.type === 'error' && (!message.session_id || message.session_id === sessionId)) {
+            finish(new Error(typeof message.message === 'string' ? message.message : 'notification acknowledgement failed'));
+          }
+        },
+        onInvalidMessage: (error) => finish(error instanceof Error ? error : new Error(errorMessage(error))),
+        onClose: () => finish(new Error('notification acknowledgement connection closed')),
+        onError: () => {},
+      });
+      client.connect();
+    });
+  }
+
   async acknowledgeWorkspaceAttention(workspaceId: string): Promise<void> {
     const workspace = this.config.workspaces.find((candidate) => candidate.id === workspaceId);
     if (!workspace) throw new Error(`unknown workspace: ${workspaceId}`);
     const targets: AttentionTarget[] = [];
     for (const pane of workspace.panes) {
-      const attentionId = this.workspaceSessionStates.get(pane.sessionId)?.attention?.attentionId;
-      if (typeof attentionId === 'string') targets.push({ pane, attentionId });
+      const attention = this.workspaceSessionStates.get(pane.sessionId)?.attention;
+      if (typeof attention?.attentionId === 'string') targets.push({ pane, kind: 'exit', id: attention.attentionId });
+      else if (typeof attention?.notificationId === 'string') targets.push({ pane, kind: 'notification', id: attention.notificationId });
     }
     const results = await Promise.allSettled(targets.map((target) => (
-      this.acknowledgeSessionAttention(target.pane.sessionId, target.attentionId)
+      target.kind === 'exit'
+        ? this.acknowledgeSessionAttention(target.pane.sessionId, target.id)
+        : this.acknowledgeSessionNotification(target.pane.sessionId, target.id)
     )));
     results.forEach((result, index) => {
       if (result.status !== 'fulfilled') return;
       const target = targets[index];
       if (!target) return;
-      const { pane, attentionId: acknowledgedId } = target;
+      const { pane, id: acknowledgedId, kind } = target;
       const current = this.workspaceSessionStates.get(pane.sessionId);
-      if (!current?.attention || current.attention.attentionId !== acknowledgedId) return;
+      if (!current?.attention) return;
+      const currentId = kind === 'exit' ? current.attention.attentionId : current.attention.notificationId;
+      if (currentId !== acknowledgedId) return;
       this.workspaceSessionStates.set(pane.sessionId, { ...current, attention: null });
       const metadata = this.hubSessionsById.get(pane.sessionId);
-      if (metadata?.latestExit?.attentionId !== acknowledgedId) return;
-      if (metadata.state === 'exited') {
-        this.hubSessionsById.delete(pane.sessionId);
-      } else {
-        this.hubSessionsById.set(pane.sessionId, { ...metadata, latestExit: null });
+      if (!metadata) return;
+      if (kind === 'notification' && metadata.latestNotification?.notificationId === acknowledgedId) {
+        this.hubSessionsById.set(pane.sessionId, { ...metadata, latestNotification: null });
+      } else if (kind === 'exit' && metadata.latestExit?.attentionId === acknowledgedId) {
+        if (metadata.state === 'exited') this.hubSessionsById.delete(pane.sessionId);
+        else this.hubSessionsById.set(pane.sessionId, { ...metadata, latestExit: null });
       }
     });
     this.updateWorkspaceStatuses();

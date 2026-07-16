@@ -1,6 +1,7 @@
 import type {
   HubWelcome,
   NormalizedSessionSummary,
+  NotificationSummary,
   ReplayCheckpoint,
   RetainedExitSummary,
   RuntimeCwd,
@@ -136,6 +137,21 @@ function normalizeRuntimeGit(value: unknown, sessionId: string): RuntimeGit {
   return { state, branch, detached, dirty, stale } as RuntimeGit;
 }
 
+function normalizeNotification(value: unknown, sessionId: string): NotificationSummary {
+  if (!isRecord(value)) throw new Error(`session_list latest_notification is invalid for ${sessionId}`);
+  const { notification_id: notificationId, kind, level, title, message } = value;
+  if (typeof notificationId !== 'string' || !/^[0-9a-f]{32}$/.test(notificationId)
+      || (kind !== 'notification' && kind !== 'session_error')
+      || (level !== 'info' && level !== 'warning' && level !== 'error')
+      || typeof title !== 'string' || title.length === 0 || encoder.encode(title).length > 256
+      || /[\u0000-\u001f\u007f]/.test(title)
+      || typeof message !== 'string' || message.length === 0 || encoder.encode(message).length > 4096
+      || /[\u0000-\u001f\u007f]/.test(message)) {
+    throw new Error(`session_list latest_notification is invalid for ${sessionId}`);
+  }
+  return { notificationId, kind, level, title, message };
+}
+
 function normalizeExitSummary(exit: unknown, sessionId: string): RetainedExitSummary {
   if (!isRecord(exit)) {
     throw new Error(`session_list latest_exit is invalid for ${sessionId}`);
@@ -184,6 +200,11 @@ export function normalizeSessionSummaries(sessions: unknown): NormalizedSessionS
       ? normalizeRuntimeGit(summary.runtime_git, sessionId)
       : null;
 
+    const notificationComplete = Object.hasOwn(summary, 'latest_notification');
+    const latestNotification = notificationComplete && summary.latest_notification !== null
+      ? normalizeNotification(summary.latest_notification, sessionId)
+      : null;
+
     const metadataKeys = ['command', 'cwd', 'persistent', 'attachment_count'];
     const metadataFields = metadataKeys.filter((key) => Object.hasOwn(summary, key)).length;
     if (metadataFields !== 0 && metadataFields !== metadataKeys.length) {
@@ -203,6 +224,8 @@ export function normalizeSessionSummaries(sessions: unknown): NormalizedSessionS
         metadataComplete: false,
         state: 'running',
         latestExit: null,
+        latestNotification,
+        notificationComplete,
         lifecycleComplete: false,
         instanceId: null,
         instanceComplete: false,
@@ -267,6 +290,8 @@ export function normalizeSessionSummaries(sessions: unknown): NormalizedSessionS
       metadataComplete: true,
       state,
       latestExit,
+      latestNotification,
+      notificationComplete,
       lifecycleComplete: lifecycleFields === lifecycleKeys.length,
       instanceId,
       instanceComplete,
@@ -591,6 +616,14 @@ export class HubClient {
     return this.send({
       type: 'kill',
       session_id: this.sessionId,
+    });
+  }
+
+  acknowledgeNotification(notificationId: string): boolean {
+    return this.send({
+      type: 'acknowledge_notification',
+      session_id: this.sessionId,
+      notification_id: notificationId,
     });
   }
 

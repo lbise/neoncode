@@ -44,6 +44,17 @@ pub enum ClientMessage {
         session_id: String,
         attention_id: String,
     },
+    PublishNotification {
+        session_id: String,
+        kind: NotificationKind,
+        level: NotificationLevel,
+        title: String,
+        message: String,
+    },
+    AcknowledgeNotification {
+        session_id: String,
+        notification_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,10 +107,42 @@ pub enum ServerMessage {
         session_id: String,
         attention_id: String,
     },
+    NotificationPublished {
+        session_id: String,
+        notification_id: String,
+    },
+    NotificationAcknowledged {
+        session_id: String,
+        notification_id: String,
+    },
     Error {
         session_id: Option<String>,
         message: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationKind {
+    Notification,
+    SessionError,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationLevel {
+    Info,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct NotificationSummary {
+    pub notification_id: String,
+    pub kind: NotificationKind,
+    pub level: NotificationLevel,
+    pub title: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -201,4 +244,5 @@ pub struct SessionSummary {
     pub attachment_count: u32,
     pub state: SessionState,
     pub latest_exit: Option<ExitSummary>,
+    pub latest_notification: Option<NotificationSummary>,
 }

@@ -30,7 +30,7 @@ Current capabilities:
 - resize PTY;
 - kill PTY session;
 - maintain sessions in a shared in-process session registry;
-- list active sessions with effective command, configured cwd, observed foreground-job cwd, bounded Git branch/dirty metadata, persistence, attachment count, and retained latest-exit attention;
+- list active sessions with effective command, configured cwd, observed foreground-job cwd, bounded Git branch/dirty metadata, persistence, attachment count, retained latest-exit attention, and latest notification/error metadata;
 - attach a WebSocket with bounded recent terminal-output replay followed by live events;
 - detach a WebSocket from a session;
 - require the Electron `file://` origin and a per-user capability challenge-response on WebSockets;

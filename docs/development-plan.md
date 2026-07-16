@@ -298,7 +298,7 @@ Still needed:
 - [ ] Add richer runtime workspace metadata:
   - [x] live shell/foreground-job cwd;
   - [x] git branch/dirty state;
-  - [ ] retained latest notification/error.
+  - [x] retained latest notification/error.
 
 ### Milestone: workspace status sidebar
 
@@ -336,6 +336,18 @@ Status: implementation complete; Windows Electron preview remains unavailable on
 - [x] Strictly normalize the independent additive protocol-v1 field while accepting legacy absence.
 - [x] Aggregate branch/dirty state in workspace sidebar/test state.
 - [x] Cover clean, untracked/dirty, committed, detached, malformed, and real temporary-repository behavior.
+
+### Milestone: retained notifications and session errors
+
+Status: protocol, retention, polling UI, and acknowledgement complete; CLI publishing remains in the later CLI milestone.
+
+- [x] Add authenticated notification publication with generated 32-hex generations.
+- [x] Bound retention to the latest record for at most 64 session IDs.
+- [x] Validate kinds/levels, title/message byte limits, and reject control characters.
+- [x] Compare-and-clear acknowledgement without clearing a newer replacement.
+- [x] Expose independent additive summary metadata with strict legacy-compatible normalization.
+- [x] Prioritize retained exit attention, then notifications, in workspace summaries and Dismiss behavior.
+- [x] Cover replacement generations, stale acknowledgement, matching clear, and malformed metadata.
 
 ### 5. Hub protocol evolution
 

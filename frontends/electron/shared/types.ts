@@ -51,6 +51,17 @@ export interface RuntimeGit {
   stale: boolean;
 }
 
+export type NotificationKind = 'notification' | 'session_error';
+export type NotificationLevel = 'info' | 'warning' | 'error';
+
+export interface NotificationSummary {
+  notificationId: string;
+  kind: NotificationKind;
+  level: NotificationLevel;
+  title: string;
+  message: string;
+}
+
 export interface NormalizedSessionSummary {
   sessionId: string;
   command: string | null;
@@ -64,6 +75,8 @@ export interface NormalizedSessionSummary {
   metadataComplete: boolean;
   state: SessionSummaryState;
   latestExit: RetainedExitSummary | null;
+  latestNotification: NotificationSummary | null;
+  notificationComplete: boolean;
   lifecycleComplete: boolean;
   instanceId: string | null;
   instanceComplete: boolean;

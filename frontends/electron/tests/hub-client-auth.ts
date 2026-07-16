@@ -289,6 +289,8 @@ function validatesSessionSummaries(): void {
     metadataComplete: true,
     state: 'running',
     latestExit: null,
+    latestNotification: null,
+    notificationComplete: false,
     lifecycleComplete: false,
     instanceId: null,
     instanceComplete: false,
@@ -307,6 +309,8 @@ function validatesSessionSummaries(): void {
     metadataComplete: false,
     state: 'running',
     latestExit: null,
+    latestNotification: null,
+    notificationComplete: false,
     lifecycleComplete: false,
     instanceId: null,
     instanceComplete: false,
@@ -317,6 +321,10 @@ function validatesSessionSummaries(): void {
     cwd: '/configured',
     runtime_cwd: { path: '/live', state: 'current', stale: false },
     runtime_git: { state: 'repository', branch: 'main', detached: false, dirty: true, stale: false },
+    latest_notification: {
+      notification_id: 'cd'.repeat(16), kind: 'notification', level: 'info',
+      title: 'Complete', message: 'All checks passed',
+    },
     persistent: true,
     attachment_count: 0,
   }]);
@@ -326,6 +334,22 @@ function validatesSessionSummaries(): void {
     state: 'repository', branch: 'main', detached: false, dirty: true, stale: false,
   });
   assert.equal(runtime[0]?.runtimeGitComplete, true);
+  assert.deepEqual(runtime[0]?.latestNotification, {
+    notificationId: 'cd'.repeat(16), kind: 'notification', level: 'info',
+    title: 'Complete', message: 'All checks passed',
+  });
+  assert.equal(runtime[0]?.notificationComplete, true);
+  assert.throws(
+    () => normalizeSessionSummaries([{
+      session_id: 'bad-notification',
+      command: 'bash', cwd: null, persistent: true, attachment_count: 0,
+      latest_notification: {
+        notification_id: 'ef'.repeat(16), kind: 'notification', level: 'info',
+        title: 'bad\ncontrol', message: 'message',
+      },
+    }]),
+    /latest_notification is invalid/,
+  );
   assert.throws(
     () => normalizeSessionSummaries([{
       session_id: 'bad-git',

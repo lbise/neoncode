@@ -139,6 +139,31 @@ If the detaching WebSocket created the session, the session is released from tha
 
 Compare-and-clears the specified retained exit without affecting a running replacement or a newer exit. The hub responds with `attention_acknowledged`. Missing/already-cleared records acknowledge idempotently; a different current `attention_id` returns an error so a stale UI cannot clear newer attention.
 
+### Publish or acknowledge a notification
+
+```json
+{
+  "type": "publish_notification",
+  "session_id": "shell-1",
+  "kind": "notification",
+  "level": "info",
+  "title": "Tests complete",
+  "message": "All checks passed"
+}
+```
+
+The hub retains only the latest notification per session ID (64 IDs maximum) and returns `notification_published` with its generated 32-hex `notification_id`. Compare-and-clear it independently using:
+
+```json
+{
+  "type": "acknowledge_notification",
+  "session_id": "shell-1",
+  "notification_id": "<32-hex notification generation>"
+}
+```
+
+Matching and already-cleared acknowledgements return `notification_acknowledged`; a stale generation returns an error and cannot clear a replacement.
+
 ### Send terminal input
 
 ```json
@@ -200,7 +225,7 @@ The client verifies this server proof, then waits for `welcome` before sending s
   "type": "welcome",
   "protocol_version": 1,
   "boot_id": "<64-hex-character hub boot identity>",
-  "capabilities": ["session_metadata", "session_exit_attention", "session_replay_checkpoint", "session_runtime_cwd", "session_runtime_git"]
+  "capabilities": ["session_metadata", "session_exit_attention", "session_replay_checkpoint", "session_runtime_cwd", "session_runtime_git", "session_notifications"]
 }
 ```
 
@@ -242,7 +267,14 @@ The client verifies this server proof, then waits for `welcome` before sending s
       "persistent": true,
       "attachment_count": 0,
       "state": "running",
-      "latest_exit": null
+      "latest_exit": null,
+      "latest_notification": {
+        "notification_id": "<32-hex generation>",
+        "kind": "notification",
+        "level": "info",
+        "title": "Tests complete",
+        "message": "All checks passed"
+      }
     }
   ]
 }
@@ -260,6 +292,7 @@ Summary fields:
 - `attachment_count`: number of authenticated WebSocket connections currently forwarding this session. `start` counts as one attachment; `detach` and socket disconnect decrement it.
 - `state`: `running` for an active PTY or `exited` for a retained exit record.
 - `latest_exit`: `null` or the latest bounded attention record `{ "attention_id": "<32-hex>", "status": 7, "reason": "process_exit" }`. A running replacement may retain an older non-null exit until acknowledgement.
+- `latest_notification`: `null` or the latest bounded record with generation ID, `notification|session_error` kind, `info|warning|error` level, title (256 bytes), and message (4 KiB). Control characters are rejected. Notification acknowledgement is independent from exit acknowledgement.
 
 The four launch/attachment fields and two lifecycle fields are emitted as atomic additive bundles within protocol v1; `instance_id`, `runtime_cwd`, and `runtime_git` are independent additive fields. Updated clients accept legacy ID-only summaries and treat absent metadata as unavailable, but reject partially populated bundles, malformed incarnation IDs, or invalid runtime cwd state/path combinations.
 

@@ -10,7 +10,10 @@ use tracing::debug;
 
 use crate::{
     git::GitMetadataCache,
-    protocol::{ExitSummary, RuntimeCwd, RuntimeGit, SessionState, SessionSummary},
+    protocol::{
+        ExitSummary, NotificationKind, NotificationLevel, NotificationSummary, RuntimeCwd,
+        RuntimeGit, SessionState, SessionSummary,
+    },
     session::{ReplayCursor, Session, SessionSubscription, default_shell},
 };
 
@@ -18,6 +21,9 @@ const DEFAULT_ROWS: u16 = 24;
 const DEFAULT_COLS: u16 = 80;
 const MAX_SESSIONS: usize = 64;
 const MAX_RETAINED_EXITS: usize = 64;
+const MAX_RETAINED_NOTIFICATIONS: usize = 64;
+const MAX_NOTIFICATION_TITLE_BYTES: usize = 256;
+const MAX_NOTIFICATION_MESSAGE_BYTES: usize = 4096;
 const MAX_SESSION_ID_BYTES: usize = 128;
 const MAX_COMMAND_BYTES: usize = 4096;
 const MAX_ARGUMENTS: usize = 128;
@@ -81,6 +87,7 @@ pub fn validate_capability_token(token: &str) -> Result<()> {
 pub struct SessionRegistry {
     sessions: Mutex<HashMap<String, SessionEntry>>,
     retained_exits: Mutex<RetainedExitState>,
+    notifications: Mutex<NotificationState>,
     git_metadata: GitMetadataCache,
 }
 
@@ -142,6 +149,10 @@ impl SessionRegistry {
             .retained_exits
             .lock()
             .map_err(|_| anyhow!("retained exit mutex poisoned"))?;
+        let notifications = self
+            .notifications
+            .lock()
+            .map_err(|_| anyhow!("notification mutex poisoned"))?;
         let mut summaries = sessions
             .iter()
             .map(|(session_id, entry)| {
@@ -164,6 +175,7 @@ impl SessionRegistry {
                         .records
                         .get(session_id)
                         .map(|record| record.outcome.clone()),
+                    latest_notification: notifications.records.get(session_id).cloned(),
                 }
             })
             .collect::<Vec<_>>();
@@ -183,6 +195,7 @@ impl SessionRegistry {
                     attachment_count: 0,
                     state: SessionState::Exited,
                     latest_exit: Some(record.outcome.clone()),
+                    latest_notification: notifications.records.get(session_id).cloned(),
                 }),
         );
         summaries.sort_by(|a, b| a.session_id.cmp(&b.session_id));
@@ -325,6 +338,59 @@ impl SessionRegistry {
         Ok(())
     }
 
+    pub fn publish_notification(
+        &self,
+        session_id: &str,
+        kind: NotificationKind,
+        level: NotificationLevel,
+        title: String,
+        message: String,
+    ) -> Result<String> {
+        validate_session_id(session_id)?;
+        validate_notification_text(&title, "notification title", MAX_NOTIFICATION_TITLE_BYTES)?;
+        validate_notification_text(
+            &message,
+            "notification message",
+            MAX_NOTIFICATION_MESSAGE_BYTES,
+        )?;
+        let mut id_bytes = [0_u8; 16];
+        getrandom::fill(&mut id_bytes)
+            .map_err(|error| anyhow!("failed to generate notification id: {error}"))?;
+        let notification_id = hex::encode(id_bytes);
+        let notification = NotificationSummary {
+            notification_id: notification_id.clone(),
+            kind,
+            level,
+            title,
+            message,
+        };
+        self.notifications
+            .lock()
+            .map_err(|_| anyhow!("notification mutex poisoned"))?
+            .insert(session_id.to_string(), notification);
+        Ok(notification_id)
+    }
+
+    pub fn acknowledge_notification(&self, session_id: &str, notification_id: &str) -> Result<()> {
+        validate_session_id(session_id)?;
+        validate_attention_id(notification_id)?;
+        let mut notifications = self
+            .notifications
+            .lock()
+            .map_err(|_| anyhow!("notification mutex poisoned"))?;
+        let Some(current) = notifications.records.get(session_id) else {
+            return Ok(());
+        };
+        if current.notification_id != notification_id {
+            return Err(anyhow!(
+                "retained notification changed for session: {session_id}"
+            ));
+        }
+        notifications.records.remove(session_id);
+        notifications.record_ids.remove(session_id);
+        Ok(())
+    }
+
     pub fn kill_sessions_for_connection(&self, owner_connection_id: &str) -> Result<usize> {
         let entries = {
             let mut sessions = self
@@ -429,6 +495,16 @@ impl SessionRegistry {
         }
         Ok(())
     }
+}
+
+fn validate_notification_text(value: &str, label: &str, maximum_bytes: usize) -> Result<()> {
+    if value.is_empty() || value.len() > maximum_bytes {
+        return Err(anyhow!("{label} must contain 1-{maximum_bytes} bytes"));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(anyhow!("{label} must not contain control characters"));
+    }
+    Ok(())
 }
 
 fn validate_attention_id(attention_id: &str) -> Result<()> {
@@ -561,6 +637,35 @@ impl RetainedExitState {
         self.order.push_back((record_id, session_id));
 
         while self.records.len() > MAX_RETAINED_EXITS && self.evict_oldest() {}
+    }
+}
+
+#[derive(Default)]
+struct NotificationState {
+    records: HashMap<String, NotificationSummary>,
+    order: VecDeque<(u64, String)>,
+    next_record_id: u64,
+    record_ids: HashMap<String, u64>,
+}
+
+impl NotificationState {
+    fn insert(&mut self, session_id: String, notification: NotificationSummary) {
+        let record_id = self.next_record_id;
+        self.next_record_id = self.next_record_id.wrapping_add(1);
+        self.records.insert(session_id.clone(), notification);
+        self.record_ids.insert(session_id.clone(), record_id);
+        self.order
+            .retain(|(_, queued_session_id)| queued_session_id != &session_id);
+        self.order.push_back((record_id, session_id));
+        while self.records.len() > MAX_RETAINED_NOTIFICATIONS {
+            let Some((record_id, session_id)) = self.order.pop_front() else {
+                break;
+            };
+            if self.record_ids.get(&session_id) == Some(&record_id) {
+                self.record_ids.remove(&session_id);
+                self.records.remove(&session_id);
+            }
+        }
     }
 }
 

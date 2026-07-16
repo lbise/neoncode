@@ -790,6 +790,69 @@ async fn persistent_session_survives_repeated_checkpoint_reconnects() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn notifications_replace_and_acknowledge_by_generation() {
+    let hub = TestHub::start().await;
+    let session_id = "notification-generation";
+    let mut socket = hub.connect().await;
+    send_json(
+        &mut socket,
+        json!({
+            "type": "start", "session_id": session_id, "command": "sh",
+            "persistent": true, "rows": 24, "cols": 80
+        }),
+    )
+    .await;
+    wait_for_session_type(&mut socket, "started", session_id).await;
+
+    let publish = |title: &str| {
+        json!({
+            "type": "publish_notification", "session_id": session_id,
+            "kind": "notification", "level": "info", "title": title, "message": "completed"
+        })
+    };
+    send_json(&mut socket, publish("first")).await;
+    let first = wait_for_session_type(&mut socket, "notification_published", session_id).await;
+    let first_id = first["notification_id"].as_str().unwrap().to_string();
+    send_json(&mut socket, publish("second")).await;
+    let second = wait_for_session_type(&mut socket, "notification_published", session_id).await;
+    let second_id = second["notification_id"].as_str().unwrap().to_string();
+    assert_ne!(first_id, second_id);
+    let summaries = list_session_summaries(&mut socket).await;
+    assert_eq!(summaries[0]["latest_notification"]["title"], "second");
+
+    send_json(
+        &mut socket,
+        json!({
+            "type": "acknowledge_notification", "session_id": session_id,
+            "notification_id": first_id
+        }),
+    )
+    .await;
+    let stale = next_json_before(&mut socket, Instant::now() + MESSAGE_TIMEOUT).await;
+    assert_eq!(stale["type"], "error");
+    send_json(
+        &mut socket,
+        json!({
+            "type": "acknowledge_notification", "session_id": session_id,
+            "notification_id": second_id
+        }),
+    )
+    .await;
+    wait_for_session_type(&mut socket, "notification_acknowledged", session_id).await;
+    assert_eq!(
+        list_session_summaries(&mut socket).await[0]["latest_notification"],
+        Value::Null
+    );
+
+    send_json(
+        &mut socket,
+        json!({ "type": "kill", "session_id": session_id }),
+    )
+    .await;
+    wait_for_session_type(&mut socket, "killed", session_id).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn session_metadata_tracks_persistence_and_attachments() {
     let hub = TestHub::start().await;
     let session_id = "metadata-attachments";
