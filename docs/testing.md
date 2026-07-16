@@ -55,7 +55,7 @@ cargo test -p neoncode-hub
 
 Future hub integration coverage should include transport-level oversized frames, saturated backpressure behavior, attachment/session-limit boundaries, multiple concurrent attachments, and graceful shutdown.
 
-For an explicit wall-clock stability run, `./dev soak [seconds]` repeatedly exercises a persistent PTY through 20 authenticated checkpoint reconnects plus shell/foreground runtime-cwd transitions. It defaults to 300 seconds and is intentionally excluded from `./dev check`; use longer durations on a dedicated worker.
+For an explicit wall-clock stability run, `./dev soak [seconds]` repeatedly exercises a persistent PTY through 20 authenticated checkpoint reconnects plus shell/foreground runtime-cwd and clean/dirty/detached Git transitions. It defaults to 300 seconds and is intentionally excluded from `./dev check`; use longer durations on a dedicated worker.
 
 ### 2. Renderer unit/integration tests
 
