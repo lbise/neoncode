@@ -14,7 +14,8 @@ import {
   type WebContents,
 } from 'electron';
 
-import { ConfigStore, defaultState } from './config-store';
+import { ConfigStore, STATE_SCHEMA_VERSION, defaultState } from './config-store';
+import { validateWorkspaceLayoutState } from './renderer/layout-model';
 import type {
   DesktopBootstrapResult,
   DesktopState,
@@ -22,6 +23,7 @@ import type {
   RendererBootstrapWorkspace,
   TerminalAppearance,
 } from './shared/types';
+import type { WorkspaceLayoutState } from './renderer/layout-model';
 import { loadHubToken } from './token-loader';
 
 app.disableHardwareAcceleration();
@@ -131,6 +133,12 @@ function rendererWorkspaces(): RendererBootstrapWorkspace[] {
   }));
 }
 
+function rendererWorkspaceLayouts(): Record<string, WorkspaceLayoutState> {
+  return Object.fromEntries(Object.entries(desktopState.workspaceLayouts).map(([workspaceId, layout]) => (
+    [workspaceId, validateWorkspaceLayoutState(layout)]
+  )));
+}
+
 function rendererConfig(): RendererBootstrapConfig {
   const config = bootstrapResult.config;
   const configuredWorkspaceIds = new Set((config?.workspaces || []).map((workspace) => workspace.id));
@@ -146,6 +154,7 @@ function rendererConfig(): RendererBootstrapConfig {
     persistencePolicy: config?.persistence.onWindowClose || 'detach',
     terminal: config ? cloneTerminalAppearance(config.terminal) : null,
     activeWorkspaceId,
+    workspaceLayouts: rendererWorkspaceLayouts(),
     workspaces: rendererWorkspaces(),
     diagnostics: {
       configStatus: bootstrapResult.diagnostics.configStatus,
@@ -173,6 +182,29 @@ ipcMain.handle('neoncode:set-active-workspace', (_event, workspaceId: unknown) =
   desktopState = configStore.saveState({ ...desktopState, activeWorkspaceId: workspaceId });
   log('state.active-workspace', { workspaceId });
   return workspaceId;
+});
+
+ipcMain.handle('neoncode:save-workspace-layout', (_event, workspaceId: unknown, layout: unknown) => {
+  const workspaces = bootstrapResult.config?.workspaces || [];
+  if (typeof workspaceId !== 'string' || !workspaces.some((workspace) => workspace.id === workspaceId)) {
+    throw new Error('workspace layout must reference a configured workspace');
+  }
+  if (!configStore) {
+    throw new Error('configuration storage is unavailable');
+  }
+  const validatedLayout = validateWorkspaceLayoutState(layout);
+  const savedState = configStore.saveState({
+    ...desktopState,
+    workspaceLayouts: {
+      ...desktopState.workspaceLayouts,
+      [workspaceId]: validatedLayout,
+    },
+  });
+  desktopState = savedState;
+  log('state.workspace-layout', { workspaceId });
+  const savedLayout = savedState.workspaceLayouts[workspaceId];
+  if (!savedLayout) throw new Error('saved workspace layout is missing');
+  return savedLayout;
 });
 
 ipcMain.handle('neoncode:write-clipboard-text', (_event, text: unknown) => {
@@ -218,7 +250,7 @@ function saveWindowState(): void {
   try {
     desktopState = store.saveState({
       ...desktopState,
-      schemaVersion: 2,
+      schemaVersion: STATE_SCHEMA_VERSION,
       window: { width, height },
     });
     log('state.saved', desktopState.window);

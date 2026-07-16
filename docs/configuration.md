@@ -211,7 +211,11 @@ An unsupported future schema is preserved and is not downgraded automatically. I
 
 Known pre-schema NeonCode files containing only a `terminal` object are preserved as `config.json.pre-migration-<timestamp>` and their compatible font, cursor, and color-table settings are imported into version 4. Schema versions 0, 1, 2, and 3 are migrated automatically. Version 2 positional `ansi` arrays are converted losslessly to named colors; version 3 top-level sessions become the `default` workspace without changing their IDs. When a preserved terminal-only file is available, schema 1 imports its appearance while retaining current pane/profile edits; otherwise it receives the default appearance.
 
-App-owned state schema 2 stores content width/height and the active workspace ID. State schema 1 migrates automatically. Invalid state is preserved and reset safely. Window position is deliberately not persisted yet to avoid reopening off-screen.
+App-owned state schema 3 stores content width/height, the active workspace ID, and a `workspaceLayouts` record. Each record value is a strict frontend-owned tab/split tree: tabs have a stable ID/title/focused pane, split branches have a stable ID/direction/ratio/two children, and pane leaves have a stable pane ID plus session key. Layout state is separate from configuration and does not redefine hub session identity.
+
+State validation permits at most 16 known-shape workspace entries, 8 tabs and 8 pane leaves per workspace, 64 leaves across the file, tree depth 8, unique IDs and session keys within a workspace, split ratios from `0.1` through `0.9`, and tab titles no larger than 64 UTF-8 bytes. The complete pretty-printed state file is limited to 64 KiB. Schema 1 migrates directly to schema 3 with a null active workspace and empty layouts; schema 2 preserves its window and active-workspace fields while adding empty layouts. Invalid, oversized, and unsupported future state is preserved and recovered from backup or reset safely. Window position is deliberately not persisted yet to avoid reopening off-screen.
+
+The preload bridge exposes a typed `saveWorkspaceLayout(workspaceId, layout)` call. Electron main accepts it only for a workspace in the current validated config and validates the complete merged state before writing. The renderer does not call this API or render the tab/split tree yet; the existing grid remains unchanged.
 
 Writes use same-directory temporary files, flush, and atomic rename. Electron also uses a single-instance lock to avoid competing state writers.
 
@@ -241,4 +245,4 @@ NEONCODE_PERSIST_SESSIONS
 9. Reopen and confirm window size and active workspace restoration.
 10. Optionally switch `onWindowClose` to `kill`; after closing/reopening, previously visited workspace sessions should start fresh.
 
-External workspace files, free-form split layouts, live appearance reload, font discovery, and a settings UI are later milestones.
+External workspace files, visible free-form split layout controls, live appearance reload, font discovery, and a settings UI are later milestones.

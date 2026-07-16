@@ -7,9 +7,15 @@ import {
   ConfigStore,
   applyEnvironmentOverrides,
   defaultConfig,
+  defaultState,
   validateConfig,
   validateState,
 } from '../config-store';
+import {
+  seedWorkspaceLayout,
+  type LayoutNode,
+  type WorkspaceLayoutState,
+} from '../renderer/layout-model';
 import type {
   DesktopBootstrapResult,
   DesktopConfig,
@@ -66,6 +72,48 @@ function loadedConfig(result: DesktopBootstrapResult): DesktopConfig {
 
 function sessionAt(workspace: DesktopWorkspaceConfig, index = 0): DesktopSessionConfig {
   return workspace.sessions[index]!;
+}
+
+function workspaceLayout(
+  workspace = workspaceAt(defaultConfig()),
+  prefix = workspace.id,
+): WorkspaceLayoutState {
+  return seedWorkspaceLayout(workspace, {
+    tabId: `${prefix}-tab`,
+    paneIds: workspace.sessions.map((session) => `${prefix}-pane-${session.id}`),
+    splitIds: workspace.sessions.slice(1).map((_session, index) => `${prefix}-split-${index}`),
+  });
+}
+
+function nestedWorkspaceLayout(depth: number): WorkspaceLayoutState {
+  let root: LayoutNode = {
+    type: 'pane',
+    paneId: `depth-pane-${depth}`,
+    sessionKey: `depth-session-${depth}`,
+  };
+  for (let index = depth - 1; index >= 1; index -= 1) {
+    root = {
+      type: 'split',
+      splitId: `depth-split-${index}`,
+      direction: 'vertical',
+      ratio: 0.5,
+      first: {
+        type: 'pane',
+        paneId: `depth-pane-${index}`,
+        sessionKey: `depth-session-${index}`,
+      },
+      second: root,
+    };
+  }
+  return {
+    activeTabId: 'depth-tab',
+    tabs: [{
+      tabId: 'depth-tab',
+      title: 'Depth',
+      root,
+      focusedPaneId: 'depth-pane-1',
+    }],
+  };
 }
 
 function schemaThreeConfig(): LegacyConfigFixture {
@@ -341,9 +389,176 @@ function testStateSchemaOneMigration() {
     }));
     const result = store.load({});
     assert.equal(result.diagnostics.stateStatus, 'migrated');
-    assert.equal(result.state.schemaVersion, 2);
+    assert.equal(result.state.schemaVersion, 3);
     assert.equal(result.state.activeWorkspaceId, null);
-    assert.equal(readJson<DesktopState>(store.statePath).schemaVersion, 2);
+    assert.deepEqual(result.state.workspaceLayouts, {});
+    assert.equal(readJson<DesktopState>(store.statePath).schemaVersion, 3);
+  });
+}
+
+function testStateSchemaTwoMigrationIsLossless() {
+  withStore((store) => {
+    store.load({});
+    fs.writeFileSync(store.statePath, JSON.stringify({
+      schemaVersion: 2,
+      window: { width: 1111, height: 777 },
+      activeWorkspaceId: 'default',
+    }));
+    const result = store.load({});
+    assert.equal(result.diagnostics.stateStatus, 'migrated');
+    assert.deepEqual(result.state, {
+      schemaVersion: 3,
+      window: { width: 1111, height: 777 },
+      activeWorkspaceId: 'default',
+      workspaceLayouts: {},
+    });
+    assert.deepEqual(readJson<DesktopState>(store.statePath), result.state);
+  });
+}
+
+function testWorkspaceLayoutStateRoundTrip() {
+  withStore((store) => {
+    store.load({});
+    const layout = workspaceLayout();
+    const saved = store.saveState({
+      schemaVersion: 3,
+      window: { width: 1400, height: 900 },
+      activeWorkspaceId: 'default',
+      workspaceLayouts: { default: layout },
+    });
+    assert.deepEqual(saved.workspaceLayouts.default, layout);
+    assert.notEqual(saved.workspaceLayouts.default, layout);
+    assert.deepEqual(readJson<DesktopState>(store.statePath), saved);
+
+    const reloaded = store.load({});
+    assert.equal(reloaded.diagnostics.stateStatus, 'loaded');
+    assert.deepEqual(reloaded.state, saved);
+    assert.deepEqual(readJson<DesktopState>(store.stateBackupPath), saved);
+  });
+}
+
+function testWorkspaceLayoutStateValidationLimits() {
+  const base = defaultState();
+  const layout = workspaceLayout();
+
+  const malformed = structuredClone(layout) as WorkspaceLayoutState & { unexpected?: boolean };
+  malformed.unexpected = true;
+  assert.throws(
+    () => validateState({ ...base, workspaceLayouts: { default: malformed } }),
+    /keys must be exactly/,
+  );
+
+  const duplicate = structuredClone(layout);
+  const root = duplicate.tabs[0]?.root;
+  assert(root?.type === 'split');
+  assert(root.first.type === 'pane');
+  assert(root.second.type === 'pane');
+  root.second.paneId = root.first.paneId;
+  assert.throws(
+    () => validateState({ ...base, workspaceLayouts: { default: duplicate } }),
+    /duplicate layout id/,
+  );
+
+  assert.throws(
+    () => validateState({ ...base, workspaceLayouts: { default: nestedWorkspaceLayout(9) } }),
+    /depth may not exceed 8/,
+  );
+
+  const tooManyWorkspaces = Object.fromEntries(Array.from({ length: 17 }, (_, index) => [
+    `workspace-${index}`,
+    workspaceLayout(undefined, `entry-${index}`),
+  ]));
+  assert.throws(
+    () => validateState({ ...base, workspaceLayouts: tooManyWorkspaces }),
+    /at most 16 workspaces/,
+  );
+
+  const eightPaneLayout = (prefix: string): WorkspaceLayoutState => seedWorkspaceLayout({
+    name: prefix,
+    layout: { columns: 2 },
+    sessions: Array.from({ length: 8 }, (_, index) => ({
+      id: `${prefix}-session-${index}`,
+      title: `Pane ${index}`,
+    })),
+  }, {
+    tabId: `${prefix}-tab`,
+    paneIds: Array.from({ length: 8 }, (_, index) => `${prefix}-pane-${index}`),
+    splitIds: Array.from({ length: 7 }, (_, index) => `${prefix}-split-${index}`),
+  });
+  const tooManyLeaves = Object.fromEntries(Array.from({ length: 9 }, (_, index) => [
+    `workspace-${index}`,
+    eightPaneLayout(`leaves-${index}`),
+  ]));
+  assert.throws(
+    () => validateState({ ...base, workspaceLayouts: tooManyLeaves }),
+    /at most 64 panes in total/,
+  );
+
+  assert.throws(
+    () => validateState({ ...base, padding: 'x'.repeat(70 * 1024) }),
+    /exceeds 65536 bytes/,
+  );
+  assert.throws(
+    () => validateState({ ...base, schemaVersion: 99 }),
+    /newer than supported/,
+  );
+}
+
+function testFutureStateRecoversBackupAndIsPreserved() {
+  withStore((store, directory) => {
+    store.load({});
+    const backup = {
+      ...defaultState(),
+      activeWorkspaceId: 'default',
+      workspaceLayouts: { default: workspaceLayout() },
+    };
+    fs.writeFileSync(store.stateBackupPath, `${JSON.stringify(backup)}\n`);
+    fs.writeFileSync(store.statePath, `${JSON.stringify({ ...backup, schemaVersion: 99 })}\n`);
+
+    const result = store.load({});
+    assert.equal(result.diagnostics.stateStatus, 'recovered');
+    assert.deepEqual(result.state, backup);
+    const preservedName = fs.readdirSync(directory)
+      .find((name) => name.startsWith('state.json.invalid-'));
+    assert(preservedName);
+    assert.equal(readJson<DesktopState & { schemaVersion: 99 }>(
+      path.join(directory, preservedName),
+    ).schemaVersion, 99);
+  });
+}
+
+function testInjectedStateSaveFailureIsAtomic() {
+  withStore((store, directory) => {
+    store.load({});
+    const previous = store.saveState({
+      ...defaultState(),
+      activeWorkspaceId: 'default',
+      workspaceLayouts: { default: workspaceLayout() },
+    });
+    const replacement = {
+      ...previous,
+      window: { width: 1600, height: 1000 },
+    };
+
+    const mutableFs = fs as { renameSync: typeof fs.renameSync };
+    const originalRename = mutableFs.renameSync;
+    mutableFs.renameSync = (source, destination) => {
+      if (destination.toString() === store.statePath) {
+        const error = new Error('injected state save failure') as NodeJS.ErrnoException;
+        error.code = 'EPERM';
+        throw error;
+      }
+      return originalRename(source, destination);
+    };
+    try {
+      assert.throws(() => store.saveState(replacement), /injected state save failure/);
+    } finally {
+      mutableFs.renameSync = originalRename;
+    }
+
+    assert.deepEqual(readJson<DesktopState>(store.statePath), previous);
+    assert.deepEqual(readJson<DesktopState>(store.stateBackupPath), previous);
+    assert(!fs.readdirSync(directory).some((name) => name.startsWith('.state.json.tmp-')));
   });
 }
 
@@ -381,9 +596,10 @@ function testStateClampAndPersistence() {
   withStore((store) => {
     store.load({});
     const saved = store.saveState({
-      schemaVersion: 2,
+      schemaVersion: 3,
       window: { width: 300, height: 200 },
       activeWorkspaceId: 'default',
+      workspaceLayouts: {},
     });
     assert.deepEqual(saved.window, { width: 800, height: 600 });
     assert.equal(saved.activeWorkspaceId, 'default');
@@ -421,6 +637,11 @@ for (const test of [
   testSchemaThreeWorkspaceMigration,
   testWorkspaceValidationAndEightPanes,
   testStateSchemaOneMigration,
+  testStateSchemaTwoMigrationIsLossless,
+  testWorkspaceLayoutStateRoundTrip,
+  testWorkspaceLayoutStateValidationLimits,
+  testFutureStateRecoversBackupAndIsPreserved,
+  testInjectedStateSaveFailureIsAtomic,
   testStrictValidation,
   testStateClampAndPersistence,
   testStaleTemporaryCleanup,

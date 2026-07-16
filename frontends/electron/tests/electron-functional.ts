@@ -60,6 +60,7 @@ interface PersistedTestState {
   schemaVersion: number;
   window: { width: number; height: number };
   activeWorkspaceId: string | null;
+  workspaceLayouts: Record<string, unknown>;
 }
 
 declare global {
@@ -688,7 +689,7 @@ async function runFirstLaunchChecks(
   assert(rendererSecurity.openedWindow === false, 'renderer opened an external window');
   assert(rendererSecurity.permission === 'denied', `notification permission was ${rendererSecurity.permission}`);
   assert(
-    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'onPrepareClose', 'readClipboardText', 'setActiveWorkspace', 'writeClipboardText']),
+    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'onPrepareClose', 'readClipboardText', 'saveWorkspaceLayout', 'setActiveWorkspace', 'writeClipboardText']),
     `unexpected preload API surface: ${rendererSecurity.desktopKeys.join(',')}`,
   );
 
@@ -1231,8 +1232,9 @@ async function main(): Promise<void> {
       persistedState.window.width === 1400 && persistedState.window.height === 900,
       `window state was not persisted: ${JSON.stringify(persistedState.window)}`,
     );
-    assert(persistedState.schemaVersion === 2, 'workspace state schema was not persisted');
+    assert(persistedState.schemaVersion === 3, 'workspace state schema was not persisted');
     assert(persistedState.activeWorkspaceId === 'review', 'active workspace was not persisted');
+    assert(Object.keys(persistedState.workspaceLayouts).length === 0, 'renderer unexpectedly saved a layout');
     const configBackupPath = path.join(configDirectory, 'config.json.bak');
     const changedBackup = parseJson<DesktopConfig>(
       fs.readFileSync(configBackupPath, 'utf8'),

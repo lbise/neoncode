@@ -17,6 +17,8 @@ import type {
 import { CommandRegistry } from './command-registry';
 import { HubClient, type UnknownMessage } from './hub-client';
 import { KeybindingRouter, createDefaultKeybindings } from './keybinding-router';
+import { validateWorkspaceLayoutState } from './layout-model';
+import type { WorkspaceLayoutState } from './layout-model';
 import { PaneFocusModel } from './pane-focus-model';
 import { SessionModel } from './session-model';
 import { TerminalPane } from './terminal-pane';
@@ -235,6 +237,14 @@ export function createWorkspaceDescriptors(bootstrap: unknown): WorkspaceDescrip
   });
 }
 
+function parseWorkspaceLayouts(value: unknown): Record<string, WorkspaceLayoutState> {
+  if (value === undefined || value === null) return {};
+  if (!isRecord(value)) throw new Error('Invalid renderer bootstrap workspace layouts');
+  return Object.fromEntries(Object.entries(value).map(([workspaceId, layout]) => (
+    [workspaceId, validateWorkspaceLayoutState(layout)]
+  )));
+}
+
 export function createAppConfig(bootstrap: unknown = {}): RendererAppConfig {
   const source = isRecord(bootstrap) ? bootstrap : {};
   const diagnostics = isRecord(source.diagnostics) ? source.diagnostics : {};
@@ -251,6 +261,7 @@ export function createAppConfig(bootstrap: unknown = {}): RendererAppConfig {
     activeWorkspaceId: typeof source.activeWorkspaceId === 'string' && source.activeWorkspaceId
       ? source.activeWorkspaceId
       : null,
+    workspaceLayouts: parseWorkspaceLayouts(source.workspaceLayouts),
     diagnostics: {
       configStatus: stringOr(diagnostics.configStatus, 'error'),
       stateStatus: stringOr(diagnostics.stateStatus, 'error'),

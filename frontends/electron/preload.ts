@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+import { validateWorkspaceLayoutState } from './renderer/layout-model';
+import type { WorkspaceLayoutState } from './renderer/layout-model';
 import type { NeoncodeDesktopApi, PrepareCloseCallback } from './shared/types';
 
 function deepFreeze<T>(value: T): T {
@@ -43,6 +45,18 @@ const desktopApi = Object.freeze({
       throw new Error('active-workspace IPC returned a non-string value');
     }
     return activeWorkspaceId;
+  },
+
+  async saveWorkspaceLayout(
+    workspaceId: string,
+    layout: WorkspaceLayoutState,
+  ): Promise<WorkspaceLayoutState> {
+    const savedLayout: unknown = await ipcRenderer.invoke(
+      'neoncode:save-workspace-layout',
+      workspaceId,
+      layout,
+    );
+    return deepFreeze(validateWorkspaceLayoutState(savedLayout));
   },
 
   onPrepareClose(callback: PrepareCloseCallback): void {

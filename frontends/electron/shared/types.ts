@@ -1,6 +1,8 @@
 import type { FitAddon } from '@xterm/addon-fit';
 import type { Terminal } from '@xterm/xterm';
 
+import type { WorkspaceLayoutState } from '../renderer/layout-model';
+
 export type ActivationMode = 'attach' | 'start';
 export type PersistencePolicy = 'detach' | 'kill';
 export type ConfigStorageStatus = 'created' | 'error' | 'loaded' | 'migrated' | 'recovered';
@@ -170,6 +172,7 @@ export interface DesktopState {
     height: number;
   };
   activeWorkspaceId: string | null;
+  workspaceLayouts: Record<string, WorkspaceLayoutState>;
 }
 
 export interface DesktopDiagnostics {
@@ -207,6 +210,7 @@ export interface RendererBootstrapConfig {
   persistencePolicy: PersistencePolicy;
   terminal: TerminalAppearance | null;
   activeWorkspaceId: string | null;
+  workspaceLayouts: Record<string, WorkspaceLayoutState>;
   workspaces: RendererBootstrapWorkspace[];
   diagnostics: DesktopDiagnostics;
   testMode: boolean;
@@ -247,6 +251,7 @@ export interface RendererAppConfig {
   terminal: TerminalAppearance | null;
   testMode: boolean;
   activeWorkspaceId: string | null;
+  workspaceLayouts: Record<string, WorkspaceLayoutState>;
   diagnostics: AppDiagnostics;
   workspaces: WorkspaceDescriptor[];
 }
@@ -398,6 +403,7 @@ export interface NeoncodeDesktopApi {
   readClipboardText(): Promise<string>;
   writeClipboardText(text: string): Promise<void>;
   setActiveWorkspace(workspaceId: string): Promise<string>;
+  saveWorkspaceLayout(workspaceId: string, layout: WorkspaceLayoutState): Promise<WorkspaceLayoutState>;
   onPrepareClose(callback: PrepareCloseCallback): void;
 }
 

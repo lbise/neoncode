@@ -1,6 +1,10 @@
 import fs = require('node:fs');
 import path = require('node:path');
 
+import {
+  orderedDepthFirstPanes,
+  validateWorkspaceLayoutState,
+} from './renderer/layout-model';
 import type {
   ConfigStorageStatus,
   DesktopBootstrapResult,
@@ -15,10 +19,12 @@ import type {
 } from './shared/types';
 
 export const CONFIG_SCHEMA_VERSION = 4;
-export const STATE_SCHEMA_VERSION = 2;
+export const STATE_SCHEMA_VERSION = 3;
 const MAX_CONFIG_BYTES = 64 * 1024;
-const MAX_STATE_BYTES = 16 * 1024;
+const MAX_STATE_BYTES = 64 * 1024;
 const MAX_WORKSPACES = 16;
+const MAX_STATE_WORKSPACE_LAYOUTS = 16;
+const MAX_STATE_LAYOUT_LEAVES = 64;
 const MAX_PANES_PER_WORKSPACE = 8;
 const MAX_CONFIGURED_SESSIONS = 64;
 const MIN_WINDOW_WIDTH = 800;
@@ -169,6 +175,7 @@ export function defaultState(): DesktopState {
       height: 800,
     },
     activeWorkspaceId: null,
+    workspaceLayouts: {},
   };
 }
 
@@ -587,7 +594,20 @@ function requireWindowDimension(value: unknown, dimension: 'width' | 'height'): 
   return value;
 }
 
+function requireStateSize(raw: unknown): void {
+  let payload: string;
+  try {
+    payload = `${JSON.stringify(raw, null, 2)}\n`;
+  } catch (error) {
+    throw new ConfigurationError(`state must be JSON serializable: ${errorMessage(error)}`);
+  }
+  if (Buffer.byteLength(payload, 'utf8') > MAX_STATE_BYTES) {
+    throw new ConfigurationError(`state exceeds ${MAX_STATE_BYTES} bytes`);
+  }
+}
+
 export function validateState(raw: unknown): DesktopState {
+  requireStateSize(raw);
   const rawDocument = requireObject(raw, 'state');
   let migratedDocument: unknown = rawDocument;
   if (rawDocument.schemaVersion === 1) {
@@ -596,15 +616,31 @@ export function validateState(raw: unknown): DesktopState {
       ...rawDocument,
       schemaVersion: STATE_SCHEMA_VERSION,
       activeWorkspaceId: null,
+      workspaceLayouts: {},
+    };
+  } else if (rawDocument.schemaVersion === 2) {
+    requireExactKeys(rawDocument, ['schemaVersion', 'window', 'activeWorkspaceId'], 'state');
+    migratedDocument = {
+      ...rawDocument,
+      schemaVersion: STATE_SCHEMA_VERSION,
+      workspaceLayouts: {},
     };
   }
   const document = requireExactKeys(
     migratedDocument,
-    ['schemaVersion', 'window', 'activeWorkspaceId'],
+    ['schemaVersion', 'window', 'activeWorkspaceId', 'workspaceLayouts'],
     'state',
   );
+  if (typeof document.schemaVersion === 'number'
+      && Number.isInteger(document.schemaVersion)
+      && document.schemaVersion > STATE_SCHEMA_VERSION) {
+    throw new ConfigurationError(
+      `state schema ${document.schemaVersion} is newer than supported schema ${STATE_SCHEMA_VERSION}`,
+      'future_schema',
+    );
+  }
   if (document.schemaVersion !== STATE_SCHEMA_VERSION) {
-    throw new ConfigurationError(`state.schemaVersion must be ${STATE_SCHEMA_VERSION}`);
+    throw new ConfigurationError(`state.schemaVersion must be 1, 2, or ${STATE_SCHEMA_VERSION}`);
   }
   const window = requireExactKeys(document.window, ['width', 'height'], 'state.window');
   const width = requireWindowDimension(window.width, 'width');
@@ -612,14 +648,45 @@ export function validateState(raw: unknown): DesktopState {
   const activeWorkspaceId = document.activeWorkspaceId === null
     ? null
     : requireIdentifier(document.activeWorkspaceId, 'state.activeWorkspaceId', 64);
-  return {
+
+  const rawWorkspaceLayouts = requireObject(document.workspaceLayouts, 'state.workspaceLayouts');
+  const layoutEntries = Object.entries(rawWorkspaceLayouts);
+  if (layoutEntries.length > MAX_STATE_WORKSPACE_LAYOUTS) {
+    throw new ConfigurationError(
+      `state.workspaceLayouts may contain at most ${MAX_STATE_WORKSPACE_LAYOUTS} workspaces`,
+    );
+  }
+  let totalLeaves = 0;
+  const workspaceLayouts = Object.fromEntries(layoutEntries.map(([workspaceId, rawLayout]) => {
+    requireIdentifier(workspaceId, `state.workspaceLayouts workspace id '${workspaceId}'`, 64);
+    try {
+      const layout = validateWorkspaceLayoutState(rawLayout);
+      totalLeaves += orderedDepthFirstPanes(layout).length;
+      if (totalLeaves > MAX_STATE_LAYOUT_LEAVES) {
+        throw new ConfigurationError(
+          `state.workspaceLayouts may contain at most ${MAX_STATE_LAYOUT_LEAVES} panes in total`,
+        );
+      }
+      return [workspaceId, layout];
+    } catch (error) {
+      if (error instanceof ConfigurationError) throw error;
+      throw new ConfigurationError(
+        `state.workspaceLayouts.${workspaceId} is invalid: ${errorMessage(error)}`,
+      );
+    }
+  }));
+
+  const state: DesktopState = {
     schemaVersion: STATE_SCHEMA_VERSION,
     window: {
       width: Math.max(MIN_WINDOW_WIDTH, width),
       height: Math.max(MIN_WINDOW_HEIGHT, height),
     },
     activeWorkspaceId,
+    workspaceLayouts,
   };
+  requireStateSize(state);
+  return state;
 }
 
 export function applyEnvironmentOverrides(config: DesktopConfig, env: unknown): DesktopConfig {

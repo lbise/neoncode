@@ -196,7 +196,7 @@ Tasks:
 - [x] Migrate schema-version-3 top-level sessions without changing their hub session IDs.
 - [x] Replace two static pane surfaces with dynamic xterm pane creation/disposal.
 - [x] Add a visible workspace selector and serialized detach/reattach switching.
-- [x] Persist and restore the active workspace in state schema 2.
+- [x] Persist and restore the active workspace in current state schema 3.
 - [x] Keep `kill` close scoped to workspaces visited by the current app instance.
 - [x] Cover two-/three-pane switching, shell-state continuity, relaunch restoration, and kill cleanup in real Electron tests.
 
@@ -351,7 +351,7 @@ Status: protocol, retention, polling UI, and acknowledgement complete; CLI publi
 
 ### Immediate product priority: keyboard-first workspace cockpit
 
-Status: first keyboard-first command/keybinding/pane-focus milestone complete. Dynamic tabs and splits are next.
+Status: command/keybinding/focus plus pure tab/split model and persisted-state groundwork complete. Runtime renderer adoption and GUI remain next.
 
 Interaction and command foundation:
 
@@ -365,10 +365,10 @@ Interaction and command foundation:
 
 Frontend-owned layout model:
 
-- [ ] Define terminology and identity: workspace = project/context, tab = top-level layout, pane = session surface, panel = auxiliary UI.
-- [ ] Add a pure typed tab/split tree with stable IDs, split direction/ratio, active pane, and deterministic create/close/focus/move/resize operations.
-- [ ] Migrate each existing flat configured workspace grid into one initial tab without changing hub session IDs.
-- [ ] Persist workspace tab/layout state separately from backend session identity and migrate the desktop state schema atomically.
+- [x] Define terminology and identity: workspace = project/context, tab = top-level layout, pane = session surface, panel = auxiliary UI.
+- [x] Add a pure typed tab/split tree with stable caller-supplied IDs, split direction/ratio, active pane, immutable deterministic create/close/focus/move/resize operations, and strict limits.
+- [x] Add deterministic schema 4 configured-grid seeding into one initial tab without changing session keys; runtime renderer adoption remains unchecked.
+- [x] Persist validated workspace tab/layout state separately from backend session identity in atomically migrated desktop state schema 3, with an unused typed save IPC.
 - [ ] Create/close/rename/reorder tabs and split/close/focus panes from commands before adding mouse-only controls.
 - [ ] Add dynamic terminal creation from a validated launch profile, with bounded workspace/pane limits and explicit detach/kill behavior.
 - [ ] Restore layouts across close/reopen, hub reconnect, missing sessions, and replacement session incarnations.

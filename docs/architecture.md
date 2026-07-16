@@ -131,6 +131,7 @@ frontends/electron/renderer/        strict TypeScript renderer modules:
   app.ts                            typed app/bootstrap and pane grid orchestration
   command-registry.ts               stable command IDs, handlers, and enumerable metadata
   keybinding-router.ts              pure exact-match default shortcut resolver
+  layout-model.ts                   pure validated frontend tab/split tree and operations
   pane-focus-model.ts               DOM-free ordered pane focus/memory model
   hub-client.ts                     typed WebSocket protocol client and validators
   session-model.ts                  typed pane/session state and bounded output view
@@ -155,6 +156,14 @@ Current cockpit commands have stable IDs: `workspace.open`, `workspace.next`, `w
 One document capture-phase `keydown` listener delegates to a DOM-free exact-match resolver. The only defaults are `Alt+Digit1..9` for the first nine configured workspaces, `F6` for the next pane, and `Shift+F6` for the previous pane. Already-prevented, Ctrl+Alt/AltGraph, extra-modifier, and unclaimed events are untouched. Claimed repeats are consumed without dispatching again. xterm's custom handler remains responsible for terminal copy/paste and special-key behavior.
 
 The focus model owns ordered panes, wrapping, active workspace/pane identity, per-workspace pane memory, and deterministic first-pane fallback after removal. The DOM mirrors that state through active data/ARIA attributes and CSS; it does not infer focus ownership. `workspace.activePaneId` is part of structured renderer state.
+
+## Frontend layout-state boundary
+
+`renderer/layout-model.ts` now defines the DOM-free frontend layout vocabulary: a workspace has ordered tabs, each tab has one binary pane/split tree, and each pane leaf references a session key without becoming the backend session identity. IDs are caller-supplied rather than generated inside the model. Pure immutable operations validate add/rename/reorder/activate/close tab, focus/split/move/close pane, and clamped split-resize transitions; pane ordering is first-child/second-child depth-first. A deterministic helper converts a schema 4 configured session grid to one initial tab while retaining configured session keys.
+
+App-owned state schema 3 stores validated layouts under `workspaceLayouts`, separately from configuration schema 4 and hub lifecycle state. The state boundary allows at most 16 workspace entries, 64 leaves total, 8 tabs and 8 panes per workspace, tree depth 8, and a 64 KiB state file. Electron main accepts layout saves only for a workspace in the current validated config, validates before merge, and persists through the existing backup plus atomic-rename path.
+
+This commit is model and persistence groundwork only. The renderer still constructs and displays the existing configured grid, does not seed/restore `workspaceLayouts` at runtime, and does not call `saveWorkspaceLayout` yet. Tabs, free-form split DOM, and layout commands remain unchecked GUI work.
 
 ## Electron security boundary
 
@@ -271,7 +280,7 @@ sessions:
     command: ./andromeda test --hil
 ```
 
-The current Electron sidebar switches these configured workspaces, restores the active choice, and derives status from hub-owned effective command/configured launch cwd/attachment metadata plus frontend-observed pane lifecycle. It falls back to configured launch locations before a session exists. This is not yet live shell cwd/git metadata because configured launch cwd does not track later shell changes. Layout is currently a simple column count; free-form splits and external workspace files remain future work.
+The current Electron sidebar switches these configured workspaces, restores the active choice, and derives status from hub-owned effective command/configured launch cwd/attachment metadata plus frontend-observed pane lifecycle. It falls back to configured launch locations before a session exists. This is not yet live shell cwd/git metadata because configured launch cwd does not track later shell changes. The visible renderer layout is still the configured column grid. A persisted pure tab/split model now exists as unwired groundwork; free-form split DOM and external workspace files remain future work.
 
 The hub should eventually own:
 
