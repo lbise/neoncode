@@ -10,8 +10,11 @@ import {
   type CommandMetadata,
   type CommandOperationResult,
   type PaneFocusCommandArgs,
+  type WorkspaceCreateCommandArgs,
+  type WorkspaceDeleteCommandArgs,
   type WorkspaceDismissAttentionCommandArgs,
   type WorkspaceOpenCommandArgs,
+  type WorkspaceRenameCommandArgs,
 } from '../shared/command-catalog';
 
 export interface CommandHandlers {
@@ -19,6 +22,12 @@ export interface CommandHandlers {
   'palette.close': () => void | Promise<void>;
   'settings.open': () => void | Promise<void>;
   'settings.close': () => void | Promise<void>;
+  'workspace.create': (args: WorkspaceCreateCommandArgs) => void | Promise<void>;
+  'workspace.rename': (args: WorkspaceRenameCommandArgs) => void | Promise<void>;
+  'workspace.delete': (args: WorkspaceDeleteCommandArgs) => void | Promise<void>;
+  'workspace.createDialog': () => void | Promise<void>;
+  'workspace.renameDialog': () => void | Promise<void>;
+  'workspace.deleteDialog': () => void | Promise<void>;
   'workspace.open': (args: WorkspaceOpenCommandArgs) => void | Promise<void>;
   'workspace.next': () => void | Promise<void>;
   'workspace.previous': () => void | Promise<void>;
@@ -33,6 +42,12 @@ export interface CommandEnablement {
   'palette.close'?: () => CommandDisabledReason | null;
   'settings.open'?: () => CommandDisabledReason | null;
   'settings.close'?: () => CommandDisabledReason | null;
+  'workspace.create'?: (args: WorkspaceCreateCommandArgs) => CommandDisabledReason | null;
+  'workspace.rename'?: (args: WorkspaceRenameCommandArgs) => CommandDisabledReason | null;
+  'workspace.delete'?: (args: WorkspaceDeleteCommandArgs) => CommandDisabledReason | null;
+  'workspace.createDialog'?: () => CommandDisabledReason | null;
+  'workspace.renameDialog'?: () => CommandDisabledReason | null;
+  'workspace.deleteDialog'?: () => CommandDisabledReason | null;
   'workspace.open'?:  (args: WorkspaceOpenCommandArgs) => CommandDisabledReason | null;
   'workspace.next'?: () => CommandDisabledReason | null;
   'workspace.previous'?: () => CommandDisabledReason | null;
@@ -102,6 +117,24 @@ export class CommandRegistry {
       case 'settings.close':
         await this.handlers['settings.close']();
         return completed();
+      case 'workspace.create':
+        await this.handlers['workspace.create'](invocation.args);
+        return completed();
+      case 'workspace.rename':
+        await this.handlers['workspace.rename'](invocation.args);
+        return completed();
+      case 'workspace.delete':
+        await this.handlers['workspace.delete'](invocation.args);
+        return completed();
+      case 'workspace.createDialog':
+        await this.handlers['workspace.createDialog']();
+        return completed();
+      case 'workspace.renameDialog':
+        await this.handlers['workspace.renameDialog']();
+        return completed();
+      case 'workspace.deleteDialog':
+        await this.handlers['workspace.deleteDialog']();
+        return completed();
       case 'workspace.open':
         await this.handlers['workspace.open'](invocation.args);
         return completed();
@@ -136,6 +169,18 @@ export class CommandRegistry {
         return this.enablement['settings.open']?.() ?? null;
       case 'settings.close':
         return this.enablement['settings.close']?.() ?? null;
+      case 'workspace.create':
+        return this.enablement['workspace.create']?.(command.args) ?? null;
+      case 'workspace.rename':
+        return this.enablement['workspace.rename']?.(command.args) ?? null;
+      case 'workspace.delete':
+        return this.enablement['workspace.delete']?.(command.args) ?? null;
+      case 'workspace.createDialog':
+        return this.enablement['workspace.createDialog']?.() ?? null;
+      case 'workspace.renameDialog':
+        return this.enablement['workspace.renameDialog']?.() ?? null;
+      case 'workspace.deleteDialog':
+        return this.enablement['workspace.deleteDialog']?.() ?? null;
       case 'workspace.open':
         return this.enablement['workspace.open']?.(command.args) ?? null;
       case 'workspace.next':

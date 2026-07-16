@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Keyboard-first workspace cockpit UX
+Stage: App-created durable workspaces complete
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: dynamic tabs/splits on the command/settings foundation, then GUI polish
+Next focus: visible dynamic tabs/splits on the mutable workspace foundation, then GUI polish
 ```
 
 The Windows tech stack is now:
@@ -175,9 +175,9 @@ Acceptance criteria:
 
 Limitations:
 
-- the schema 5 Settings UI edits supported General values and keybindings; launch profiles/workspaces still require JSON edits;
-- General values are restart-required in this slice, while keybinding overrides apply live;
-- schema 5 supports simple column grids rather than free-form splits;
+- the schema 6 Settings UI edits supported General values and keybindings; launch profiles still require JSON edits, while workspace definitions can be created/renamed/deleted in-app;
+- General values are restart-required in this slice, while keybinding overrides and workspace catalog edits apply live;
+- schema 6 supports simple column grids rather than visible tabs/free-form splits;
 - live appearance reload, font discovery, and external workspace files remain future work;
 - changing a configured ID does not automatically kill an old detached hub session.
 
@@ -352,7 +352,7 @@ Status: protocol, retention, polling UI, and acknowledgement complete; CLI publi
 
 ### Immediate product priority: keyboard-first workspace cockpit
 
-Status: phases 1–3 now deliver the typed command boundary, keyboard-complete palette, and persisted editable Settings/keybindings. Visible runtime tabs/splits and authenticated external app control remain later phases.
+Status: phases 1–4 now deliver the typed command boundary, keyboard-complete palette, persisted editable Settings/keybindings, and app-created durable workspaces. Visible runtime tabs/splits and authenticated external app control remain later phases.
 
 #### Phase 1: shared typed command contract, results, and context
 
@@ -383,7 +383,18 @@ Status: phases 1–3 now deliver the typed command boundary, keyboard-complete p
 
 General endpoint/session/appearance fields and close policy are explicitly restart-required for this slice. Launch-profile/workspace editing, live appearance changes, tabs/splits, and CLI transport are not part of phase 3.
 
-#### Phase 4: visible tabs/splits and dynamic pane definitions
+#### Phase 4: app-created durable workspace catalog
+
+- [x] Raise configuration to schema 6 and migrate schema 5 workspace identity/layout/session definitions while deriving path/default profile fields.
+- [x] Add sender-checked revisioned workspace-catalog IPC sharing the Settings revision and preserving non-catalog config/environment boundaries.
+- [x] Add strict external create/rename/delete operations plus UI-only dialog commands in the central registry.
+- [x] Add the visible **+ Workspace** action and reusable keyboard-accessible create/rename/delete modal.
+- [x] Save before renderer mutation, then rebuild mutable descriptors, focus targets, default workspace shortcuts, sidebar/palette targets, active state, and the one-pane grid live.
+- [x] Apply a workspace path as the literal effective profile cwd, persist/relaunch app-created workspaces, and require explicit detach/kill deletion semantics with a last-workspace guard.
+- [x] Tolerate stale syntactic keybinding targets at load, omit them from the effective router, and remove deleted target overrides transactionally.
+- [x] Keep the current grid renderer; visible tabs and split-tree DOM are deliberately the next commit.
+
+#### Phase 5: visible tabs/splits and dynamic pane definitions
 
 - [x] Define terminology and identity: workspace = project/context, tab = top-level layout, pane = session surface, panel = auxiliary UI.
 - [x] Add the pure typed tab/split tree, deterministic configured-grid seeding, validated state schema 3 persistence, and typed save IPC groundwork.
@@ -392,7 +403,7 @@ General endpoint/session/appearance fields and close policy are explicitly resta
 - [ ] Persist dynamic pane definitions that reference validated launch profiles without coupling pane identity to hub session identity.
 - [ ] Restore tabs/splits and dynamic terminal surfaces across relaunch, reconnect, missing sessions, and replacement session incarnations.
 
-#### Phase 5: authenticated local app-control transport for CLI
+#### Phase 6: authenticated local app-control transport for CLI
 
 - [ ] Add a dedicated local app-control endpoint owned by the desktop application, not by the PTY hub protocol.
 - [ ] Authenticate the local transport with a non-relayable or OS-protected mechanism and strict request/result validation.

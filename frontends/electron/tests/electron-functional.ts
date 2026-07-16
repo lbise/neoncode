@@ -92,6 +92,8 @@ function writeTestConfig(
     {
       id: 'default',
       name: 'Development',
+      path: null,
+      defaultLaunchProfile: 'default-shell',
       layout: { columns: 2 },
       sessions: [
         { id: 'shell', title: 'Configured Shell', launchProfile: 'default-shell' },
@@ -101,6 +103,8 @@ function writeTestConfig(
     {
       id: 'review',
       name: 'Review',
+      path: null,
+      defaultLaunchProfile: 'default-shell',
       layout: { columns: 2 },
       sessions: [
         { id: 'review-shell', title: 'Review Shell', launchProfile: 'default-shell' },
@@ -814,7 +818,7 @@ async function runFirstLaunchChecks(
   assert(rendererSecurity.openedWindow === false, 'renderer opened an external window');
   assert(rendererSecurity.permission === 'denied', `notification permission was ${rendererSecurity.permission}`);
   assert(
-    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'getSettings', 'onPrepareClose', 'readClipboardText', 'saveSettings', 'saveWorkspaceLayout', 'setActiveWorkspace', 'writeClipboardText']),
+    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'getSettings', 'getWorkspaceCatalog', 'onPrepareClose', 'readClipboardText', 'saveSettings', 'saveWorkspaceCatalog', 'saveWorkspaceLayout', 'setActiveWorkspace', 'writeClipboardText']),
     `unexpected preload API surface: ${rendererSecurity.desktopKeys.join(',')}`,
   );
 
@@ -875,6 +879,12 @@ async function runFirstLaunchChecks(
       'palette.close',
       'settings.open',
       'settings.close',
+      'workspace.create',
+      'workspace.rename',
+      'workspace.delete',
+      'workspace.createDialog',
+      'workspace.renameDialog',
+      'workspace.deleteDialog',
       'workspace.open',
       'workspace.next',
       'workspace.previous',
@@ -1301,6 +1311,173 @@ async function runSecondLaunchChecks(
   await waitForOutput(instance.page, 'shell', restoredExpected);
 }
 
+async function runWorkspaceCatalogCheck(runToken: string): Promise<void> {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-workspace-catalog-'));
+  const sessionPrefix = `workspace-catalog-${runToken}`;
+  let instance: ElectronTestInstance | undefined;
+  let createdWorkspaceId = '';
+  let createdSessionId = '';
+  try {
+    writeTestConfig(directory);
+    instance = await launchApp(sessionPrefix, directory);
+    const staleRejected = await instance.page.evaluate(async () => {
+      const first = await window.neoncodeDesktop.getWorkspaceCatalog();
+      const second = await window.neoncodeDesktop.getWorkspaceCatalog();
+      await window.neoncodeDesktop.saveWorkspaceCatalog(first);
+      try {
+        await window.neoncodeDesktop.saveWorkspaceCatalog(second);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    assert(staleRejected, 'stale workspace catalog revision was accepted');
+
+    const createButton = instance.page.getByTestId('workspace-create-button');
+    assert(await createButton.isVisible(), 'visible + Workspace button was not rendered');
+    await createButton.click();
+    const dialog = instance.page.getByTestId('workspace-dialog-overlay');
+    await dialog.waitFor({ state: 'visible', timeout });
+    const nameInput = instance.page.getByTestId('workspace-name');
+    assert(await nameInput.evaluate((element) => element === document.activeElement), 'create dialog did not focus Name');
+    await instance.page.keyboard.type('Created Workspace');
+    await instance.page.keyboard.press('Tab');
+    await instance.page.keyboard.type('/tmp');
+    await instance.page.keyboard.press('Tab');
+    await instance.page.keyboard.press('Tab');
+    await instance.page.keyboard.press('Tab');
+    await instance.page.keyboard.press('Enter');
+    await dialog.waitFor({ state: 'hidden', timeout });
+    await instance.page.waitForFunction(() => {
+      const workspaces: unknown = window.neoncodeTest.getState().configuration.workspaces;
+      return Array.isArray(workspaces)
+        && workspaces.some((workspace: unknown) => (
+          typeof workspace === 'object' && workspace !== null
+            && (workspace as { name?: unknown }).name === 'Created Workspace'
+        ));
+    }, null, { timeout });
+
+    let persisted = parseJson<DesktopConfig>(
+      fs.readFileSync(path.join(directory, 'config.json'), 'utf8'),
+      'created workspace configuration',
+    );
+    const created = persisted.workspaces.find((workspace) => workspace.name === 'Created Workspace');
+    assert(created, 'created workspace was not persisted');
+    createdWorkspaceId = created.id;
+    createdSessionId = created.sessions[0]!.id;
+    assert(created.path === '/tmp', 'created workspace path was not persisted');
+    assert(created.defaultLaunchProfile === 'default-shell', 'created default profile was not persisted');
+    await instance.page.waitForFunction((workspaceId) => (
+      window.neoncodeTest.getState().workspace.activeWorkspaceId === workspaceId
+        && window.neoncodeTest.getState().panes.length === 1
+        && window.neoncodeTest.getState().panes.every((pane) => pane.started)
+    ), createdWorkspaceId, { timeout });
+    const createdPane = (await getState(instance.page)).panes[0];
+    assert(createdPane, 'created workspace did not start a terminal');
+    const cwdMarker = `created-cwd-${runToken}`;
+    await sendText(instance.page, createdPane.paneId, `printf 'created-cwd-%s-${runToken}\\n' "$PWD"\n`);
+    await waitForOutput(instance.page, createdPane.paneId, `${cwdMarker.replace(`-${runToken}`, '')}-/tmp-${runToken}`);
+
+    await instance.page.keyboard.press('Control+Shift+P');
+    await instance.page.getByTestId('command-palette-input').fill('Rename Current Workspace');
+    await instance.page.keyboard.press('Enter');
+    await dialog.waitFor({ state: 'visible', timeout });
+    await instance.page.keyboard.press('Control+a');
+    await instance.page.keyboard.type('Renamed Workspace');
+    await instance.page.keyboard.press('Tab');
+    await instance.page.keyboard.press('Tab');
+    await instance.page.keyboard.press('Enter');
+    await dialog.waitFor({ state: 'hidden', timeout });
+    assert(
+      await instance.page.getByTestId(`workspace-${createdWorkspaceId}`).locator('.workspace-name').textContent()
+        === 'Renamed Workspace',
+      'renamed workspace was not updated in the sidebar',
+    );
+    persisted = parseJson<DesktopConfig>(
+      fs.readFileSync(path.join(directory, 'config.json'), 'utf8'),
+      'renamed workspace configuration',
+    );
+    assert(
+      persisted.workspaces.find((workspace) => workspace.id === createdWorkspaceId)?.name === 'Renamed Workspace',
+      'renamed workspace was not persisted',
+    );
+
+    await closeInstance(instance);
+    instance = await launchApp(sessionPrefix, directory);
+    assert(
+      (await getState(instance.page)).workspace.activeWorkspaceId === createdWorkspaceId,
+      'created workspace was not restored active after relaunch',
+    );
+    assert(
+      await instance.page.getByTestId(`workspace-${createdWorkspaceId}`).locator('.workspace-name').textContent()
+        === 'Renamed Workspace',
+      'renamed workspace did not survive relaunch',
+    );
+
+    await instance.page.keyboard.press('Control+Shift+P');
+    await instance.page.getByTestId('command-palette-input').fill('Delete Current Workspace');
+    await instance.page.keyboard.press('Enter');
+    await dialog.waitFor({ state: 'visible', timeout });
+    await instance.page.keyboard.press('Tab');
+    await instance.page.keyboard.press('Tab');
+    await instance.page.keyboard.press('Tab');
+    await instance.page.keyboard.press('Enter');
+    await dialog.waitFor({ state: 'hidden', timeout });
+    await instance.page.waitForFunction((workspaceId) => {
+      const workspaces: unknown = window.neoncodeTest.getState().configuration.workspaces;
+      return Array.isArray(workspaces)
+        && !workspaces.some((workspace: unknown) => (
+          typeof workspace === 'object' && workspace !== null
+            && (workspace as { id?: unknown }).id === workspaceId
+        ));
+    }, createdWorkspaceId, { timeout });
+    assert(
+      (await getState(instance.page)).sessionDiscovery.sessions.includes(`${sessionPrefix}-${createdSessionId}`),
+      'detach deletion silently removed the durable hub session',
+    );
+
+    const recreate = await instance.page.evaluate(async ({ workspaceId, sessionId }) => (
+      window.neoncodeTest.executeCommand('workspace.create', {
+        workspaceId: `${workspaceId}-cleanup`,
+        name: 'Cleanup Workspace',
+        path: '/tmp',
+        defaultLaunchProfile: 'default-shell',
+        sessionId,
+        paneId: sessionId,
+        title: 'Shell',
+      })
+    ), { workspaceId: createdWorkspaceId, sessionId: createdSessionId });
+    assert(recreate.status === 'completed', 'detached session could not be reattached for cleanup');
+    await instance.page.waitForFunction((sessionId) => (
+      window.neoncodeTest.getState().panes.some((pane) => pane.sessionKey === sessionId && pane.started)
+    ), createdSessionId, { timeout });
+    const cleanupWorkspaceId = `${createdWorkspaceId}-cleanup`;
+    const cleanupDelete = await instance.page.evaluate((workspaceId) => (
+      window.neoncodeTest.executeCommand('workspace.delete', { workspaceId, disposition: 'kill' })
+    ), cleanupWorkspaceId);
+    assert(cleanupDelete.status === 'completed', 'cleanup workspace was not killed');
+
+    const deleteReview = await instance.page.evaluate(() => (
+      window.neoncodeTest.executeCommand('workspace.delete', {
+        workspaceId: 'review', disposition: 'kill',
+      })
+    ));
+    assert(deleteReview.status === 'completed', 'review workspace delete failed');
+    const lastGuard = await instance.page.evaluate(() => (
+      window.neoncodeTest.executeCommand('workspace.delete', {
+        workspaceId: 'default', disposition: 'detach',
+      })
+    ));
+    assert(
+      lastGuard.status === 'disabled' && lastGuard.reason === 'Cannot delete the last workspace',
+      'last-workspace delete guard was not enforced',
+    );
+  } finally {
+    await closeInstance(instance).catch(() => {});
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 async function runKillPolicyCheck(runToken: string): Promise<void> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-kill-policy-'));
   const sessionPrefix = `kill-policy-${runToken}`;
@@ -1404,6 +1581,7 @@ async function main(): Promise<void> {
     log('state.final', summarizeState(finalState));
     await closeInstance(instance);
     instance = undefined;
+    await runWorkspaceCatalogCheck(runToken);
     await runKillPolicyCheck(runToken);
     await runInvalidConfigurationCheck(runToken);
     log('passed');

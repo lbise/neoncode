@@ -34,8 +34,11 @@ export type {
   CommandResult,
   CommandResultMap,
   PaneFocusCommandArgs,
+  WorkspaceCreateCommandArgs,
+  WorkspaceDeleteCommandArgs,
   WorkspaceDismissAttentionCommandArgs,
   WorkspaceOpenCommandArgs,
+  WorkspaceRenameCommandArgs,
 } from './command-catalog';
 
 export type ActivationMode = 'attach' | 'start';
@@ -186,6 +189,8 @@ export interface DesktopSessionConfig {
 export interface DesktopWorkspaceConfig {
   id: string;
   name: string;
+  path: string | null;
+  defaultLaunchProfile: string;
   layout: { columns: number };
   sessions: DesktopSessionConfig[];
 }
@@ -206,6 +211,16 @@ export interface SettingsSnapshot {
 export interface SaveSettingsRequest {
   revision: number;
   settings: DesktopSettings;
+}
+
+export interface WorkspaceCatalogSnapshot {
+  revision: number;
+  workspaces: DesktopWorkspaceConfig[];
+}
+
+export interface SaveWorkspaceCatalogRequest {
+  revision: number;
+  workspaces: DesktopWorkspaceConfig[];
 }
 
 export interface DesktopConfig extends DesktopSettings {
@@ -240,12 +255,15 @@ export interface DesktopBootstrapResult {
 export interface RendererBootstrapSession {
   id: string;
   title: string;
+  launchProfileId: string;
   launchProfile: DesktopLaunchProfile;
 }
 
 export interface RendererBootstrapWorkspace {
   id: string;
   name: string;
+  path: string | null;
+  defaultLaunchProfile: string;
   layout: { columns: number };
   sessions: RendererBootstrapSession[];
 }
@@ -261,6 +279,7 @@ export interface RendererBootstrapConfig {
   keybindingOverrides: KeybindingOverride[];
   activeWorkspaceId: string | null;
   workspaceLayouts: Record<string, WorkspaceLayoutState>;
+  launchProfiles: Record<string, DesktopLaunchProfile>;
   workspaces: RendererBootstrapWorkspace[];
   diagnostics: DesktopDiagnostics;
   testMode: boolean;
@@ -274,12 +293,15 @@ export interface PaneDescriptor {
   title: string;
   terminalElementId: string;
   sessionId: string;
+  launchProfileId: string;
   launchProfile: LaunchProfile;
 }
 
 export interface WorkspaceDescriptor {
   id: string;
   name: string;
+  path: string | null;
+  defaultLaunchProfile: string;
   layout: { columns: number };
   panes: PaneDescriptor[];
 }
@@ -303,6 +325,7 @@ export interface RendererAppConfig {
   testMode: boolean;
   activeWorkspaceId: string | null;
   workspaceLayouts: Record<string, WorkspaceLayoutState>;
+  launchProfiles: Record<string, DesktopLaunchProfile>;
   diagnostics: AppDiagnostics;
   workspaces: WorkspaceDescriptor[];
 }
@@ -416,6 +439,8 @@ export interface NeoncodeDesktopApi {
   saveWorkspaceLayout(workspaceId: string, layout: WorkspaceLayoutState): Promise<void>;
   getSettings(): Promise<SettingsSnapshot>;
   saveSettings(request: SaveSettingsRequest): Promise<SettingsSnapshot>;
+  getWorkspaceCatalog(): Promise<WorkspaceCatalogSnapshot>;
+  saveWorkspaceCatalog(request: SaveWorkspaceCatalogRequest): Promise<WorkspaceCatalogSnapshot>;
   onPrepareClose(callback: PrepareCloseCallback): void;
 }
 

@@ -29,8 +29,10 @@ import type {
   RendererBootstrapConfig,
   RendererBootstrapWorkspace,
   SaveSettingsRequest,
+  SaveWorkspaceCatalogRequest,
   SettingsSnapshot,
   TerminalAppearance,
+  WorkspaceCatalogSnapshot,
 } from './shared/types';
 import type { WorkspaceLayoutState } from './shared/layout-model';
 import { loadHubToken } from './token-loader';
@@ -104,7 +106,7 @@ let allowWindowClose = false;
 let closeRequestInFlight = false;
 let closeTimeout: ReturnType<typeof setTimeout> | undefined;
 let stateSaveTimeout: ReturnType<typeof setTimeout> | undefined;
-let settingsRevision = 1;
+let configRevision = 1;
 
 function processIntegrityLevel(): string {
   const result = spawnSync('whoami.exe', ['/groups'], { encoding: 'utf8', windowsHide: true });
@@ -125,6 +127,8 @@ function rendererWorkspaces(): RendererBootstrapWorkspace[] {
   return config.workspaces.map((workspace) => ({
     id: workspace.id,
     name: workspace.name,
+    path: workspace.path,
+    defaultLaunchProfile: workspace.defaultLaunchProfile,
     layout: { ...workspace.layout },
     sessions: workspace.sessions.map((configuredSession) => {
       const launchProfile = config.launchProfiles[configuredSession.launchProfile];
@@ -134,9 +138,11 @@ function rendererWorkspaces(): RendererBootstrapWorkspace[] {
       return {
         id: configuredSession.id,
         title: configuredSession.title,
+        launchProfileId: configuredSession.launchProfile,
         launchProfile: {
           ...launchProfile,
           args: [...launchProfile.args],
+          cwd: workspace.path ?? launchProfile.cwd,
         },
       };
     }),
@@ -166,6 +172,7 @@ function rendererConfig(): RendererBootstrapConfig {
     keybindingOverrides: config ? structuredClone(config.keybindings.overrides) : [],
     activeWorkspaceId,
     workspaceLayouts: rendererWorkspaceLayouts(),
+    launchProfiles: config ? structuredClone(config.launchProfiles) : {},
     workspaces: rendererWorkspaces(),
     diagnostics: {
       configStatus: bootstrapResult.diagnostics.configStatus,
@@ -194,7 +201,7 @@ ipcMain.handle('neoncode:get-settings', (event): SettingsSnapshot => {
   requireCurrentRenderer(event.sender);
   if (!configStore) throw new Error('configuration storage is unavailable');
   return {
-    revision: settingsRevision,
+    revision: configRevision,
     settings: configStore.getStoredSettings(),
   };
 });
@@ -210,7 +217,7 @@ ipcMain.handle('neoncode:save-settings', (event, request: unknown): SettingsSnap
   if (keys.length !== 2 || keys[0] !== 'revision' || keys[1] !== 'settings') {
     throw new Error('settings save request keys must be exactly: revision, settings');
   }
-  if (!Number.isSafeInteger(document.revision) || document.revision !== settingsRevision) {
+  if (!Number.isSafeInteger(document.revision) || document.revision !== configRevision) {
     throw new Error('settings have changed; reopen Settings and try again');
   }
   const saved = configStore.saveSettings(document.settings);
@@ -219,11 +226,67 @@ ipcMain.handle('neoncode:save-settings', (event, request: unknown): SettingsSnap
     ...bootstrapResult,
     config: effective,
   };
-  settingsRevision += 1;
-  log('settings.saved', { revision: settingsRevision });
+  configRevision += 1;
+  log('settings.saved', { revision: configRevision });
   return {
-    revision: settingsRevision,
+    revision: configRevision,
     settings: settingsFromConfig(saved),
+  };
+});
+
+ipcMain.handle('neoncode:get-workspace-catalog', (event): WorkspaceCatalogSnapshot => {
+  requireCurrentRenderer(event.sender);
+  if (!configStore) throw new Error('configuration storage is unavailable');
+  return {
+    revision: configRevision,
+    workspaces: configStore.getStoredWorkspaces(),
+  };
+});
+
+ipcMain.handle('neoncode:save-workspace-catalog', (event, request: unknown): WorkspaceCatalogSnapshot => {
+  requireCurrentRenderer(event.sender);
+  if (!configStore) throw new Error('configuration storage is unavailable');
+  if (request === null || typeof request !== 'object' || Array.isArray(request)) {
+    throw new Error('workspace catalog save request must be an object');
+  }
+  const document = request as Partial<SaveWorkspaceCatalogRequest> & Record<string, unknown>;
+  const keys = Object.keys(document).sort();
+  if (keys.length !== 2 || keys[0] !== 'revision' || keys[1] !== 'workspaces') {
+    throw new Error('workspace catalog save request keys must be exactly: revision, workspaces');
+  }
+  if (!Number.isSafeInteger(document.revision) || document.revision !== configRevision) {
+    throw new Error('configuration has changed; retry the workspace operation');
+  }
+  const saved = configStore.saveWorkspaceCatalog(document.workspaces);
+  const effective = applyEnvironmentOverrides(saved, process.env);
+  bootstrapResult = { ...bootstrapResult, config: effective };
+  configRevision += 1;
+
+  const workspaceIds = new Set(saved.workspaces.map((workspace) => workspace.id));
+  const reconciledState: DesktopState = {
+    ...desktopState,
+    activeWorkspaceId: workspaceIds.has(desktopState.activeWorkspaceId ?? '')
+      ? desktopState.activeWorkspaceId
+      : null,
+    workspaceLayouts: Object.fromEntries(
+      Object.entries(desktopState.workspaceLayouts)
+        .filter(([workspaceId]) => workspaceIds.has(workspaceId)),
+    ),
+  };
+  try {
+    desktopState = configStore.saveState(reconciledState);
+  } catch (error) {
+    desktopState = reconciledState;
+    const warning = `workspace state reconciliation could not be persisted: ${errorMessage(error)}`;
+    if (!bootstrapResult.diagnostics.warnings.includes(warning)) {
+      bootstrapResult.diagnostics.warnings.push(warning);
+    }
+    log('state.workspace-catalog-reconcile-failed', { message: errorMessage(error) });
+  }
+  log('workspace-catalog.saved', { revision: configRevision, count: saved.workspaces.length });
+  return {
+    revision: configRevision,
+    workspaces: structuredClone(saved.workspaces),
   };
 });
 

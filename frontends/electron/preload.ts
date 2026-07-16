@@ -5,7 +5,9 @@ import type {
   NeoncodeDesktopApi,
   PrepareCloseCallback,
   SaveSettingsRequest,
+  SaveWorkspaceCatalogRequest,
   SettingsSnapshot,
+  WorkspaceCatalogSnapshot,
 } from './shared/types';
 
 function deepFreeze<T>(value: T): T {
@@ -20,6 +22,17 @@ function deepFreeze<T>(value: T): T {
 
 function isPrepareCloseCallback(value: unknown): value is PrepareCloseCallback {
   return typeof value === 'function';
+}
+
+function workspaceCatalogSnapshot(value: unknown): WorkspaceCatalogSnapshot {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('workspace catalog IPC returned an invalid response');
+  }
+  const response = value as { revision?: unknown; workspaces?: unknown };
+  if (!Number.isSafeInteger(response.revision) || !Array.isArray(response.workspaces)) {
+    throw new Error('workspace catalog IPC returned an invalid response');
+  }
+  return structuredClone(value) as WorkspaceCatalogSnapshot;
 }
 
 function settingsSnapshot(value: unknown): SettingsSnapshot {
@@ -78,6 +91,19 @@ const desktopApi = Object.freeze({
   async saveSettings(request: SaveSettingsRequest): Promise<SettingsSnapshot> {
     return settingsSnapshot(await ipcRenderer.invoke(
       'neoncode:save-settings',
+      structuredClone(request),
+    ));
+  },
+
+  async getWorkspaceCatalog(): Promise<WorkspaceCatalogSnapshot> {
+    return workspaceCatalogSnapshot(await ipcRenderer.invoke('neoncode:get-workspace-catalog'));
+  },
+
+  async saveWorkspaceCatalog(
+    request: SaveWorkspaceCatalogRequest,
+  ): Promise<WorkspaceCatalogSnapshot> {
+    return workspaceCatalogSnapshot(await ipcRenderer.invoke(
+      'neoncode:save-workspace-catalog',
       structuredClone(request),
     ));
   },

@@ -35,6 +35,24 @@ export class PaneFocusModel {
     return [...paneIds];
   }
 
+  addWorkspace(workspaceId: string, paneIds: readonly string[]): void {
+    if (this.paneIdsByWorkspace.has(workspaceId)) {
+      throw new Error(`duplicate workspace id: ${workspaceId}`);
+    }
+    this.paneIdsByWorkspace.set(workspaceId, validatePaneOrder(workspaceId, paneIds));
+  }
+
+  removeWorkspace(workspaceId: string, activateWorkspaceId?: string): void {
+    if (!this.paneIdsByWorkspace.delete(workspaceId)) {
+      throw new Error(`unknown workspace: ${workspaceId}`);
+    }
+    this.rememberedPaneIds.delete(workspaceId);
+    if (this.activeWorkspaceId !== workspaceId) return;
+    this.activeWorkspaceId = null;
+    this.activePaneId = null;
+    if (activateWorkspaceId !== undefined) this.activateWorkspace(activateWorkspaceId);
+  }
+
   setPaneOrder(workspaceId: string, paneIds: readonly string[]): string | null {
     if (!this.paneIdsByWorkspace.has(workspaceId)) {
       throw new Error(`unknown workspace: ${workspaceId}`);
@@ -57,6 +75,10 @@ export class PaneFocusModel {
       if (this.activePaneId) this.rememberedPaneIds.set(workspaceId, this.activePaneId);
     }
     return this.activeWorkspaceId === workspaceId ? this.activePaneId : null;
+  }
+
+  updateWorkspace(workspaceId: string, paneIds: readonly string[]): string | null {
+    return this.setPaneOrder(workspaceId, paneIds);
   }
 
   activateWorkspace(workspaceId: string): string | null {

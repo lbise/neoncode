@@ -3,6 +3,12 @@ export const COMMAND_IDS = Object.freeze([
   'palette.close',
   'settings.open',
   'settings.close',
+  'workspace.create',
+  'workspace.rename',
+  'workspace.delete',
+  'workspace.createDialog',
+  'workspace.renameDialog',
+  'workspace.deleteDialog',
   'workspace.open',
   'workspace.next',
   'workspace.previous',
@@ -16,6 +22,26 @@ export type CommandId = typeof COMMAND_IDS[number];
 export type CommandCategory = 'Application' | 'Workspace' | 'Pane';
 export type CommandContext = 'application' | 'workspace' | 'pane';
 export type CommandOwningLayer = 'renderer' | 'main' | 'hub';
+
+export interface WorkspaceCreateCommandArgs {
+  workspaceId: string;
+  name: string;
+  path: string | null;
+  defaultLaunchProfile: string;
+  sessionId: string;
+  paneId: string;
+  title: string;
+}
+
+export interface WorkspaceRenameCommandArgs {
+  workspaceId: string;
+  name: string;
+}
+
+export interface WorkspaceDeleteCommandArgs {
+  workspaceId: string;
+  disposition: 'detach' | 'kill';
+}
 
 export interface WorkspaceOpenCommandArgs {
   workspaceId: string;
@@ -34,6 +60,12 @@ export interface CommandArgumentMap {
   'palette.close': undefined;
   'settings.open': undefined;
   'settings.close': undefined;
+  'workspace.create': WorkspaceCreateCommandArgs;
+  'workspace.rename': WorkspaceRenameCommandArgs;
+  'workspace.delete': WorkspaceDeleteCommandArgs;
+  'workspace.createDialog': undefined;
+  'workspace.renameDialog': undefined;
+  'workspace.deleteDialog': undefined;
   'workspace.open': WorkspaceOpenCommandArgs;
   'workspace.next': undefined;
   'workspace.previous': undefined;
@@ -50,6 +82,14 @@ export type CommandDisabledReason =
   | 'Settings are already open'
   | 'Settings are not open'
   | 'Another overlay is open'
+  | 'Workspace catalog update is in progress'
+  | 'Workspace limit reached'
+  | 'Configured session limit reached'
+  | 'Workspace already exists'
+  | 'Session is already configured'
+  | 'Pane is already configured'
+  | 'Launch profile is unavailable'
+  | 'Cannot delete the last workspace'
   | 'No configured workspace is available'
   | 'No other workspace is available'
   | 'Workspace is unavailable'
@@ -72,6 +112,12 @@ export interface CommandResultMap {
   'palette.close': CommandOperationResult;
   'settings.open': CommandOperationResult;
   'settings.close': CommandOperationResult;
+  'workspace.create': CommandOperationResult;
+  'workspace.rename': CommandOperationResult;
+  'workspace.delete': CommandOperationResult;
+  'workspace.createDialog': CommandOperationResult;
+  'workspace.renameDialog': CommandOperationResult;
+  'workspace.deleteDialog': CommandOperationResult;
   'workspace.open': CommandOperationResult;
   'workspace.next': CommandOperationResult;
   'workspace.previous': CommandOperationResult;
@@ -147,6 +193,60 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     category: 'Application',
     context: 'application',
     searchTerms: ['preferences', 'dismiss', 'escape'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'workspace.create': Object.freeze({
+    id: 'workspace.create',
+    title: 'Create Workspace',
+    category: 'Workspace',
+    context: 'workspace',
+    searchTerms: ['new', 'project', 'folder'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'workspace.rename': Object.freeze({
+    id: 'workspace.rename',
+    title: 'Rename Workspace',
+    category: 'Workspace',
+    context: 'workspace',
+    searchTerms: ['edit', 'name', 'project'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'workspace.delete': Object.freeze({
+    id: 'workspace.delete',
+    title: 'Delete Workspace',
+    category: 'Workspace',
+    context: 'workspace',
+    searchTerms: ['remove', 'detach', 'kill'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'workspace.createDialog': Object.freeze({
+    id: 'workspace.createDialog',
+    title: 'Create Workspace…',
+    category: 'Workspace',
+    context: 'workspace',
+    searchTerms: ['new', 'project', 'folder'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'workspace.renameDialog': Object.freeze({
+    id: 'workspace.renameDialog',
+    title: 'Rename Current Workspace…',
+    category: 'Workspace',
+    context: 'workspace',
+    searchTerms: ['edit', 'name', 'project'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'workspace.deleteDialog': Object.freeze({
+    id: 'workspace.deleteDialog',
+    title: 'Delete Current Workspace…',
+    category: 'Workspace',
+    context: 'workspace',
+    searchTerms: ['remove', 'detach', 'kill'],
     owningLayer: 'renderer',
     externalInvocation: false,
   }),
@@ -240,7 +340,21 @@ function hasExactKeys(value: UnknownRecord, expected: readonly string[]): boolea
 }
 
 function isBoundedIdentifier(value: unknown): value is string {
-  return typeof value === 'string' && /^[A-Za-z0-9._-]{1,128}$/u.test(value);
+  return typeof value === 'string' && /^[A-Za-z0-9._-]{1,64}$/u.test(value);
+}
+
+function isBoundedLabel(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && new TextEncoder().encode(value).length <= 64
+    && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
+}
+
+function isWorkspacePath(value: unknown): value is string | null {
+  return value === null || (typeof value === 'string'
+    && value.length > 0
+    && new TextEncoder().encode(value).length <= 4096
+    && !/[\u0000-\u001f\u007f-\u009f]/u.test(value));
 }
 
 function validateTargetArgs(value: unknown, key: 'workspaceId' | 'paneId'): Record<typeof key, string> {
@@ -259,12 +373,63 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
     case 'palette.close':
     case 'settings.open':
     case 'settings.close':
+    case 'workspace.createDialog':
+    case 'workspace.renameDialog':
+    case 'workspace.deleteDialog':
     case 'workspace.next':
     case 'workspace.previous':
     case 'pane.next':
     case 'pane.previous':
       if (!hasExactKeys(value, ['id'])) throw new Error(`Invalid ${value.id} command invocation`);
       return { id: value.id };
+    case 'workspace.create': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, [
+            'workspaceId', 'name', 'path', 'defaultLaunchProfile', 'sessionId', 'paneId', 'title',
+          ])
+          || !isBoundedIdentifier(value.args.workspaceId)
+          || !isBoundedLabel(value.args.name)
+          || !isWorkspacePath(value.args.path)
+          || !isBoundedIdentifier(value.args.defaultLaunchProfile)
+          || !isBoundedIdentifier(value.args.sessionId)
+          || !isBoundedIdentifier(value.args.paneId)
+          || !isBoundedLabel(value.args.title)) {
+        throw new Error('Invalid workspace.create command arguments');
+      }
+      return {
+        id: value.id,
+        args: {
+          workspaceId: value.args.workspaceId,
+          name: value.args.name,
+          path: value.args.path,
+          defaultLaunchProfile: value.args.defaultLaunchProfile,
+          sessionId: value.args.sessionId,
+          paneId: value.args.paneId,
+          title: value.args.title,
+        },
+      };
+    }
+    case 'workspace.rename': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, ['workspaceId', 'name'])
+          || !isBoundedIdentifier(value.args.workspaceId)
+          || !isBoundedLabel(value.args.name)) {
+        throw new Error('Invalid workspace.rename command arguments');
+      }
+      return { id: value.id, args: { workspaceId: value.args.workspaceId, name: value.args.name } };
+    }
+    case 'workspace.delete': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, ['workspaceId', 'disposition'])
+          || !isBoundedIdentifier(value.args.workspaceId)
+          || (value.args.disposition !== 'detach' && value.args.disposition !== 'kill')) {
+        throw new Error('Invalid workspace.delete command arguments');
+      }
+      return {
+        id: value.id,
+        args: { workspaceId: value.args.workspaceId, disposition: value.args.disposition },
+      };
+    }
     case 'workspace.open': {
       if (!hasExactKeys(value, ['id', 'args'])) throw new Error('Invalid workspace.open command invocation');
       const args = validateTargetArgs(value.args, 'workspaceId');

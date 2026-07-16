@@ -174,7 +174,7 @@ function testUnversionedTerminalConfigMigration() {
     assert.equal(result.diagnostics.configStatus, 'migrated');
     assert.equal(loadedConfig(result).terminal.fontFamily, 'FiraCode Nerd Font Mono');
     assert.equal(loadedConfig(result).terminal.theme.background, '#0c0c0c');
-    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 5);
+    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 6);
     assert(result.diagnostics.warnings.some((warning) => warning.includes('were imported')));
     const preserved = fs.readdirSync(directory)
       .find((name) => name.startsWith('config.json.pre-migration-'));
@@ -208,7 +208,7 @@ function testSchemaTwoColorArrayMigration() {
     fs.writeFileSync(store.configPath, `${JSON.stringify(schemaTwo)}\n`);
 
     const result = store.load({});
-    assert.equal(loadedConfig(result).schemaVersion, 5);
+    assert.equal(loadedConfig(result).schemaVersion, 6);
     assert.equal(loadedConfig(result).terminal.theme.purple, named.purple);
     assert.equal(loadedConfig(result).terminal.theme.brightPurple, named.brightPurple);
     assert.equal(loadedConfig(result).terminal.theme.name, 'NeonCode Default');
@@ -229,7 +229,7 @@ function testSchemaOneImportsPreservedLegacyAppearance() {
     }));
 
     const result = store.load({});
-    assert.equal(loadedConfig(result).schemaVersion, 5);
+    assert.equal(loadedConfig(result).schemaVersion, 6);
     assert.equal(sessionAt(workspaceAt(loadedConfig(result))).title, 'Keep Me');
     assert.equal(loadedConfig(result).terminal.fontFamily, 'Legacy Font');
     assert.equal(loadedConfig(result).terminal.fontSize, 17);
@@ -249,11 +249,11 @@ function testLegacyMigration() {
     }));
     const result = store.load({});
     assert.equal(result.diagnostics.configStatus, 'migrated');
-    assert.equal(loadedConfig(result).schemaVersion, 5);
+    assert.equal(loadedConfig(result).schemaVersion, 6);
     assert.equal(loadedConfig(result).hub.endpoint, 'ws://127.0.0.1:45000/ws');
     assert.equal(loadedConfig(result).persistence.onWindowClose, 'kill');
     assert.equal(workspaceAt(loadedConfig(result)).sessions.length, 1);
-    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 5);
+    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 6);
   });
 }
 
@@ -335,12 +335,18 @@ function testSchemaFourKeybindingMigration() {
     const current = defaultConfig();
     const { keybindings, ...schemaFour } = current;
     void keybindings;
+    schemaFour.workspaces = schemaFour.workspaces.map((workspace) => {
+      const { path: workspacePath, defaultLaunchProfile, ...legacyWorkspace } = workspace;
+      void workspacePath;
+      void defaultLaunchProfile;
+      return legacyWorkspace as DesktopWorkspaceConfig;
+    });
     fs.writeFileSync(store.configPath, `${JSON.stringify({ ...schemaFour, schemaVersion: 4 })}\n`);
     const result = store.load({});
     assert.equal(result.diagnostics.configStatus, 'migrated');
-    assert.equal(loadedConfig(result).schemaVersion, 5);
+    assert.equal(loadedConfig(result).schemaVersion, 6);
     assert.deepEqual(loadedConfig(result).keybindings, { overrides: [] });
-    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 5);
+    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 6);
     assert(fs.readdirSync(directory).some((name) => name.startsWith('config.json.pre-migration-')));
   });
 }
@@ -420,11 +426,147 @@ function testSettingsSaveValidationAndAtomicFailure() {
   });
 }
 
+function schemaFiveConfig(config = defaultConfig()): unknown {
+  return {
+    ...config,
+    schemaVersion: 5,
+    workspaces: config.workspaces.map((workspace) => {
+      const { path: workspacePath, defaultLaunchProfile, ...legacy } = workspace;
+      void workspacePath;
+      void defaultLaunchProfile;
+      return legacy;
+    }),
+  };
+}
+
+function testSchemaFiveWorkspaceMigration() {
+  const config = defaultConfig();
+  config.launchProfiles.first = {
+    type: 'process', command: 'bash', args: [], cwd: '/home/me/project',
+  };
+  config.launchProfiles.second = {
+    type: 'process', command: 'bash', args: ['-l'], cwd: '/home/me/project',
+  };
+  const workspace = workspaceAt(config);
+  workspace.id = 'preserved-id';
+  workspace.name = 'Preserved Name';
+  workspace.layout.columns = 2;
+  workspace.sessions[0]!.launchProfile = 'first';
+  workspace.sessions[1]!.launchProfile = 'second';
+  const migrated = validateConfig(schemaFiveConfig(config));
+  assert.equal(migrated.migrationSource, 'schema_5');
+  assert.equal(migrated.value.schemaVersion, 6);
+  assert.equal(workspaceAt(migrated.value).id, 'preserved-id');
+  assert.equal(workspaceAt(migrated.value).name, 'Preserved Name');
+  assert.equal(workspaceAt(migrated.value).defaultLaunchProfile, 'first');
+  assert.equal(workspaceAt(migrated.value).path, '/home/me/project');
+  assert.deepEqual(workspaceAt(migrated.value).sessions, workspace.sessions);
+
+  config.launchProfiles.second!.cwd = '/home/me/other';
+  const mixed = validateConfig(schemaFiveConfig(config)).value;
+  assert.equal(workspaceAt(mixed).path, null);
+}
+
+function testSchemaSixWorkspacePathAndDefaultProfileValidation() {
+  const unknownDefault = defaultConfig();
+  workspaceAt(unknownDefault).defaultLaunchProfile = 'missing';
+  assert.throws(() => validateConfig(unknownDefault), /unknown default launch profile/u);
+
+  for (const badPath of ['', 'bad\0path', 'bad\npath', 'é'.repeat(2049)]) {
+    const malformed = defaultConfig();
+    workspaceAt(malformed).path = badPath;
+    assert.throws(() => validateConfig(malformed), /path/u);
+  }
+
+  const unexpected = structuredClone(workspaceAt(defaultConfig())) as DesktopWorkspaceConfig & {
+    unexpected?: boolean;
+  };
+  unexpected.unexpected = true;
+  const malformed = defaultConfig();
+  malformed.workspaces = [unexpected];
+  assert.throws(() => validateConfig(malformed), /keys must be exactly/u);
+}
+
+function testWorkspaceCatalogSavePreservesConfigAndRemovesDeletedTargets() {
+  withStore((store) => {
+    const previous = loadedConfig(store.load({}));
+    previous.hub.endpoint = 'ws://127.0.0.1:45555/ws';
+    previous.terminal.fontSize = 19;
+    previous.launchProfiles.preserved = {
+      type: 'process', command: 'bash', args: ['-l'], cwd: '/tmp/preserved',
+    };
+    previous.workspaces.push({
+      id: 'delete-me',
+      name: 'Delete Me',
+      path: '/tmp/preserved',
+      defaultLaunchProfile: 'preserved',
+      layout: { columns: 1 },
+      sessions: [{ id: 'delete-shell', title: 'Delete Shell', launchProfile: 'preserved' }],
+    });
+    previous.keybindings.overrides = [
+      {
+        command: { id: 'workspace.open', args: { workspaceId: 'delete-me' } },
+        binding: { code: 'F8', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false },
+      },
+      {
+        command: { id: 'pane.focus', args: { paneId: 'delete-shell' } },
+        binding: { code: 'F9', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false },
+      },
+    ];
+    fs.writeFileSync(store.configPath, `${JSON.stringify(previous)}\n`);
+
+    const catalog = store.getStoredWorkspaces().filter((workspace) => workspace.id !== 'delete-me');
+    catalog[0]!.name = 'Renamed';
+    const saved = store.saveWorkspaceCatalog(catalog);
+    assert.equal(saved.hub.endpoint, previous.hub.endpoint);
+    assert.equal(saved.terminal.fontSize, 19);
+    assert.deepEqual(saved.launchProfiles, previous.launchProfiles);
+    assert.equal(workspaceAt(saved).name, 'Renamed');
+    assert.deepEqual(saved.keybindings.overrides, []);
+    assert.deepEqual(readJson<DesktopConfig>(store.configBackupPath), previous);
+    assert.deepEqual(readJson<DesktopConfig>(store.configPath), saved);
+  });
+}
+
+function testWorkspaceCatalogBackupFailurePreservesPrimary() {
+  withStore((store) => {
+    const previous = loadedConfig(store.load({}));
+    const replacement = store.getStoredWorkspaces();
+    replacement[0]!.name = 'Not Saved';
+    const mutableFs = fs as { renameSync: typeof fs.renameSync };
+    const originalRename = mutableFs.renameSync;
+    mutableFs.renameSync = (source, destination) => {
+      if (destination.toString() === store.configBackupPath) {
+        throw new Error('injected catalog backup failure');
+      }
+      return originalRename(source, destination);
+    };
+    try {
+      assert.throws(
+        () => store.saveWorkspaceCatalog(replacement),
+        /injected catalog backup failure/u,
+      );
+    } finally {
+      mutableFs.renameSync = originalRename;
+    }
+    assert.deepEqual(readJson<DesktopConfig>(store.configPath), previous);
+  });
+}
+
+function testStaleTargetKeybindingsAreToleratedAtLoad() {
+  const config = defaultConfig();
+  config.keybindings.overrides = [{
+    command: { id: 'workspace.open', args: { workspaceId: 'deleted-workspace' } },
+    binding: { code: 'F8', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false },
+  }];
+  assert.deepEqual(validateConfig(config).value.keybindings, config.keybindings);
+}
+
 function testSchemaThreeWorkspaceMigration() {
   const legacy = schemaThreeConfig();
   legacy.sessions[0]!.title = 'Migrated Shell';
   const result = validateConfig(legacy);
-  assert.equal(result.value.schemaVersion, 5);
+  assert.equal(result.value.schemaVersion, 6);
   assert.equal(workspaceAt(result.value).id, 'default');
   assert.equal(workspaceAt(result.value).layout.columns, 2);
   assert.equal(sessionAt(workspaceAt(result.value)).title, 'Migrated Shell');
@@ -436,6 +578,8 @@ function testWorkspaceValidationAndEightPanes() {
   config.workspaces.push({
     id: 'project',
     name: 'Project',
+    path: '/tmp/project',
+    defaultLaunchProfile: 'default-shell',
     layout: { columns: 4 },
     sessions: Array.from({ length: 8 }, (_, index) => ({
       id: `project-${index + 1}`,
@@ -463,6 +607,8 @@ function testWorkspaceValidationAndEightPanes() {
   tooManySessions.workspaces = Array.from({ length: 9 }, (_, workspaceIndex) => ({
     id: `workspace-${workspaceIndex}`,
     name: `Workspace ${workspaceIndex}`,
+    path: null,
+    defaultLaunchProfile: 'default-shell',
     layout: { columns: 4 },
     sessions: Array.from({ length: 8 }, (_, sessionIndex) => ({
       id: `workspace-${workspaceIndex}-session-${sessionIndex}`,
@@ -730,6 +876,11 @@ for (const test of [
   testSchemaFourKeybindingMigration,
   testSettingsSaveMergesStoredConfigAndBacksUp,
   testSettingsSaveValidationAndAtomicFailure,
+  testSchemaFiveWorkspaceMigration,
+  testSchemaSixWorkspacePathAndDefaultProfileValidation,
+  testWorkspaceCatalogSavePreservesConfigAndRemovesDeletedTargets,
+  testWorkspaceCatalogBackupFailurePreservesPrimary,
+  testStaleTargetKeybindingsAreToleratedAtLoad,
   testSchemaThreeWorkspaceMigration,
   testWorkspaceValidationAndEightPanes,
   testStateSchemaOneMigration,

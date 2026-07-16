@@ -10,6 +10,14 @@ async function run(): Promise<void> {
     'palette.close': () => { calls.push('palette.close'); },
     'settings.open': () => { calls.push('settings.open'); },
     'settings.close': () => { calls.push('settings.close'); },
+    'workspace.create': ({ workspaceId }) => { calls.push(`workspace.create:${workspaceId}`); },
+    'workspace.rename': ({ workspaceId }) => { calls.push(`workspace.rename:${workspaceId}`); },
+    'workspace.delete': ({ workspaceId, disposition }) => {
+      calls.push(`workspace.delete:${workspaceId}:${disposition}`);
+    },
+    'workspace.createDialog': () => { calls.push('workspace.createDialog'); },
+    'workspace.renameDialog': () => { calls.push('workspace.renameDialog'); },
+    'workspace.deleteDialog': () => { calls.push('workspace.deleteDialog'); },
     'workspace.open': ({ workspaceId }) => { calls.push(`workspace.open:${workspaceId}`); },
     'workspace.next': () => { calls.push('workspace.next'); },
     'workspace.previous': () => { calls.push('workspace.previous'); },
@@ -33,6 +41,12 @@ async function run(): Promise<void> {
       'palette.close',
       'settings.open',
       'settings.close',
+      'workspace.create',
+      'workspace.rename',
+      'workspace.delete',
+      'workspace.createDialog',
+      'workspace.renameDialog',
+      'workspace.deleteDialog',
       'workspace.open',
       'workspace.next',
       'workspace.previous',
@@ -75,6 +89,20 @@ async function run(): Promise<void> {
   await registry.execute('palette.close');
   await registry.execute('settings.open');
   await registry.execute('settings.close');
+  await registry.execute('workspace.create', {
+    workspaceId: 'created',
+    name: 'Created',
+    path: '/tmp/created',
+    defaultLaunchProfile: 'default-shell',
+    sessionId: 'created-shell',
+    paneId: 'created-pane',
+    title: 'Shell',
+  });
+  await registry.execute('workspace.rename', { workspaceId: 'created', name: 'Renamed' });
+  await registry.execute('workspace.delete', { workspaceId: 'created', disposition: 'detach' });
+  await registry.execute('workspace.createDialog');
+  await registry.execute('workspace.renameDialog');
+  await registry.execute('workspace.deleteDialog');
   await registry.execute('workspace.open', { workspaceId: 'review' });
   await registry.execute('workspace.next');
   await registry.execute('workspace.previous');
@@ -88,6 +116,12 @@ async function run(): Promise<void> {
     'palette.close',
     'settings.open',
     'settings.close',
+    'workspace.create:created',
+    'workspace.rename:created',
+    'workspace.delete:created:detach',
+    'workspace.createDialog',
+    'workspace.renameDialog',
+    'workspace.deleteDialog',
     'workspace.open:review',
     'workspace.next',
     'workspace.previous',
@@ -107,6 +141,12 @@ async function run(): Promise<void> {
     'palette.close': () => {},
     'settings.open': () => {},
     'settings.close': () => {},
+    'workspace.create': () => {},
+    'workspace.rename': () => {},
+    'workspace.delete': () => {},
+    'workspace.createDialog': () => {},
+    'workspace.renameDialog': () => {},
+    'workspace.deleteDialog': () => {},
     'workspace.open': () => {},
     'workspace.next': () => {},
     'workspace.previous': () => {},

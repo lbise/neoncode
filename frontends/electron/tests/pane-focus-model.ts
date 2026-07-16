@@ -30,6 +30,17 @@ assert.equal(
   'removed remembered pane did not fall back to the first ordered pane',
 );
 
+focus.addWorkspace('created', ['created-shell']);
+assert.equal(focus.activateWorkspace('created'), 'created-shell');
+focus.updateWorkspace('created', ['created-shell', 'created-tasks']);
+assert.equal(focus.nextPane(), 'created-tasks');
+focus.removeWorkspace('created', 'review');
+assert.equal(focus.activeWorkspaceId, 'review');
+assert.equal(focus.activePaneId, 'review-shell');
+assert.throws(() => focus.addWorkspace('review', []), /duplicate workspace/);
+assert.throws(() => focus.removeWorkspace('missing'), /unknown workspace/);
+
+focus.activateWorkspace('development');
 focus.setPaneOrder('development', []);
 assert.equal(focus.activePaneId, null);
 assert.equal(focus.nextPane(), null);

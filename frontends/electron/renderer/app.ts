@@ -1,4 +1,6 @@
 import type {
+  DesktopLaunchProfile,
+  DesktopWorkspaceConfig,
   ExitSummary,
   LaunchProfile,
   NormalizedSessionSummary,
@@ -19,8 +21,12 @@ import {
   type CommandInvocation,
   type CommandMetadata,
   type CommandOperationResult,
+  type WorkspaceCreateCommandArgs,
+  type WorkspaceDeleteCommandArgs,
+  type WorkspaceRenameCommandArgs,
 } from '../shared/command-catalog';
 import {
+  availableKeybindingOverrides,
   createConcreteCommandInvocations,
   createDefaultKeybindings,
   mergeKeybindings,
@@ -39,6 +45,7 @@ import { SessionModel } from './session-model';
 import { SettingsView, type BindableCommandEntry } from './settings-view';
 import { TerminalPane } from './terminal-pane';
 import { installRendererTestApi } from './test-api';
+import { WorkspaceDialog } from './workspace-dialog';
 
 export const STARTUP_SESSION_LIST_TIMEOUT_MS = 2000;
 export const CONTROL_OPERATION_TIMEOUT_MS = 1500;
@@ -143,6 +150,14 @@ function parseLaunchProfile(value: unknown): LaunchProfile {
   return profile.type === 'process' ? { type: 'process', ...parsed } : parsed;
 }
 
+function parseLaunchProfiles(value: unknown): Record<string, DesktopLaunchProfile> {
+  if (!isRecord(value)) throw new Error('Invalid renderer bootstrap launch profiles');
+  return Object.fromEntries(Object.entries(value).map(([profileId, profile]) => {
+    const parsed = parseLaunchProfile(profile);
+    return [profileId, { ...parsed, type: 'process' as const, args: [...parsed.args] }];
+  }));
+}
+
 function parseTerminalAppearance(value: unknown): TerminalAppearance {
   const appearance = requiredRecord(value, 'terminal appearance');
   const theme = requiredRecord(appearance.theme, 'terminal theme');
@@ -231,9 +246,18 @@ export function createWorkspaceDescriptors(bootstrap: unknown): WorkspaceDescrip
     const layout = requiredRecord(workspace.layout, 'workspace layout');
     const sessions = workspace.sessions;
     if (!Array.isArray(sessions)) throw new Error('Invalid renderer bootstrap workspace sessions');
+    const workspacePath = workspace.path;
+    if (workspacePath !== null && typeof workspacePath !== 'string') {
+      throw new Error('Invalid renderer bootstrap workspace path');
+    }
     return {
       id,
       name: requiredString(workspace.name, 'workspace name'),
+      path: workspacePath,
+      defaultLaunchProfile: requiredString(
+        workspace.defaultLaunchProfile,
+        'workspace default launch profile',
+      ),
       layout: { columns: requiredNumber(layout.columns, 'workspace columns') },
       panes: sessions.map((rawSession, index) => {
         const session = requiredRecord(rawSession, 'session');
@@ -246,6 +270,7 @@ export function createWorkspaceDescriptors(bootstrap: unknown): WorkspaceDescrip
           title: requiredString(session.title, 'session title'),
           terminalElementId: `terminal-${id}-${sessionKey}`,
           sessionId: createSessionId(sessionPrefix, sessionKey),
+          launchProfileId: requiredString(session.launchProfileId, 'session launch profile id'),
           launchProfile: parseLaunchProfile(session.launchProfile),
         };
       }),
@@ -266,13 +291,15 @@ export function createAppConfig(bootstrap: unknown = {}): RendererAppConfig {
   const diagnostics = isRecord(source.diagnostics) ? source.diagnostics : {};
   const persistencePolicy: PersistencePolicy = source.persistencePolicy === 'kill' ? 'kill' : 'detach';
   const workspaces = createWorkspaceDescriptors(source);
+  const allowedInvocations = createConcreteCommandInvocations(
+    workspaces.map((workspace) => workspace.id),
+    workspaces.flatMap((workspace) => workspace.panes.map((pane) => pane.paneId)),
+  );
   const keybindingOverrides = validateKeybindingSettings(
     { overrides: source.keybindingOverrides ?? [] },
     createDefaultKeybindings(workspaces.map((workspace) => workspace.id)),
-    createConcreteCommandInvocations(
-      workspaces.map((workspace) => workspace.id),
-      workspaces.flatMap((workspace) => workspace.panes.map((pane) => pane.paneId)),
-    ),
+    allowedInvocations,
+    { tolerateUnavailable: true },
   ).overrides;
   return {
     schemaVersion: source.schemaVersion,
@@ -288,6 +315,7 @@ export function createAppConfig(bootstrap: unknown = {}): RendererAppConfig {
       ? source.activeWorkspaceId
       : null,
     workspaceLayouts: parseWorkspaceLayouts(source.workspaceLayouts),
+    launchProfiles: parseLaunchProfiles(source.launchProfiles ?? {}),
     diagnostics: {
       configStatus: stringOr(diagnostics.configStatus, 'error'),
       stateStatus: stringOr(diagnostics.stateStatus, 'error'),
@@ -312,7 +340,12 @@ export class NeonCodeApp {
   keybindingRouter: KeybindingRouter;
   readonly commandPalette: CommandPalette;
   readonly settingsView: SettingsView;
+  readonly workspaceDialog: WorkspaceDialog;
   readonly onDocumentKeyDown = (event: KeyboardEvent): void => {
+    if (this.workspaceDialog.isOpen) {
+      this.workspaceDialog.handleKeyDown(event);
+      return;
+    }
     if (this.settingsView.isOpen) {
       this.settingsView.handleKeyDown(event);
       return;
@@ -348,6 +381,7 @@ export class NeonCodeApp {
   closePromise: Promise<void> | undefined;
   switchPromise: Promise<void> = Promise.resolve();
   switching = false;
+  catalogSaving = false;
 
   constructor({ documentRef = document, windowRef = window, bootstrap = {} }: NeonCodeAppOptions = {}) {
     this.document = documentRef;
@@ -367,6 +401,12 @@ export class NeonCodeApp {
       'palette.close': () => this.commandPalette.close(),
       'settings.open': () => this.settingsView.open(),
       'settings.close': () => this.settingsView.close(),
+      'workspace.create': (args) => this.createWorkspace(args),
+      'workspace.rename': (args) => this.renameWorkspace(args),
+      'workspace.delete': (args) => this.deleteWorkspace(args),
+      'workspace.createDialog': () => this.workspaceDialog.open('create'),
+      'workspace.renameDialog': () => this.workspaceDialog.open('rename'),
+      'workspace.deleteDialog': () => this.workspaceDialog.open('delete'),
       'workspace.open': ({ workspaceId }) => this.switchWorkspace(workspaceId),
       'workspace.next': () => this.switchRelativeWorkspace(1),
       'workspace.previous': () => this.switchRelativeWorkspace(-1),
@@ -379,12 +419,22 @@ export class NeonCodeApp {
         ? 'Application is closing'
         : this.settingsView.isOpen
           ? 'Another overlay is open'
-          : this.commandPalette.isOpen ? 'Command palette is already open' : null,
+          : this.workspaceDialog.isOpen
+            ? 'Another overlay is open'
+            : this.commandPalette.isOpen ? 'Command palette is already open' : null,
       'palette.close': () => this.commandPalette.isOpen ? null : 'Command palette is not open',
       'settings.open': () => this.closed
         ? 'Application is closing'
-        : this.settingsView.isOpen ? 'Settings are already open' : null,
+        : this.workspaceDialog.isOpen || this.commandPalette.isOpen
+          ? 'Another overlay is open'
+          : this.settingsView.isOpen ? 'Settings are already open' : null,
       'settings.close': () => this.settingsView.isOpen ? null : 'Settings are not open',
+      'workspace.create': (args) => this.createWorkspaceDisabledReason(args),
+      'workspace.rename': (args) => this.renameWorkspaceDisabledReason(args.workspaceId),
+      'workspace.delete': (args) => this.deleteWorkspaceDisabledReason(args.workspaceId),
+      'workspace.createDialog': () => this.workspaceDialogDisabledReason('create'),
+      'workspace.renameDialog': () => this.workspaceDialogDisabledReason('rename'),
+      'workspace.deleteDialog': () => this.workspaceDialogDisabledReason('delete'),
       'workspace.open': ({ workspaceId }) => this.workspaceCommandDisabledReason(workspaceId),
       'workspace.next': () => this.relativeWorkspaceCommandDisabledReason(),
       'workspace.previous': () => this.relativeWorkspaceCommandDisabledReason(),
@@ -395,7 +445,10 @@ export class NeonCodeApp {
     });
     this.keybindingRouter = new KeybindingRouter(mergeKeybindings(
       this.defaultKeybindings(),
-      this.config.keybindingOverrides,
+      availableKeybindingOverrides(
+        this.config.keybindingOverrides,
+        this.allowedKeybindingInvocations(),
+      ),
     ));
     this.commandPalette = new CommandPalette({
       documentRef: this.document,
@@ -415,35 +468,32 @@ export class NeonCodeApp {
       closeCommand: () => { void this.dispatchCommand({ id: 'settings.close' }); },
       restoreActivePaneFocus: () => this.applyActivePaneFocus(),
     });
+    this.workspaceDialog = new WorkspaceDialog({
+      documentRef: this.document,
+      getLaunchProfiles: () => this.config.launchProfiles,
+      getActiveWorkspace: () => {
+        const workspace = this.config.workspaces.find(
+          (candidate) => candidate.id === this.activeWorkspaceId,
+        );
+        return workspace ? { id: workspace.id, name: workspace.name } : null;
+      },
+      dispatchCreate: (args) => this.dispatchCommand({ id: 'workspace.create', args }),
+      dispatchRename: (args) => this.dispatchCommand({ id: 'workspace.rename', args }),
+      dispatchDelete: (args) => this.dispatchCommand({ id: 'workspace.delete', args }),
+      restoreActivePaneFocus: () => this.applyActivePaneFocus(),
+    });
     requiredElement(this.document, 'commands-button').addEventListener('click', () => {
       void this.dispatchCommand({ id: 'palette.open' });
     });
     requiredElement(this.document, 'settings-button').addEventListener('click', () => {
       void this.dispatchCommand({ id: 'settings.open' });
     });
+    requiredElement(this.document, 'workspace-create-button').addEventListener('click', () => {
+      void this.dispatchCommand({ id: 'workspace.createDialog' });
+    });
     this.updateCommandsShortcutLabel();
     this.document.addEventListener('keydown', this.onDocumentKeyDown, true);
-    this.sessionModel.setConfiguration({
-      valid: this.config.configurationValid,
-      configStatus: this.config.diagnostics.configStatus,
-      stateStatus: this.config.diagnostics.stateStatus,
-      warnings: this.config.diagnostics.warnings,
-      errors: this.config.diagnostics.errors,
-      persistencePolicy: this.config.persistencePolicy,
-      terminal: this.config.terminal,
-      activeWorkspaceId: this.config.activeWorkspaceId,
-      workspaces: this.config.workspaces.map((workspace) => ({
-        id: workspace.id,
-        name: workspace.name,
-        layout: workspace.layout,
-        sessions: workspace.panes.map(({ paneId, title, sessionId, launchProfile }) => ({
-          id: paneId,
-          title,
-          sessionId,
-          launchProfile,
-        })),
-      })),
-    });
+    this.syncPublicConfiguration();
     this.workspaceSessionStates = new Map(
       this.config.workspaces.flatMap((workspace) => workspace.panes.map((pane) => [
         pane.sessionId,
@@ -470,6 +520,34 @@ export class NeonCodeApp {
     return this.commandRegistry.list();
   }
 
+  syncPublicConfiguration(): void {
+    this.sessionModel.setConfiguration({
+      valid: this.config.configurationValid,
+      configStatus: this.config.diagnostics.configStatus,
+      stateStatus: this.config.diagnostics.stateStatus,
+      warnings: this.config.diagnostics.warnings,
+      errors: this.config.diagnostics.errors,
+      persistencePolicy: this.config.persistencePolicy,
+      terminal: this.config.terminal,
+      activeWorkspaceId: this.activeWorkspaceId ?? this.config.activeWorkspaceId,
+      workspaces: this.config.workspaces.map((workspace) => ({
+        id: workspace.id,
+        name: workspace.name,
+        path: workspace.path,
+        defaultLaunchProfile: workspace.defaultLaunchProfile,
+        layout: workspace.layout,
+        sessions: workspace.panes.map((pane) => ({
+          id: pane.sessionKey,
+          paneId: pane.paneId,
+          title: pane.title,
+          sessionId: pane.sessionId,
+          launchProfileId: pane.launchProfileId,
+          launchProfile: pane.launchProfile,
+        })),
+      })),
+    });
+  }
+
   async dispatchCommand(command: CommandInvocation): Promise<CommandDispatchResult> {
     try {
       return await this.commandRegistry.executeInvocation(command);
@@ -479,6 +557,60 @@ export class NeonCodeApp {
       this.setStatus(`Command failed: ${message}`);
       return { status: 'failed', message };
     }
+  }
+
+  workspaceDialogDisabledReason(mode: 'create' | 'rename' | 'delete'): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    if (this.catalogSaving || this.switching) return 'Workspace catalog update is in progress';
+    if (this.commandPalette.isOpen || this.settingsView.isOpen || this.workspaceDialog.isOpen) {
+      return 'Another overlay is open';
+    }
+    if (mode === 'create') {
+      if (this.config.workspaces.length >= 16) return 'Workspace limit reached';
+      const sessions = this.config.workspaces.reduce((count, workspace) => count + workspace.panes.length, 0);
+      if (sessions >= 64) return 'Configured session limit reached';
+      return null;
+    }
+    if (!this.activeWorkspaceId) return 'Workspace is unavailable';
+    if (mode === 'delete' && this.config.workspaces.length === 1) {
+      return 'Cannot delete the last workspace';
+    }
+    return null;
+  }
+
+  createWorkspaceDisabledReason(args: WorkspaceCreateCommandArgs): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    if (this.catalogSaving || this.switching) return 'Workspace catalog update is in progress';
+    if (this.config.workspaces.length >= 16) return 'Workspace limit reached';
+    const paneCount = this.config.workspaces.reduce((count, workspace) => count + workspace.panes.length, 0);
+    if (paneCount >= 64) return 'Configured session limit reached';
+    if (this.config.workspaces.some((workspace) => workspace.id === args.workspaceId)) {
+      return 'Workspace already exists';
+    }
+    if (this.config.workspaces.some((workspace) => (
+      workspace.panes.some((pane) => pane.sessionKey === args.sessionId)
+    ))) return 'Session is already configured';
+    if (this.config.workspaces.some((workspace) => (
+      workspace.panes.some((pane) => pane.paneId === args.paneId)
+    ))) return 'Pane is already configured';
+    if (!Object.hasOwn(this.config.launchProfiles, args.defaultLaunchProfile)) {
+      return 'Launch profile is unavailable';
+    }
+    return null;
+  }
+
+  renameWorkspaceDisabledReason(workspaceId: string): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    if (this.catalogSaving || this.switching) return 'Workspace catalog update is in progress';
+    return this.config.workspaces.some((workspace) => workspace.id === workspaceId)
+      ? null
+      : 'Workspace is unavailable';
+  }
+
+  deleteWorkspaceDisabledReason(workspaceId: string): CommandDisabledReason | null {
+    const renameReason = this.renameWorkspaceDisabledReason(workspaceId);
+    if (renameReason !== null) return renameReason;
+    return this.config.workspaces.length === 1 ? 'Cannot delete the last workspace' : null;
   }
 
   workspaceCommandDisabledReason(workspaceId: string): CommandDisabledReason | null {
@@ -541,6 +673,18 @@ export class NeonCodeApp {
     );
   }
 
+  rebuildKeybindingRouter(): void {
+    const availableOverrides = availableKeybindingOverrides(
+      this.config.keybindingOverrides,
+      this.allowedKeybindingInvocations(),
+    );
+    this.keybindingRouter = new KeybindingRouter(mergeKeybindings(
+      this.defaultKeybindings(),
+      availableOverrides,
+    ));
+    this.updateCommandsShortcutLabel();
+  }
+
   applySavedKeybindings(overrides: readonly KeybindingOverride[]): void {
     const validated = validateKeybindingSettings(
       { overrides },
@@ -548,11 +692,7 @@ export class NeonCodeApp {
       this.allowedKeybindingInvocations(),
     );
     this.config.keybindingOverrides = structuredClone(validated.overrides);
-    this.keybindingRouter = new KeybindingRouter(mergeKeybindings(
-      this.defaultKeybindings(),
-      validated.overrides,
-    ));
-    this.updateCommandsShortcutLabel();
+    this.rebuildKeybindingRouter();
   }
 
   updateCommandsShortcutLabel(): void {
@@ -564,6 +704,9 @@ export class NeonCodeApp {
     const entries: BindableCommandEntry[] = [
       { invocation: { id: 'palette.open' }, title: getCommandMetadata('palette.open').title },
       { invocation: { id: 'settings.open' }, title: getCommandMetadata('settings.open').title },
+      { invocation: { id: 'workspace.createDialog' }, title: getCommandMetadata('workspace.createDialog').title },
+      { invocation: { id: 'workspace.renameDialog' }, title: getCommandMetadata('workspace.renameDialog').title },
+      { invocation: { id: 'workspace.deleteDialog' }, title: getCommandMetadata('workspace.deleteDialog').title },
       { invocation: { id: 'workspace.next' }, title: getCommandMetadata('workspace.next').title },
       { invocation: { id: 'workspace.previous' }, title: getCommandMetadata('workspace.previous').title },
     ];
@@ -606,6 +749,9 @@ export class NeonCodeApp {
     };
 
     add({ id: 'settings.open' }, getCommandMetadata('settings.open').title);
+    add({ id: 'workspace.createDialog' }, getCommandMetadata('workspace.createDialog').title);
+    add({ id: 'workspace.renameDialog' }, getCommandMetadata('workspace.renameDialog').title);
+    add({ id: 'workspace.deleteDialog' }, getCommandMetadata('workspace.deleteDialog').title);
     add({ id: 'workspace.next' }, getCommandMetadata('workspace.next').title);
     add({ id: 'workspace.previous' }, getCommandMetadata('workspace.previous').title);
     for (const workspace of this.config.workspaces) {
@@ -635,6 +781,177 @@ export class NeonCodeApp {
       );
     }
     return entries;
+  }
+
+  workspaceConfig(workspace: WorkspaceDescriptor): DesktopWorkspaceConfig {
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      path: workspace.path,
+      defaultLaunchProfile: workspace.defaultLaunchProfile,
+      layout: { ...workspace.layout },
+      sessions: workspace.panes.map((pane) => ({
+        id: pane.sessionKey,
+        title: pane.title,
+        launchProfile: pane.launchProfileId,
+      })),
+    };
+  }
+
+  async createWorkspace(args: WorkspaceCreateCommandArgs): Promise<void> {
+    this.catalogSaving = true;
+    try {
+      const snapshot = await this.window.neoncodeDesktop.getWorkspaceCatalog();
+      if (snapshot.workspaces.some((workspace) => workspace.id === args.workspaceId)) {
+        throw new Error(`workspace already exists: ${args.workspaceId}`);
+      }
+      if (snapshot.workspaces.some((workspace) => (
+        workspace.sessions.some((session) => session.id === args.sessionId)
+      ))) throw new Error(`session is already configured: ${args.sessionId}`);
+      const configured: DesktopWorkspaceConfig = {
+        id: args.workspaceId,
+        name: args.name,
+        path: args.path,
+        defaultLaunchProfile: args.defaultLaunchProfile,
+        layout: { columns: 1 },
+        sessions: [{
+          id: args.sessionId,
+          title: args.title,
+          launchProfile: args.defaultLaunchProfile,
+        }],
+      };
+      await this.window.neoncodeDesktop.saveWorkspaceCatalog({
+        revision: snapshot.revision,
+        workspaces: [...snapshot.workspaces, configured],
+      });
+
+      const profile = this.config.launchProfiles[args.defaultLaunchProfile];
+      if (!profile) throw new Error(`launch profile is unavailable: ${args.defaultLaunchProfile}`);
+      const descriptor: WorkspaceDescriptor = {
+        id: args.workspaceId,
+        name: args.name,
+        path: args.path,
+        defaultLaunchProfile: args.defaultLaunchProfile,
+        layout: { columns: 1 },
+        panes: [{
+          index: 0,
+          workspaceId: args.workspaceId,
+          paneId: args.paneId,
+          sessionKey: args.sessionId,
+          title: args.title,
+          terminalElementId: `terminal-${args.workspaceId}-${args.paneId}`,
+          sessionId: createSessionId(this.config.sessionPrefix, args.sessionId),
+          launchProfileId: args.defaultLaunchProfile,
+          launchProfile: {
+            ...profile,
+            args: [...profile.args],
+            cwd: args.path ?? profile.cwd,
+          },
+        }],
+      };
+      this.config.workspaces.push(descriptor);
+      this.focusModel.addWorkspace(descriptor.id, descriptor.panes.map((pane) => pane.paneId));
+      this.workspaceSessionStates.set(descriptor.panes[0]!.sessionId, {
+        workspaceId: descriptor.id,
+        lifecycle: 'idle',
+        error: '',
+        attention: null,
+      });
+      this.syncPublicConfiguration();
+      this.rebuildKeybindingRouter();
+      this.renderWorkspaceSelector();
+      this.catalogSaving = false;
+      await this.switchWorkspace(descriptor.id);
+    } finally {
+      this.catalogSaving = false;
+    }
+  }
+
+  async renameWorkspace(args: WorkspaceRenameCommandArgs): Promise<void> {
+    this.catalogSaving = true;
+    try {
+      const snapshot = await this.window.neoncodeDesktop.getWorkspaceCatalog();
+      if (!snapshot.workspaces.some((workspace) => workspace.id === args.workspaceId)) {
+        throw new Error(`unknown workspace: ${args.workspaceId}`);
+      }
+      await this.window.neoncodeDesktop.saveWorkspaceCatalog({
+        revision: snapshot.revision,
+        workspaces: snapshot.workspaces.map((workspace) => workspace.id === args.workspaceId
+          ? { ...workspace, name: args.name }
+          : workspace),
+      });
+      const workspace = this.config.workspaces.find((candidate) => candidate.id === args.workspaceId);
+      if (!workspace) throw new Error(`unknown runtime workspace: ${args.workspaceId}`);
+      workspace.name = args.name;
+      this.syncPublicConfiguration();
+      this.renderWorkspaceSelector();
+      if (workspace.id === this.activeWorkspaceId) this.setStatus(`Workspace: ${workspace.name}`);
+    } finally {
+      this.catalogSaving = false;
+    }
+  }
+
+  async deleteWorkspace(args: WorkspaceDeleteCommandArgs): Promise<void> {
+    const index = this.config.workspaces.findIndex((workspace) => workspace.id === args.workspaceId);
+    const deleting = this.config.workspaces[index];
+    if (!deleting) throw new Error(`unknown workspace: ${args.workspaceId}`);
+    const remaining = this.config.workspaces.filter((workspace) => workspace.id !== args.workspaceId);
+    const adjacent = remaining[Math.min(index, remaining.length - 1)];
+    if (!adjacent) throw new Error('cannot delete the last workspace');
+    const deletingActive = deleting.id === this.activeWorkspaceId;
+
+    this.catalogSaving = true;
+    try {
+      const snapshot = await this.window.neoncodeDesktop.getWorkspaceCatalog();
+      if (snapshot.workspaces.length === 1) throw new Error('cannot delete the last workspace');
+      if (!snapshot.workspaces.some((workspace) => workspace.id === args.workspaceId)) {
+        throw new Error(`unknown workspace: ${args.workspaceId}`);
+      }
+      await this.window.neoncodeDesktop.saveWorkspaceCatalog({
+        revision: snapshot.revision,
+        workspaces: snapshot.workspaces.filter((workspace) => workspace.id !== args.workspaceId),
+      });
+
+      if (deletingActive) {
+        await Promise.all(this.panes.map((pane) => (
+          args.disposition === 'kill' ? pane.killAndClose() : pane.detachAndClose()
+        )));
+        for (const pane of this.panes) pane.dispose();
+        this.panes = [];
+        this.terminalGrid.replaceChildren();
+      } else if (args.disposition === 'kill') {
+        await Promise.all(deleting.panes.map((pane) => this.killDetachedSession(pane.sessionId)));
+      }
+
+      this.config.workspaces.splice(index, 1);
+      for (const pane of deleting.panes) {
+        this.workspaceSessionStates.delete(pane.sessionId);
+        this.visitedSessionIds.delete(pane.sessionId);
+        if (args.disposition === 'kill') {
+          this.discoveredSessionIds.delete(pane.sessionId);
+          this.hubSessionsById.delete(pane.sessionId);
+        }
+      }
+      const deletedPaneTargets = new Set(deleting.panes.flatMap((pane) => [pane.paneId, pane.sessionKey]));
+      this.config.keybindingOverrides = this.config.keybindingOverrides.filter(({ command }) => {
+        if (command.id === 'workspace.open'
+            || command.id === 'workspace.dismissAttention'
+            || command.id === 'workspace.rename'
+            || command.id === 'workspace.delete') {
+          return command.args.workspaceId !== deleting.id;
+        }
+        return command.id !== 'pane.focus' || !deletedPaneTargets.has(command.args.paneId);
+      });
+      this.focusModel.removeWorkspace(deleting.id, deletingActive ? adjacent.id : undefined);
+      this.syncPublicConfiguration();
+      this.rebuildKeybindingRouter();
+      this.renderWorkspaceSelector();
+      this.catalogSaving = false;
+      if (deletingActive) await this.switchWorkspace(adjacent.id, { initial: true });
+      else this.applyActivePaneFocus();
+    } finally {
+      this.catalogSaving = false;
+    }
   }
 
   switchRelativeWorkspace(direction: 1 | -1): Promise<void> {

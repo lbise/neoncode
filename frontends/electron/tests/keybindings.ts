@@ -1,6 +1,7 @@
 import assert = require('node:assert/strict');
 
 import {
+  availableKeybindingOverrides,
   bindingForCommand,
   createConcreteCommandInvocations,
   createDefaultKeybindings,
@@ -102,9 +103,21 @@ assert.throws(() => validateKeybindingSettings({
 assert.throws(() => validateKeybindingSettings({
   overrides: [{ command: { id: 'unknown' }, binding: combination('F8') }],
 }, defaults, allowed), /Unknown command/u);
+const staleOverride: KeybindingOverride = {
+  command: { id: 'pane.focus', args: { paneId: 'missing' } },
+  binding: combination('F8'),
+};
 assert.throws(() => validateKeybindingSettings({
-  overrides: [{ command: { id: 'pane.focus', args: { paneId: 'missing' } }, binding: combination('F8') }],
+  overrides: [staleOverride],
 }, defaults, allowed), /not a concrete command/u);
+const tolerated = validateKeybindingSettings(
+  { overrides: [staleOverride] },
+  defaults,
+  allowed,
+  { tolerateUnavailable: true },
+);
+assert.deepEqual(tolerated.overrides, [staleOverride]);
+assert.deepEqual(availableKeybindingOverrides(tolerated.overrides, allowed), []);
 assert.throws(() => validateKeybindingSettings({ overrides: [], unexpected: true }, defaults, allowed), /keys must be exactly/u);
 assert.throws(() => validateKeybindingSettings({
   overrides: Array.from({ length: 65 }, (_value, index) => ({

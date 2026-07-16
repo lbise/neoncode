@@ -13,6 +13,19 @@ const validInvocations: CommandInvocation[] = [
   { id: 'palette.close' },
   { id: 'settings.open' },
   { id: 'settings.close' },
+  {
+    id: 'workspace.create',
+    args: {
+      workspaceId: 'created', name: 'Created', path: '/tmp/created',
+      defaultLaunchProfile: 'default-shell', sessionId: 'created-shell',
+      paneId: 'created-pane', title: 'Shell',
+    },
+  },
+  { id: 'workspace.rename', args: { workspaceId: 'review', name: 'Code Review' } },
+  { id: 'workspace.delete', args: { workspaceId: 'review', disposition: 'detach' } },
+  { id: 'workspace.createDialog' },
+  { id: 'workspace.renameDialog' },
+  { id: 'workspace.deleteDialog' },
   { id: 'workspace.open', args: { workspaceId: 'review' } },
   { id: 'workspace.next' },
   { id: 'workspace.previous' },
@@ -33,7 +46,9 @@ for (const metadata of listCommandMetadata()) {
 for (const metadata of listCommandMetadata()) {
   assert.equal(
     metadata.externalInvocation,
-    !metadata.id.startsWith('palette.') && !metadata.id.startsWith('settings.'),
+    !metadata.id.startsWith('palette.')
+      && !metadata.id.startsWith('settings.')
+      && !metadata.id.endsWith('Dialog'),
     `${metadata.id} has incorrect future CLI eligibility`,
   );
 }
@@ -51,6 +66,14 @@ for (const invalid of [
   { id: 'palette.open', args: {} },
   { id: 'workspace.next', extra: true },
   { id: 'workspace.open' },
+  { id: 'workspace.create' },
+  { id: 'workspace.create', args: {
+    workspaceId: 'new', name: 'New', path: 'bad\npath', defaultLaunchProfile: 'default-shell',
+    sessionId: 'new-shell', paneId: 'new-pane', title: 'Shell',
+  } },
+  { id: 'workspace.rename', args: { workspaceId: 'review', name: '' } },
+  { id: 'workspace.delete', args: { workspaceId: 'review', disposition: 'later' } },
+  { id: 'workspace.createDialog', args: {} },
   { id: 'workspace.open', args: {} },
   { id: 'workspace.open', args: { workspaceId: '' } },
   { id: 'workspace.open', args: { workspaceId: 'not valid' } },

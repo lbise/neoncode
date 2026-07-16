@@ -55,6 +55,12 @@ function cloneInvocation(command: CommandInvocation): CommandInvocation {
 
 export function commandInvocationSignature(command: CommandInvocation): string {
   switch (command.id) {
+    case 'workspace.create':
+      return `${command.id}:${JSON.stringify(command.args)}`;
+    case 'workspace.rename':
+      return `${command.id}:${command.args.workspaceId}:${command.args.name}`;
+    case 'workspace.delete':
+      return `${command.id}:${command.args.workspaceId}:${command.args.disposition}`;
     case 'workspace.open':
     case 'workspace.dismissAttention':
       return `${command.id}:${command.args.workspaceId}`;
@@ -169,6 +175,9 @@ export function createConcreteCommandInvocations(
     { id: 'palette.close' },
     { id: 'settings.open' },
     { id: 'settings.close' },
+    { id: 'workspace.createDialog' },
+    { id: 'workspace.renameDialog' },
+    { id: 'workspace.deleteDialog' },
     { id: 'workspace.next' },
     { id: 'workspace.previous' },
     { id: 'pane.next' },
@@ -244,10 +253,21 @@ export function mergeKeybindings(
   return [...merged.values()];
 }
 
+export function availableKeybindingOverrides(
+  overrides: readonly KeybindingOverride[],
+  allowedInvocations: readonly CommandInvocation[],
+): KeybindingOverride[] {
+  const allowed = new Set(allowedInvocations.map(commandInvocationSignature));
+  return overrides
+    .filter((override) => allowed.has(commandInvocationSignature(override.command)))
+    .map((override) => structuredClone(override));
+}
+
 export function validateKeybindingSettings(
   value: unknown,
   defaults: readonly Keybinding[],
   allowedInvocations?: readonly CommandInvocation[],
+  { tolerateUnavailable = false }: { tolerateUnavailable?: boolean } = {},
 ): KeybindingSettings {
   const settings = requireExactKeys(value, ['overrides'], 'keybindings');
   if (!Array.isArray(settings.overrides) || settings.overrides.length > MAX_KEYBINDING_OVERRIDES) {
@@ -262,7 +282,7 @@ export function validateKeybindingSettings(
     const override = requireExactKeys(rawOverride, ['command', 'binding'], label);
     const command = validateCommandInvocation(override.command);
     const commandSignature = commandInvocationSignature(command);
-    if (allowed && !allowed.has(commandSignature)) {
+    if (allowed && !allowed.has(commandSignature) && !tolerateUnavailable) {
       throw new Error(`${label}.command is not a concrete command available in this configuration`);
     }
     if (seenCommands.has(commandSignature)) {
@@ -277,7 +297,10 @@ export function validateKeybindingSettings(
     };
   });
 
-  const bindings = mergeKeybindings(defaults, overrides);
+  const effectiveOverrides = allowed && tolerateUnavailable
+    ? overrides.filter((override) => allowed.has(commandInvocationSignature(override.command)))
+    : overrides;
+  const bindings = mergeKeybindings(defaults, effectiveOverrides);
   const seenKeys = new Map<string, CommandInvocation>();
   for (const binding of bindings) {
     const signature = keyCombinationSignature(binding);

@@ -29,6 +29,7 @@
   <div class="workspace-shell">
     <aside class="workspace-sidebar" aria-label="Workspaces">
       <div class="workspace-sidebar-title">Workspaces</div>
+      <button id="workspace-create-button" class="workspace-create-button" type="button" aria-haspopup="dialog" aria-controls="workspace-dialog" data-testid="workspace-create-button">+ Workspace</button>
       <nav id="workspace-list" class="workspace-list" data-testid="workspace-list"></nav>
     </aside>
     <main id="terminal-grid" aria-label="xterm terminal region" data-testid="terminal-grid"></main>
@@ -81,6 +82,33 @@
         <span id="settings-status" role="status" data-testid="settings-status"></span>
         <button id="settings-cancel" class="settings-secondary-button" type="button" data-testid="settings-cancel">Cancel</button>
         <button id="settings-save" class="settings-primary-button" type="submit" data-testid="settings-save">Save</button>
+      </footer>
+    </form>
+  </div>
+  <div id="workspace-dialog-overlay" class="workspace-dialog-overlay" data-testid="workspace-dialog-overlay" hidden>
+    <form id="workspace-dialog" class="workspace-dialog" role="dialog" aria-modal="true" aria-labelledby="workspace-dialog-title" novalidate>
+      <header class="workspace-dialog-header">
+        <div>
+          <h2 id="workspace-dialog-title">Workspace</h2>
+          <p id="workspace-dialog-description"></p>
+        </div>
+        <button id="workspace-dialog-close" class="workspace-dialog-secondary" type="button" aria-label="Close workspace dialog" data-testid="workspace-dialog-close">Close</button>
+      </header>
+      <div class="workspace-dialog-content">
+        <label id="workspace-name-field">Name<input id="workspace-name" data-testid="workspace-name" type="text" maxlength="64" required autocomplete="off" /></label>
+        <label id="workspace-path-field">Path <span>Optional WSL/Linux working directory</span><input id="workspace-path" data-testid="workspace-path" type="text" autocomplete="off" /></label>
+        <label id="workspace-profile-field">Launch profile<select id="workspace-profile" data-testid="workspace-profile"></select></label>
+        <fieldset id="workspace-disposition-field" hidden>
+          <legend>Session disposition</legend>
+          <label><input name="workspace-disposition" type="radio" value="detach" checked /> Detach sessions and keep them running</label>
+          <label><input name="workspace-disposition" type="radio" value="kill" /> Kill workspace sessions</label>
+        </fieldset>
+      </div>
+      <p id="workspace-dialog-error" class="workspace-dialog-error" role="alert" data-testid="workspace-dialog-error" hidden></p>
+      <footer class="workspace-dialog-footer">
+        <span id="workspace-dialog-status" role="status" data-testid="workspace-dialog-status"></span>
+        <button id="workspace-dialog-cancel" class="workspace-dialog-secondary" type="button" data-testid="workspace-dialog-cancel">Cancel</button>
+        <button id="workspace-dialog-submit" class="workspace-dialog-primary" type="submit" data-testid="workspace-dialog-submit">Save</button>
       </footer>
     </form>
   </div>
