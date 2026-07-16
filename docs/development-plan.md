@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Strict TypeScript migration complete
+Stage: Windows development/runtime trust workflow required
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: extended stability soaking, then richer live cwd/git metadata
+Next focus: stable verified dev runtime, then signed production packaging and richer live metadata
 ```
 
 The Windows tech stack is now:
@@ -422,7 +422,33 @@ Status: complete.
 
 The migration intentionally does not use a runtime TypeScript loader. Windows publish output contains generated JavaScript under `dist/`, and every phase must continue passing the real hidden-Electron relaunch suite.
 
-### 6. CLI/API
+### 6. Windows distribution trust and Defender compatibility
+
+Status: planned and release-blocking. The current development runtime executes Electron's official checksum-verified but unsigned generic `electron.exe` directly from `node_modules`; this is not a product distribution model and has repeatedly triggered Defender heuristic detections.
+
+Development workflow:
+
+- [ ] Separate dependency/runtime bootstrap from ordinary app publish so `npm ci` does not recreate `electron.exe` on every iteration.
+- [ ] Add a stable verified-runtime marker keyed by package-lock hash, Electron version/platform/architecture, and executable SHA-256.
+- [ ] Make normal publish rebuild/copy app artifacts only; require an explicit bootstrap command when runtime dependencies change.
+- [ ] Add a read-only runtime diagnostic command for version, hash, Authenticode status, executable availability, and actionable Defender failure reporting.
+- [ ] Keep WSL/Rust/TypeScript/fake-hub checks authoritative for daily work when a managed Windows endpoint blocks the GUI runtime.
+- [ ] Establish a Defender-enabled Windows VM/CI release gate independent of a developer's managed workstation.
+
+Production distribution:
+
+- [ ] Package a branded `NeonCode.exe` with production-only dependencies and `app.asar`; never ship the `node_modules/electron/dist/electron.exe` development layout.
+- [ ] Enable and verify appropriate Electron fuses, including disabling `RunAsNode` and requiring packaged application loading.
+- [ ] Select a hardware/cloud-backed Authenticode signing provider and timestamp all application, helper, installer, and uninstaller executables.
+- [ ] Produce and evaluate signed MSIX/Microsoft Store distribution, plus a signed direct-download installer if required.
+- [ ] Add clean-VM signature, hash, install, launch, update, Defender cloud-protection, and SmartScreen checks to the release pipeline.
+- [ ] Define Microsoft Security Intelligence false-positive submission and release-blocking response procedures.
+- [ ] Publish checksums, version provenance/SBOM, and signing-certificate identity for every release.
+- [ ] Never require customers to disable Defender or add exclusions; enterprise allowlisting must use managed certificate/package policy.
+
+Release acceptance: a production artifact installs and launches on a clean, fully updated Defender-enabled Windows machine without exclusions, has a valid timestamped trusted signature, and passes the documented false-positive/reputation gate.
+
+### 7. CLI/API
 
 - [ ] Add minimal `neoncode` CLI or local API client.
 - [ ] Support session list/status.
