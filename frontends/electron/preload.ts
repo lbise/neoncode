@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
-import { validateWorkspaceLayoutState } from './renderer/layout-model';
-import type { WorkspaceLayoutState } from './renderer/layout-model';
+import { validateWorkspaceLayoutState } from './shared/layout-model';
+import type { WorkspaceLayoutState } from './shared/layout-model';
 import type { NeoncodeDesktopApi, PrepareCloseCallback } from './shared/types';
 
 function deepFreeze<T>(value: T): T {

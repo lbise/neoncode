@@ -1,7 +1,7 @@
 import type { FitAddon } from '@xterm/addon-fit';
 import type { Terminal } from '@xterm/xterm';
 
-import type { WorkspaceLayoutState } from '../renderer/layout-model';
+import type { WorkspaceLayoutState } from './layout-model';
 
 export type ActivationMode = 'attach' | 'start';
 export type PersistencePolicy = 'detach' | 'kill';

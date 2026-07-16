@@ -17,7 +17,7 @@ import {
   type LayoutNode,
   type PaneLeaf,
   type WorkspaceLayoutState,
-} from '../renderer/layout-model';
+} from '../shared/layout-model';
 
 const sourceWorkspace = {
   name: 'Development',

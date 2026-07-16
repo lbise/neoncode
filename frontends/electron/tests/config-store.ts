@@ -15,7 +15,7 @@ import {
   seedWorkspaceLayout,
   type LayoutNode,
   type WorkspaceLayoutState,
-} from '../renderer/layout-model';
+} from '../shared/layout-model';
 import type {
   DesktopBootstrapResult,
   DesktopConfig,

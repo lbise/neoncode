@@ -17,8 +17,8 @@ import type {
 import { CommandRegistry } from './command-registry';
 import { HubClient, type UnknownMessage } from './hub-client';
 import { KeybindingRouter, createDefaultKeybindings } from './keybinding-router';
-import { validateWorkspaceLayoutState } from './layout-model';
-import type { WorkspaceLayoutState } from './layout-model';
+import { validateWorkspaceLayoutState } from '../shared/layout-model';
+import type { WorkspaceLayoutState } from '../shared/layout-model';
 import { PaneFocusModel } from './pane-focus-model';
 import { SessionModel } from './session-model';
 import { TerminalPane } from './terminal-pane';

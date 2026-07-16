@@ -15,7 +15,7 @@ import {
 } from 'electron';
 
 import { ConfigStore, STATE_SCHEMA_VERSION, defaultState } from './config-store';
-import { validateWorkspaceLayoutState } from './renderer/layout-model';
+import { validateWorkspaceLayoutState } from './shared/layout-model';
 import type {
   DesktopBootstrapResult,
   DesktopState,
@@ -23,7 +23,7 @@ import type {
   RendererBootstrapWorkspace,
   TerminalAppearance,
 } from './shared/types';
-import type { WorkspaceLayoutState } from './renderer/layout-model';
+import type { WorkspaceLayoutState } from './shared/layout-model';
 import { loadHubToken } from './token-loader';
 
 app.disableHardwareAcceleration();

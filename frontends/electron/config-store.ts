@@ -4,7 +4,7 @@ import path = require('node:path');
 import {
   orderedDepthFirstPanes,
   validateWorkspaceLayoutState,
-} from './renderer/layout-model';
+} from './shared/layout-model';
 import type {
   ConfigStorageStatus,
   DesktopBootstrapResult,
