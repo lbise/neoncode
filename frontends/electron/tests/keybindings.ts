@@ -32,6 +32,11 @@ const allowed = createConcreteCommandInvocations(['default', 'review'], ['shell'
 assert.equal(formatKeyCombination(combination('KeyP', { ctrlKey: true, shiftKey: true })), 'Ctrl+Shift+P');
 assert.equal(formatKeyCombination(combination('Digit2', { altKey: true })), 'Alt+2');
 assert.equal(formatKeyCombination(combination('NumpadAdd', { metaKey: true })), 'Meta+Numpad Add');
+assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'tab.createDefault' })!), 'Ctrl+Shift+T');
+assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'tab.next' })!), 'Ctrl+PageDown');
+assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'tab.previous' })!), 'Ctrl+PageUp');
+assert.equal(bindingForCommand(defaults, { id: 'tab.closeDialog' }), null);
+assert(allowed.some((command) => command.id === 'tab.renameDialog'));
 
 const overrides: KeybindingOverride[] = [
   {

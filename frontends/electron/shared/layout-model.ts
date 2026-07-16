@@ -88,6 +88,13 @@ export interface SeedWorkspaceLayoutIds {
   paneIds?: readonly string[];
 }
 
+export interface WorkspaceLayoutReconciliation {
+  state: WorkspaceLayoutState;
+  changed: boolean;
+  addedSessionKeys: string[];
+  removedSessionKeys: string[];
+}
+
 export class LayoutValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -460,6 +467,115 @@ export function seedWorkspaceLayout(
 export function orderedPaneLeaves(node: LayoutNode): PaneLeaf[] {
   if (node.type === 'pane') return [cloneLeaf(node)];
   return [...orderedPaneLeaves(node.first), ...orderedPaneLeaves(node.second)];
+}
+
+function layoutIds(state: WorkspaceLayoutState): Set<string> {
+  const ids = new Set<string>();
+  const visit = (node: LayoutNode): void => {
+    if (node.type === 'pane') {
+      ids.add(node.paneId);
+      return;
+    }
+    ids.add(node.splitId);
+    visit(node.first);
+    visit(node.second);
+  };
+  for (const tab of state.tabs) {
+    ids.add(tab.tabId);
+    visit(tab.root);
+  }
+  return ids;
+}
+
+function allocateLayoutId(preferred: string, used: Set<string>): string {
+  const bounded = preferred.slice(0, MAX_LAYOUT_IDENTIFIER_BYTES);
+  let candidate = bounded;
+  let suffix = 2;
+  while (used.has(candidate)) {
+    const marker = `-${suffix}`;
+    candidate = `${bounded.slice(0, MAX_LAYOUT_IDENTIFIER_BYTES - marker.length)}${marker}`;
+    suffix += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function seedIds(workspace: SchemaFourWorkspaceLayoutSource): SeedWorkspaceLayoutIds {
+  const used = new Set(workspace.sessions.map((session) => session.id));
+  return {
+    tabId: allocateLayoutId(`tab-${workspace.name.replace(/[^A-Za-z0-9_.-]/gu, '-') || 'workspace'}`, used),
+    splitIds: workspace.sessions.slice(1).map((_session, index) => (
+      allocateLayoutId(`split-${index + 1}`, used)
+    )),
+    paneIds: workspace.sessions.map((session) => session.id),
+  };
+}
+
+/**
+ * Reconciles durable layout state with the configured session catalog. Surviving
+ * tabs and trees are retained. Removed sessions are pruned and newly configured
+ * sessions become deterministic one-pane tabs.
+ */
+export function reconcileWorkspaceLayout(
+  workspace: SchemaFourWorkspaceLayoutSource,
+  persisted?: WorkspaceLayoutState,
+): WorkspaceLayoutReconciliation {
+  if (workspace.sessions.length < 1 || workspace.sessions.length > MAX_WORKSPACE_PANES) {
+    throw new LayoutValidationError(`workspace must contain 1-${MAX_WORKSPACE_PANES} sessions`);
+  }
+  const configured = new Map(workspace.sessions.map((session) => [session.id, session]));
+  if (configured.size !== workspace.sessions.length) {
+    throw new LayoutValidationError('workspace sessions must have unique ids');
+  }
+
+  if (!persisted) {
+    return {
+      state: seedWorkspaceLayout(workspace, seedIds(workspace)),
+      changed: true,
+      addedSessionKeys: workspace.sessions.map((session) => session.id),
+      removedSessionKeys: [],
+    };
+  }
+
+  let state = validateWorkspaceLayoutState(persisted);
+  const original = JSON.stringify(state);
+  const removedSessionKeys = orderedDepthFirstPanes(state)
+    .filter((leaf) => !configured.has(leaf.sessionKey))
+    .map((leaf) => leaf.sessionKey);
+  const survivingCount = orderedDepthFirstPanes(state).length - removedSessionKeys.length;
+  if (survivingCount === 0) {
+    return {
+      state: seedWorkspaceLayout(workspace, seedIds(workspace)),
+      changed: true,
+      addedSessionKeys: workspace.sessions.map((session) => session.id),
+      removedSessionKeys,
+    };
+  }
+
+  for (const leaf of orderedDepthFirstPanes(state)) {
+    if (!configured.has(leaf.sessionKey)) state = closePane(state, leaf.paneId).state;
+  }
+
+  const represented = new Set(orderedDepthFirstPanes(state).map((leaf) => leaf.sessionKey));
+  const missing = workspace.sessions.filter((session) => !represented.has(session.id));
+  const used = layoutIds(state);
+  for (const session of missing) {
+    const paneId = allocateLayoutId(session.id, used);
+    state = addTab(state, {
+      tabId: allocateLayoutId(`tab-${session.id}`, used),
+      title: session.title,
+      paneId,
+      sessionKey: session.id,
+      activate: false,
+    });
+  }
+
+  return {
+    state,
+    changed: original !== JSON.stringify(state),
+    addedSessionKeys: missing.map((session) => session.id),
+    removedSessionKeys,
+  };
 }
 
 export function orderedDepthFirstPanes(

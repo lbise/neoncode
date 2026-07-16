@@ -128,7 +128,7 @@ Open Settings with the visible header button or run **Open Settings** from the c
 }
 ```
 
-An override replaces or unbinds the default for that exact command invocation. Defaults remain `Ctrl+Shift+P` for Commands, `Alt+1` through `Alt+9` for configured workspaces, and `F6`/`Shift+F6` for pane traversal. The Keyboard section shows current and default values and provides Record, Unbind, and Reset controls. Save validates the complete effective map and applies it live; Cancel or Escape discards the draft.
+An override replaces or unbinds the default for that exact command invocation. Defaults are `Ctrl+Shift+P` for Commands, `Alt+1` through `Alt+9` for configured workspaces, `Ctrl+Shift+T` for a new default-profile tab, `Ctrl+PageDown`/`Ctrl+PageUp` for tab traversal, and `F6`/`Shift+F6` for depth-first traversal within the active tab. The Keyboard section shows current and default values and provides Record, Unbind, and Reset controls. Save validates the complete effective map and applies it live; Cancel or Escape discards the draft.
 
 Bindings reject unknown fields/codes/commands, malformed concrete workspace/pane arguments, duplicate command overrides, duplicate active combinations, modifier-only and unsafe bare printable global keys, Ctrl+Alt/AltGraph semantics, and protected terminal conventions including Ctrl+C/D/Z/Space/L/R/A/E/K/U/W, Ctrl+Shift+C/V, and Shift+Insert. A syntactically valid override whose workspace or pane was removed no longer invalidates the whole configuration: it is ignored by the effective router. Workspace deletion transactionally removes overrides that target the deleted workspace or its configured panes.
 
@@ -151,11 +151,13 @@ A second workspace can reuse global launch profiles but must use distinct sessio
 }
 ```
 
-With three sessions and two columns, NeonCode renders a two-column/two-row grid. `path` is either a non-empty, control-free WSL/Linux path of at most 4096 UTF-8 bytes or `null`; when set, it overrides every selected launch profile's `cwd` for that workspace. The path is sent as a structured process-start field and is never shell-interpolated. `defaultLaunchProfile` must reference a configured profile and is used by the app-created initial Shell session.
+With no saved layout, three sessions and two columns deterministically seed one visible tab containing the equivalent two-column/two-row split tree. On later launches, surviving tab/tree state is retained, removed configured sessions are pruned, and newly configured sessions are added as one-pane tabs. `path` is either a non-empty, control-free WSL/Linux path of at most 4096 UTF-8 bytes or `null`; when set, it overrides every selected launch profile's `cwd` for that workspace. The path is sent as a structured process-start field and is never shell-interpolated. `defaultLaunchProfile` must reference a configured profile and is used by the app-created initial Shell session.
 
-Use the visible **+ Workspace** button or **Create Workspace…** in Commands to create a workspace. The same palette provides rename and delete dialogs. Delete requires an explicit Detach or Kill choice, cannot remove the last workspace, and switches an active deleted workspace to its deterministic neighbor. Detach never kills its hub sessions. The current renderer remains the simple configured grid; visible tabs and split controls are the next phase.
+Use the visible **+ Workspace** button or **Create Workspace…** in Commands to create a workspace. The same palette provides rename and delete dialogs. Delete requires an explicit Detach or Kill choice, cannot remove the last workspace, and switches an active deleted workspace to its deterministic neighbor. Detach never kills its hub sessions.
 
-Switching always detaches the old workspace so its PTYs continue running. Window close still follows `persistence.onWindowClose`; `kill` also cleans up previously visited inactive workspaces.
+The visible **+ Tab** action and `Ctrl+Shift+T` immediately create a durable session definition using the workspace default launch profile, then persist a one-pane active tab. Commands also provides next/previous, rename, and close actions. Closing requires explicit Detach or Kill, removes the tab's durable session definitions, and cannot remove the last tab or pane. A workspace `path` continues to override the selected profile cwd for newly created tabs. Interactive split creation/resizing is not exposed yet, although restored seeded split trees render recursively.
+
+Switching a workspace or tab serially detaches the old visible panes so their PTYs continue running. Inactive tabs have no xterm attachment; opening one attaches or starts its leaves and requests replay. Window close still follows `persistence.onWindowClose`; `kill` also cleans up previously visited inactive workspaces.
 
 ## Launch profiles
 
@@ -258,7 +260,9 @@ App-owned state schema 3 stores content width/height, the active workspace ID, a
 
 State validation permits at most 16 known-shape workspace entries, 8 tabs and 8 pane leaves per workspace, 64 leaves across the file, tree depth 8, unique IDs and session keys within a workspace, split ratios from `0.1` through `0.9`, and tab titles no larger than 64 UTF-8 bytes. The complete pretty-printed state file is limited to 64 KiB. Schema 1 migrates directly to schema 3 with a null active workspace and empty layouts; schema 2 preserves its window and active-workspace fields while adding empty layouts. Invalid, oversized, and unsupported future state is preserved and recovered from backup or reset safely. Window position is deliberately not persisted yet to avoid reopening off-screen.
 
-The preload bridge exposes typed `saveWorkspaceLayout(workspaceId, layout)`, `getSettings()`, revision-checked `saveSettings({revision, settings})`, and narrow `getWorkspaceCatalog()`/`saveWorkspaceCatalog({revision, workspaces})` calls. Settings and workspace catalog writes share one monotonic revision. Electron main accepts Settings IPC only from the current BrowserWindow, validates every field, rejects stale revisions, and merges only allowed Settings fields into a freshly read disk config. Settings writes preserve launch profiles and workspaces. Catalog writes replace only validated workspace definitions while preserving settings and launch profiles, including when process-local environment overrides are active. There is no arbitrary file or command bridge. The renderer still does not render the persisted tab/split tree; the existing grid remains unchanged.
+At startup the renderer validates and restores each configured workspace layout or deterministically seeds one from the configured grid. Seeded/reconciled layouts are saved asynchronously. Tab order/title/activation and focused-pane changes are persisted through serialized layout saves; a save failure is reported and the next launch reconciles from the durable session catalog.
+
+The preload bridge exposes typed `saveWorkspaceLayout(workspaceId, layout)`, `getSettings()`, revision-checked `saveSettings({revision, settings})`, and narrow `getWorkspaceCatalog()`/`saveWorkspaceCatalog({revision, workspaces})` calls. Settings and workspace catalog writes share one monotonic revision. Electron main accepts Settings IPC only from the current BrowserWindow, validates every field, rejects stale revisions, and merges only allowed Settings fields into a freshly read disk config. Settings writes preserve launch profiles and workspaces. Catalog writes replace only validated workspace definitions while preserving settings and launch profiles, including when process-local environment overrides are active. There is no arbitrary file or command bridge. The renderer recursively renders the active persisted tab tree; pane splitting/resizing controls remain unavailable.
 
 Settings and workspace-catalog writes first atomically preserve the previous valid config as `config.json.bak`, then atomically replace `config.json`. Other writes use the same same-directory temporary-file, flush, and atomic-rename discipline. Electron also uses a single-instance lock to avoid competing state writers.
 
@@ -283,6 +287,8 @@ NEONCODE_PERSIST_SESSIONS
 4. Rename it from Commands, close/reopen NeonCode, and confirm the name and active workspace survive.
 5. Delete it once with Detach and once with Kill; verify the last-workspace guard.
 6. Open Keyboard, record a safe shortcut for a concrete command, save, and verify it executes immediately.
-7. Reopen Settings and exercise Unbind, Reset, conflict feedback, recorder Escape, and dialog Escape focus restoration.
+7. Create a tab with `Ctrl+Shift+T`, rename it from Commands, switch tabs with `Ctrl+PageUp/PageDown`, and verify it and its focused pane restore after relaunch.
+8. Close the created tab once with Detach and once with Kill; verify the last-tab guard.
+9. Reopen Settings and exercise Unbind, Reset, conflict feedback, recorder Escape, and dialog Escape focus restoration.
 
-External workspace files, visible tabs/free-form split layout controls, live application of terminal appearance, font discovery, and CLI app-control transport are later milestones.
+External workspace files, interactive pane splitting/resizing, live application of terminal appearance, font discovery, and CLI app-control transport are later milestones.

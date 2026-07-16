@@ -21,6 +21,11 @@ import {
   type CommandInvocation,
   type CommandMetadata,
   type CommandOperationResult,
+  type TabCloseCommandArgs,
+  type TabCreateCommandArgs,
+  type TabMoveCommandArgs,
+  type TabOpenCommandArgs,
+  type TabRenameCommandArgs,
   type WorkspaceCreateCommandArgs,
   type WorkspaceDeleteCommandArgs,
   type WorkspaceRenameCommandArgs,
@@ -38,12 +43,27 @@ import { CommandPalette, type PaletteCommandEntry } from './command-palette';
 import { CommandRegistry } from './command-registry';
 import { HubClient, type UnknownMessage } from './hub-client';
 import { KeybindingRouter } from './keybinding-router';
-import { validateWorkspaceLayoutState } from '../shared/layout-model';
-import type { WorkspaceLayoutState } from '../shared/layout-model';
+import {
+  MAX_WORKSPACE_TABS,
+  activateTab,
+  addTab,
+  closeTab,
+  focusPane as focusLayoutPane,
+  moveTab,
+  orderedPaneLeaves,
+  reconcileWorkspaceLayout,
+  renameTab,
+  validateWorkspaceLayoutState,
+  type LayoutNode,
+  type PaneLeaf,
+  type TabLayout,
+  type WorkspaceLayoutState,
+} from '../shared/layout-model';
 import { PaneFocusModel } from './pane-focus-model';
 import { SessionModel } from './session-model';
 import { SettingsView, type BindableCommandEntry } from './settings-view';
 import { TerminalPane } from './terminal-pane';
+import { TabDialog } from './tab-dialog';
 import { installRendererTestApi } from './test-api';
 import { WorkspaceDialog } from './workspace-dialog';
 
@@ -87,6 +107,7 @@ interface NeonCodeAppOptions {
 
 interface WorkspaceSwitchOptions {
   initial?: boolean;
+  force?: boolean;
 }
 
 interface AttentionTarget {
@@ -194,6 +215,15 @@ function parseTerminalAppearance(value: unknown): TerminalAppearance {
   };
 }
 
+function nodeHasLayoutId(node: LayoutNode, id: string): boolean {
+  if (node.type === 'pane') return node.paneId === id;
+  return node.splitId === id || nodeHasLayoutId(node.first, id) || nodeHasLayoutId(node.second, id);
+}
+
+function layoutHasId(layout: WorkspaceLayoutState, id: string): boolean {
+  return layout.tabs.some((tab) => tab.tabId === id || nodeHasLayoutId(tab.root, id));
+}
+
 function isExitSummary(value: unknown): value is NormalizedSessionSummary['latestExit'] {
   if (value === null) return true;
   return isRecord(value)
@@ -224,10 +254,10 @@ function isNormalizedSessionSummary(value: unknown): value is NormalizedSessionS
     && typeof value.instanceComplete === 'boolean';
 }
 
-function requiredElement(documentRef: Document, id: string): HTMLElement {
+function requiredElement<T extends HTMLElement = HTMLElement>(documentRef: Document, id: string): T {
   const element = documentRef.getElementById(id);
   if (!element) throw new Error(`Missing renderer element: #${id}`);
-  return element;
+  return element as T;
 }
 
 export function createSessionId(sessionPrefix: string, sessionKey: string): string {
@@ -326,6 +356,26 @@ export function createAppConfig(bootstrap: unknown = {}): RendererAppConfig {
   };
 }
 
+export interface RuntimeWorkspaceLayouts {
+  layouts: Map<string, WorkspaceLayoutState>;
+  changedWorkspaceIds: Set<string>;
+}
+
+export function createRuntimeWorkspaceLayouts(config: RendererAppConfig): RuntimeWorkspaceLayouts {
+  const layouts = new Map<string, WorkspaceLayoutState>();
+  const changedWorkspaceIds = new Set<string>();
+  for (const workspace of config.workspaces) {
+    const result = reconcileWorkspaceLayout({
+      name: workspace.name,
+      layout: workspace.layout,
+      sessions: workspace.panes.map((pane) => ({ id: pane.sessionKey, title: pane.title })),
+    }, config.workspaceLayouts[workspace.id]);
+    layouts.set(workspace.id, result.state);
+    if (result.changed) changedWorkspaceIds.add(workspace.id);
+  }
+  return { layouts, changedWorkspaceIds };
+}
+
 export class NeonCodeApp {
   readonly document: Document;
   readonly window: Window;
@@ -333,6 +383,7 @@ export class NeonCodeApp {
   readonly statusElement: HTMLElement;
   readonly configurationStatusElement: HTMLElement;
   readonly workspaceList: HTMLElement;
+  readonly workspaceTabs: HTMLElement;
   readonly terminalGrid: HTMLElement;
   readonly sessionModel: SessionModel;
   readonly focusModel: PaneFocusModel;
@@ -341,7 +392,15 @@ export class NeonCodeApp {
   readonly commandPalette: CommandPalette;
   readonly settingsView: SettingsView;
   readonly workspaceDialog: WorkspaceDialog;
+  readonly tabDialog: TabDialog;
+  readonly workspaceLayouts: Map<string, WorkspaceLayoutState>;
+  readonly pendingInitialLayoutSaves: Set<string>;
+  readonly layoutSavePromises = new Map<string, Promise<void>>();
   readonly onDocumentKeyDown = (event: KeyboardEvent): void => {
+    if (this.tabDialog.isOpen) {
+      this.tabDialog.handleKeyDown(event);
+      return;
+    }
     if (this.workspaceDialog.isOpen) {
       this.workspaceDialog.handleKeyDown(event);
       return;
@@ -390,12 +449,20 @@ export class NeonCodeApp {
     this.statusElement = requiredElement(this.document, 'status');
     this.configurationStatusElement = requiredElement(this.document, 'configuration-status');
     this.workspaceList = requiredElement(this.document, 'workspace-list');
+    this.workspaceTabs = requiredElement(this.document, 'workspace-tabs');
     this.terminalGrid = requiredElement(this.document, 'terminal-grid');
+    const runtimeLayouts = createRuntimeWorkspaceLayouts(this.config);
+    this.workspaceLayouts = runtimeLayouts.layouts;
+    this.pendingInitialLayoutSaves = runtimeLayouts.changedWorkspaceIds;
     this.sessionModel = new SessionModel({ windowRef: this.window });
-    this.focusModel = new PaneFocusModel(this.config.workspaces.map((workspace) => ({
-      workspaceId: workspace.id,
-      paneIds: workspace.panes.map((pane) => pane.paneId),
-    })));
+    this.focusModel = new PaneFocusModel(this.config.workspaces.map((workspace) => {
+      const layout = this.workspaceLayouts.get(workspace.id);
+      const activeTab = layout?.tabs.find((tab) => tab.tabId === layout.activeTabId);
+      return {
+        workspaceId: workspace.id,
+        paneIds: activeTab ? orderedPaneLeaves(activeTab.root).map((pane) => pane.paneId) : [],
+      };
+    }));
     this.commandRegistry = new CommandRegistry({
       'palette.open': () => this.commandPalette.open(),
       'palette.close': () => this.commandPalette.close(),
@@ -411,6 +478,16 @@ export class NeonCodeApp {
       'workspace.next': () => this.switchRelativeWorkspace(1),
       'workspace.previous': () => this.switchRelativeWorkspace(-1),
       'workspace.dismissAttention': ({ workspaceId }) => this.acknowledgeWorkspaceAttention(workspaceId),
+      'tab.create': (args) => this.createTab(args),
+      'tab.open': (args) => this.openTab(args),
+      'tab.rename': (args) => this.renameTab(args),
+      'tab.move': (args) => this.moveTab(args),
+      'tab.close': (args) => this.closeTab(args),
+      'tab.createDefault': () => this.createDefaultTab(),
+      'tab.next': () => this.openRelativeTab(1),
+      'tab.previous': () => this.openRelativeTab(-1),
+      'tab.renameDialog': () => this.tabDialog.open('rename'),
+      'tab.closeDialog': () => this.tabDialog.open('close'),
       'pane.focus': ({ paneId }) => this.focusPane(paneId),
       'pane.next': () => this.focusNextPane(),
       'pane.previous': () => this.focusPreviousPane(),
@@ -419,13 +496,13 @@ export class NeonCodeApp {
         ? 'Application is closing'
         : this.settingsView.isOpen
           ? 'Another overlay is open'
-          : this.workspaceDialog.isOpen
+          : this.workspaceDialog.isOpen || this.tabDialog.isOpen
             ? 'Another overlay is open'
             : this.commandPalette.isOpen ? 'Command palette is already open' : null,
       'palette.close': () => this.commandPalette.isOpen ? null : 'Command palette is not open',
       'settings.open': () => this.closed
         ? 'Application is closing'
-        : this.workspaceDialog.isOpen
+        : this.workspaceDialog.isOpen || this.tabDialog.isOpen
           ? 'Another overlay is open'
           : this.settingsView.isOpen ? 'Settings are already open' : null,
       'settings.close': () => this.settingsView.isOpen ? null : 'Settings are not open',
@@ -439,6 +516,16 @@ export class NeonCodeApp {
       'workspace.next': () => this.relativeWorkspaceCommandDisabledReason(),
       'workspace.previous': () => this.relativeWorkspaceCommandDisabledReason(),
       'workspace.dismissAttention': ({ workspaceId }) => this.dismissAttentionDisabledReason(workspaceId),
+      'tab.create': (args) => this.createTabDisabledReason(args),
+      'tab.open': (args) => this.tabCommandDisabledReason(args),
+      'tab.rename': (args) => this.tabCommandDisabledReason(args),
+      'tab.move': (args) => this.moveTabDisabledReason(args),
+      'tab.close': (args) => this.closeTabDisabledReason(args),
+      'tab.createDefault': () => this.createDefaultTabDisabledReason(),
+      'tab.next': () => this.relativeTabCommandDisabledReason(),
+      'tab.previous': () => this.relativeTabCommandDisabledReason(),
+      'tab.renameDialog': () => this.tabDialogDisabledReason('rename'),
+      'tab.closeDialog': () => this.tabDialogDisabledReason('close'),
       'pane.focus': ({ paneId }) => this.paneCommandDisabledReason(paneId),
       'pane.next': () => this.relativePaneCommandDisabledReason(),
       'pane.previous': () => this.relativePaneCommandDisabledReason(),
@@ -482,6 +569,19 @@ export class NeonCodeApp {
       dispatchDelete: (args) => this.dispatchCommand({ id: 'workspace.delete', args }),
       restoreActivePaneFocus: () => this.applyActivePaneFocus(),
     });
+    this.tabDialog = new TabDialog({
+      documentRef: this.document,
+      getActiveTab: () => {
+        const workspaceId = this.activeWorkspaceId;
+        if (!workspaceId) return null;
+        const layout = this.workspaceLayouts.get(workspaceId);
+        const tab = layout?.tabs.find((candidate) => candidate.tabId === layout.activeTabId);
+        return tab ? { workspaceId, tabId: tab.tabId, title: tab.title } : null;
+      },
+      dispatchRename: (args) => this.dispatchCommand({ id: 'tab.rename', args }),
+      dispatchClose: (args) => this.dispatchCommand({ id: 'tab.close', args }),
+      restoreActivePaneFocus: () => this.applyActivePaneFocus(),
+    });
     requiredElement(this.document, 'commands-button').addEventListener('click', () => {
       void this.dispatchCommand({ id: 'palette.open' });
     });
@@ -490,6 +590,9 @@ export class NeonCodeApp {
     });
     requiredElement(this.document, 'workspace-create-button').addEventListener('click', () => {
       void this.dispatchCommand({ id: 'workspace.createDialog' });
+    });
+    requiredElement(this.document, 'tab-create-button').addEventListener('click', () => {
+      void this.dispatchCommand({ id: 'tab.createDefault' });
     });
     this.updateCommandsShortcutLabel();
     this.document.addEventListener('keydown', this.onDocumentKeyDown, true);
@@ -562,7 +665,7 @@ export class NeonCodeApp {
   workspaceDialogDisabledReason(mode: 'create' | 'rename' | 'delete'): CommandDisabledReason | null {
     if (this.closed) return 'Application is closing';
     if (this.catalogSaving || this.switching) return 'Workspace catalog update is in progress';
-    if (this.settingsView.isOpen || this.workspaceDialog.isOpen) {
+    if (this.settingsView.isOpen || this.workspaceDialog.isOpen || this.tabDialog.isOpen) {
       return 'Another overlay is open';
     }
     if (mode === 'create') {
@@ -637,12 +740,95 @@ export class NeonCodeApp {
     return hasAttention ? null : 'Workspace has no attention to dismiss';
   }
 
+  activeLayoutTab(workspaceId = this.activeWorkspaceId): TabLayout | null {
+    if (!workspaceId) return null;
+    const layout = this.workspaceLayouts.get(workspaceId);
+    return layout?.tabs.find((tab) => tab.tabId === layout.activeTabId) ?? null;
+  }
+
+  tabCommandDisabledReason(args: TabOpenCommandArgs): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    if (this.switching || this.catalogSaving) return 'Workspace switch is in progress';
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    if (!layout) return 'Workspace is unavailable';
+    return layout.tabs.some((tab) => tab.tabId === args.tabId) ? null : 'Tab is unavailable';
+  }
+
+  createTabDisabledReason(args: TabCreateCommandArgs): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    if (this.switching || this.catalogSaving) return 'Workspace catalog update is in progress';
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === args.workspaceId);
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    if (!workspace || !layout) return 'Workspace is unavailable';
+    if (workspace.panes.length >= 8 || layout.tabs.length >= MAX_WORKSPACE_TABS) return 'Tab limit reached';
+    const totalSessions = this.config.workspaces.reduce((count, candidate) => count + candidate.panes.length, 0);
+    if (totalSessions >= 64) return 'Configured session limit reached';
+    if (layoutHasId(layout, args.tabId) || layoutHasId(layout, args.sessionId)
+        || args.tabId === args.sessionId) {
+      return 'Tab already exists';
+    }
+    if (this.config.workspaces.some((candidate) => (
+      candidate.panes.some((pane) => pane.sessionKey === args.sessionId)
+    ))) return 'Session is already configured';
+    if (!Object.hasOwn(this.config.launchProfiles, args.launchProfile)) {
+      return 'Launch profile is unavailable';
+    }
+    return null;
+  }
+
+  createDefaultTabDisabledReason(): CommandDisabledReason | null {
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === this.activeWorkspaceId);
+    if (!workspace) return 'Workspace is unavailable';
+    const layout = this.workspaceLayouts.get(workspace.id);
+    if (!layout) return 'No active tab is available';
+    if (this.closed) return 'Application is closing';
+    if (this.switching || this.catalogSaving) return 'Workspace catalog update is in progress';
+    if (workspace.panes.length >= 8 || layout.tabs.length >= MAX_WORKSPACE_TABS) {
+      return 'Tab limit reached';
+    }
+    const totalSessions = this.config.workspaces.reduce((count, candidate) => count + candidate.panes.length, 0);
+    return totalSessions >= 64 ? 'Configured session limit reached' : null;
+  }
+
+  moveTabDisabledReason(args: TabMoveCommandArgs): CommandDisabledReason | null {
+    const reason = this.tabCommandDisabledReason(args);
+    if (reason !== null) return reason;
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    return layout && args.toIndex < layout.tabs.length ? null : 'Tab is unavailable';
+  }
+
+  closeTabDisabledReason(args: TabCloseCommandArgs): CommandDisabledReason | null {
+    const reason = this.tabCommandDisabledReason(args);
+    if (reason !== null) return reason;
+    return this.workspaceLayouts.get(args.workspaceId)?.tabs.length === 1
+      ? 'Cannot close the last tab'
+      : null;
+  }
+
+  relativeTabCommandDisabledReason(): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    if (this.switching || this.catalogSaving) return 'Workspace switch is in progress';
+    const layout = this.activeWorkspaceId ? this.workspaceLayouts.get(this.activeWorkspaceId) : undefined;
+    if (!layout) return 'No active tab is available';
+    return layout.tabs.length === 1 ? 'No other tab is available' : null;
+  }
+
+  tabDialogDisabledReason(mode: 'rename' | 'close'): CommandDisabledReason | null {
+    if (this.settingsView.isOpen || this.workspaceDialog.isOpen || this.tabDialog.isOpen) {
+      return 'Another overlay is open';
+    }
+    const tab = this.activeLayoutTab();
+    if (!tab) return 'No active tab is available';
+    if (mode === 'close' && this.workspaceLayouts.get(this.activeWorkspaceId ?? '')?.tabs.length === 1) {
+      return 'Cannot close the last tab';
+    }
+    return this.closed ? 'Application is closing' : null;
+  }
+
   paneCommandDisabledReason(paneId: string): CommandDisabledReason | null {
     if (this.closed) return 'Application is closing';
-    const activeWorkspace = this.config.workspaces.find(
-      (workspace) => workspace.id === this.activeWorkspaceId,
-    );
-    if (!activeWorkspace || !activeWorkspace.panes.some((pane) => pane.paneId === paneId)) {
+    const activeTab = this.activeLayoutTab();
+    if (!activeTab || !orderedPaneLeaves(activeTab.root).some((pane) => pane.paneId === paneId)) {
       return 'Pane is unavailable';
     }
     return null;
@@ -650,13 +836,9 @@ export class NeonCodeApp {
 
   relativePaneCommandDisabledReason(): CommandDisabledReason | null {
     if (this.closed) return 'Application is closing';
-    const activeWorkspace = this.config.workspaces.find(
-      (workspace) => workspace.id === this.activeWorkspaceId,
-    );
-    if (!activeWorkspace || activeWorkspace.panes.length === 0) {
-      return 'No active pane is available';
-    }
-    return activeWorkspace.panes.length === 1 ? 'No other pane is available' : null;
+    const paneCount = this.activeLayoutTab() ? orderedPaneLeaves(this.activeLayoutTab()!.root).length : 0;
+    if (paneCount === 0) return 'No active pane is available';
+    return paneCount === 1 ? 'No other pane is available' : null;
   }
 
   defaultKeybindings(): Keybinding[] {
@@ -706,6 +888,11 @@ export class NeonCodeApp {
       { invocation: { id: 'workspace.deleteDialog' }, title: getCommandMetadata('workspace.deleteDialog').title },
       { invocation: { id: 'workspace.next' }, title: getCommandMetadata('workspace.next').title },
       { invocation: { id: 'workspace.previous' }, title: getCommandMetadata('workspace.previous').title },
+      { invocation: { id: 'tab.createDefault' }, title: getCommandMetadata('tab.createDefault').title },
+      { invocation: { id: 'tab.next' }, title: getCommandMetadata('tab.next').title },
+      { invocation: { id: 'tab.previous' }, title: getCommandMetadata('tab.previous').title },
+      { invocation: { id: 'tab.renameDialog' }, title: getCommandMetadata('tab.renameDialog').title },
+      { invocation: { id: 'tab.closeDialog' }, title: getCommandMetadata('tab.closeDialog').title },
     ];
     for (const workspace of this.config.workspaces) {
       entries.push({
@@ -751,6 +938,11 @@ export class NeonCodeApp {
     add({ id: 'workspace.deleteDialog' }, getCommandMetadata('workspace.deleteDialog').title);
     add({ id: 'workspace.next' }, getCommandMetadata('workspace.next').title);
     add({ id: 'workspace.previous' }, getCommandMetadata('workspace.previous').title);
+    add({ id: 'tab.createDefault' }, getCommandMetadata('tab.createDefault').title);
+    add({ id: 'tab.next' }, getCommandMetadata('tab.next').title);
+    add({ id: 'tab.previous' }, getCommandMetadata('tab.previous').title);
+    add({ id: 'tab.renameDialog' }, getCommandMetadata('tab.renameDialog').title);
+    add({ id: 'tab.closeDialog' }, getCommandMetadata('tab.closeDialog').title);
     for (const workspace of this.config.workspaces) {
       add(
         { id: 'workspace.open', args: { workspaceId: workspace.id } },
@@ -793,6 +985,222 @@ export class NeonCodeApp {
         launchProfile: pane.launchProfileId,
       })),
     };
+  }
+
+  persistWorkspaceLayout(workspaceId: string, context: string): Promise<boolean> {
+    const layout = this.workspaceLayouts.get(workspaceId);
+    if (!layout) return Promise.resolve(false);
+    const snapshot = validateWorkspaceLayoutState(layout);
+    const previous = this.layoutSavePromises.get(workspaceId) ?? Promise.resolve();
+    const operation = previous.then(async (): Promise<boolean> => {
+      try {
+        await this.window.neoncodeDesktop.saveWorkspaceLayout(workspaceId, snapshot);
+        return true;
+      } catch (error) {
+        this.addRuntimeWarning(`${context} could not be persisted: ${errorMessage(error)}. The layout will be reconciled from the session catalog on restart.`);
+        return false;
+      }
+    });
+    const queued = operation.then(() => {});
+    this.layoutSavePromises.set(workspaceId, queued);
+    void queued.finally(() => {
+      if (this.layoutSavePromises.get(workspaceId) === queued) {
+        this.layoutSavePromises.delete(workspaceId);
+      }
+    });
+    return operation;
+  }
+
+  persistInitialWorkspaceLayouts(): void {
+    for (const workspaceId of this.pendingInitialLayoutSaves) {
+      void this.persistWorkspaceLayout(workspaceId, 'Seeded workspace layout').then((saved) => {
+        if (saved) this.pendingInitialLayoutSaves.delete(workspaceId);
+      });
+    }
+  }
+
+  async createTab(args: TabCreateCommandArgs): Promise<void> {
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === args.workspaceId);
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    if (!workspace || !layout) throw new Error(`unknown workspace: ${args.workspaceId}`);
+    const profile = this.config.launchProfiles[args.launchProfile];
+    if (!profile) throw new Error(`launch profile is unavailable: ${args.launchProfile}`);
+    const nextLayout = addTab(layout, {
+      tabId: args.tabId,
+      title: args.title,
+      paneId: args.sessionId,
+      sessionKey: args.sessionId,
+    });
+
+    this.catalogSaving = true;
+    try {
+      const snapshot = await this.window.neoncodeDesktop.getWorkspaceCatalog();
+      const configured = snapshot.workspaces.find((candidate) => candidate.id === args.workspaceId);
+      if (!configured) throw new Error(`unknown workspace: ${args.workspaceId}`);
+      if (configured.sessions.length >= 8) throw new Error('configured session limit reached');
+      if (snapshot.workspaces.some((candidate) => (
+        candidate.sessions.some((session) => session.id === args.sessionId)
+      ))) throw new Error(`session is already configured: ${args.sessionId}`);
+      await this.window.neoncodeDesktop.saveWorkspaceCatalog({
+        revision: snapshot.revision,
+        workspaces: snapshot.workspaces.map((candidate) => candidate.id === args.workspaceId
+          ? {
+            ...candidate,
+            sessions: [...candidate.sessions, {
+              id: args.sessionId,
+              title: args.title,
+              launchProfile: args.launchProfile,
+            }],
+          }
+          : candidate),
+      });
+
+      const descriptor: PaneDescriptor = {
+        index: workspace.panes.length,
+        workspaceId: workspace.id,
+        paneId: args.sessionId,
+        sessionKey: args.sessionId,
+        title: args.title,
+        terminalElementId: `terminal-${workspace.id}-${args.sessionId}`,
+        sessionId: createSessionId(this.config.sessionPrefix, args.sessionId),
+        launchProfileId: args.launchProfile,
+        launchProfile: {
+          ...profile,
+          args: [...profile.args],
+          cwd: workspace.path ?? profile.cwd,
+        },
+      };
+      workspace.panes.push(descriptor);
+      this.workspaceSessionStates.set(descriptor.sessionId, {
+        workspaceId: workspace.id,
+        lifecycle: 'idle',
+        error: '',
+        attention: null,
+      });
+      this.workspaceLayouts.set(workspace.id, nextLayout);
+      this.syncPublicConfiguration();
+      this.rebuildKeybindingRouter();
+      await this.persistWorkspaceLayout(workspace.id, 'New tab layout');
+    } finally {
+      this.catalogSaving = false;
+    }
+    await this.switchWorkspace(workspace.id, { force: true });
+  }
+
+  async createDefaultTab(): Promise<void> {
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === this.activeWorkspaceId);
+    if (!workspace) throw new Error('no active workspace');
+    const nonce = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${workspace.panes.length + 1}`;
+    const token = nonce.toLowerCase();
+    const ordinal = workspace.panes.length + 1;
+    await this.createTab({
+      workspaceId: workspace.id,
+      tabId: `tab-${token}`,
+      title: `Terminal ${ordinal}`,
+      sessionId: `session-${token}`,
+      launchProfile: workspace.defaultLaunchProfile,
+    });
+  }
+
+  openTab(args: TabOpenCommandArgs): Promise<void> {
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    if (!layout) return Promise.reject(new Error(`unknown workspace: ${args.workspaceId}`));
+    if (layout.activeTabId === args.tabId && args.workspaceId === this.activeWorkspaceId) {
+      this.applyActivePaneFocus();
+      return Promise.resolve();
+    }
+    this.workspaceLayouts.set(args.workspaceId, activateTab(layout, args.tabId));
+    void this.persistWorkspaceLayout(args.workspaceId, 'Active tab');
+    return this.switchWorkspace(args.workspaceId, { force: true });
+  }
+
+  openRelativeTab(direction: 1 | -1): Promise<void> {
+    const workspaceId = this.activeWorkspaceId;
+    const layout = workspaceId ? this.workspaceLayouts.get(workspaceId) : undefined;
+    if (!workspaceId || !layout) return Promise.resolve();
+    const index = layout.tabs.findIndex((tab) => tab.tabId === layout.activeTabId);
+    const target = layout.tabs[(index + direction + layout.tabs.length) % layout.tabs.length];
+    return target ? this.openTab({ workspaceId, tabId: target.tabId }) : Promise.resolve();
+  }
+
+  async renameTab(args: TabRenameCommandArgs): Promise<void> {
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    if (!layout) throw new Error(`unknown workspace: ${args.workspaceId}`);
+    this.workspaceLayouts.set(args.workspaceId, renameTab(layout, args.tabId, args.title));
+    if (args.workspaceId === this.activeWorkspaceId) this.renderWorkspaceTabs(args.workspaceId);
+    await this.persistWorkspaceLayout(args.workspaceId, 'Renamed tab layout');
+    this.rebuildKeybindingRouter();
+  }
+
+  async moveTab(args: TabMoveCommandArgs): Promise<void> {
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    if (!layout) throw new Error(`unknown workspace: ${args.workspaceId}`);
+    this.workspaceLayouts.set(args.workspaceId, moveTab(layout, args.tabId, args.toIndex));
+    if (args.workspaceId === this.activeWorkspaceId) this.renderWorkspaceTabs(args.workspaceId);
+    await this.persistWorkspaceLayout(args.workspaceId, 'Moved tab layout');
+    this.rebuildKeybindingRouter();
+  }
+
+  async closeTab(args: TabCloseCommandArgs): Promise<void> {
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === args.workspaceId);
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    const tab = layout?.tabs.find((candidate) => candidate.tabId === args.tabId);
+    if (!workspace || !layout || !tab) throw new Error(`unknown tab: ${args.workspaceId}/${args.tabId}`);
+    const removed = closeTab(layout, args.tabId);
+    const removedKeys = new Set(removed.removedLeaves.map((leaf) => leaf.sessionKey));
+    const removedDescriptors = workspace.panes.filter((pane) => removedKeys.has(pane.sessionKey));
+    const wasVisible = workspace.id === this.activeWorkspaceId && layout.activeTabId === tab.tabId;
+
+    this.catalogSaving = true;
+    try {
+      const snapshot = await this.window.neoncodeDesktop.getWorkspaceCatalog();
+      await this.window.neoncodeDesktop.saveWorkspaceCatalog({
+        revision: snapshot.revision,
+        workspaces: snapshot.workspaces.map((candidate) => candidate.id === workspace.id
+          ? { ...candidate, sessions: candidate.sessions.filter((session) => !removedKeys.has(session.id)) }
+          : candidate),
+      });
+
+      if (wasVisible) {
+        for (const pane of this.panes) {
+          if (args.disposition === 'kill') await pane.killAndClose();
+          else await pane.detachAndClose();
+          pane.dispose();
+        }
+        this.panes = [];
+        this.terminalGrid.replaceChildren();
+      } else if (args.disposition === 'kill') {
+        for (const descriptor of removedDescriptors) await this.killDetachedSession(descriptor.sessionId);
+      }
+
+      workspace.panes = workspace.panes
+        .filter((pane) => !removedKeys.has(pane.sessionKey))
+        .map((pane, index) => ({ ...pane, index }));
+      for (const descriptor of removedDescriptors) {
+        this.workspaceSessionStates.delete(descriptor.sessionId);
+        this.visitedSessionIds.delete(descriptor.sessionId);
+        if (args.disposition === 'kill') {
+          this.discoveredSessionIds.delete(descriptor.sessionId);
+          this.hubSessionsById.delete(descriptor.sessionId);
+        }
+      }
+      this.workspaceLayouts.set(workspace.id, removed.state);
+      const removedPaneIds = new Set(removed.removedLeaves.flatMap((leaf) => [leaf.paneId, leaf.sessionKey]));
+      this.config.keybindingOverrides = this.config.keybindingOverrides.filter(({ command }) => (
+        command.id !== 'pane.focus' || !removedPaneIds.has(command.args.paneId)
+      ));
+      this.syncPublicConfiguration();
+      this.rebuildKeybindingRouter();
+      await this.persistWorkspaceLayout(workspace.id, 'Closed tab layout');
+    } finally {
+      this.catalogSaving = false;
+    }
+
+    if (workspace.id === this.activeWorkspaceId) {
+      await this.switchWorkspace(workspace.id, { force: true });
+    }
   }
 
   async createWorkspace(args: WorkspaceCreateCommandArgs): Promise<void> {
@@ -847,7 +1255,16 @@ export class NeonCodeApp {
         }],
       };
       this.config.workspaces.push(descriptor);
-      this.focusModel.addWorkspace(descriptor.id, descriptor.panes.map((pane) => pane.paneId));
+      const seeded = reconcileWorkspaceLayout({
+        name: descriptor.name,
+        layout: descriptor.layout,
+        sessions: descriptor.panes.map((pane) => ({ id: pane.sessionKey, title: pane.title })),
+      });
+      this.workspaceLayouts.set(descriptor.id, seeded.state);
+      this.focusModel.addWorkspace(
+        descriptor.id,
+        orderedPaneLeaves(seeded.state.tabs[0]!.root).map((pane) => pane.paneId),
+      );
       this.workspaceSessionStates.set(descriptor.panes[0]!.sessionId, {
         workspaceId: descriptor.id,
         lifecycle: 'idle',
@@ -857,6 +1274,7 @@ export class NeonCodeApp {
       this.syncPublicConfiguration();
       this.rebuildKeybindingRouter();
       this.renderWorkspaceSelector();
+      await this.persistWorkspaceLayout(descriptor.id, 'Created workspace layout');
       this.catalogSaving = false;
       await this.switchWorkspace(descriptor.id);
     } finally {
@@ -921,6 +1339,7 @@ export class NeonCodeApp {
       }
 
       this.config.workspaces.splice(index, 1);
+      this.workspaceLayouts.delete(deleting.id);
       for (const pane of deleting.panes) {
         this.workspaceSessionStates.delete(pane.sessionId);
         this.visitedSessionIds.delete(pane.sessionId);
@@ -963,22 +1382,40 @@ export class NeonCodeApp {
   }
 
   focusPane(paneId: string): void {
+    const workspaceId = this.activeWorkspaceId;
+    const layout = workspaceId ? this.workspaceLayouts.get(workspaceId) : undefined;
+    if (!workspaceId || !layout) throw new Error('no active workspace layout');
+    const activeTab = layout.tabs.find((tab) => tab.tabId === layout.activeTabId);
+    if (!activeTab || !orderedPaneLeaves(activeTab.root).some((pane) => pane.paneId === paneId)) {
+      throw new Error(`unknown pane in active tab: ${paneId}`);
+    }
+    if (activeTab.focusedPaneId !== paneId) {
+      this.workspaceLayouts.set(workspaceId, focusLayoutPane(layout, paneId));
+      void this.persistWorkspaceLayout(workspaceId, 'Focused pane');
+    }
     this.focusModel.focusPane(paneId);
     this.applyActivePaneFocus();
   }
 
   focusNextPane(): void {
-    this.focusModel.nextPane();
-    this.applyActivePaneFocus();
+    this.focusRelativePane(1);
   }
 
   focusPreviousPane(): void {
-    this.focusModel.previousPane();
-    this.applyActivePaneFocus();
+    this.focusRelativePane(-1);
+  }
+
+  focusRelativePane(direction: 1 | -1): void {
+    const tab = this.activeLayoutTab();
+    if (!tab) return;
+    const panes = orderedPaneLeaves(tab.root);
+    const index = panes.findIndex((pane) => pane.paneId === tab.focusedPaneId);
+    const target = panes[(index + direction + panes.length) % panes.length];
+    if (target) this.focusPane(target.paneId);
   }
 
   applyActivePaneFocus(): void {
-    const activePaneId = this.focusModel.activePaneId;
+    const activePaneId = this.activeLayoutTab()?.focusedPaneId ?? null;
     this.sessionModel.setActivePane(activePaneId);
     for (const surface of this.terminalGrid.querySelectorAll<HTMLElement>('.terminal-pane')) {
       const active = surface.dataset.paneId === activePaneId;
@@ -1321,6 +1758,7 @@ export class NeonCodeApp {
     }
 
     this.renderWorkspaceSelector();
+    this.persistInitialWorkspaceLayouts();
     const discoveredSessions = await this.discoverSessions();
     this.discoveredSessionIds = new Set(
       discoveredSessions.filter((session) => session.state === 'running').map((session) => session.sessionId),
@@ -1456,20 +1894,26 @@ export class NeonCodeApp {
     });
   }
 
-  switchWorkspace(workspaceId: string, { initial = false }: WorkspaceSwitchOptions = {}): Promise<void> {
-    const operation = this.switchPromise.then(() => this.performWorkspaceSwitch(workspaceId, { initial }));
+  switchWorkspace(
+    workspaceId: string,
+    { initial = false, force = false }: WorkspaceSwitchOptions = {},
+  ): Promise<void> {
+    const operation = this.switchPromise.then(() => (
+      this.performWorkspaceSwitch(workspaceId, { initial, force })
+    ));
     this.switchPromise = operation.catch(() => {});
     return operation;
   }
 
   async performWorkspaceSwitch(
     workspaceId: string,
-    { initial = false }: WorkspaceSwitchOptions = {},
+    { initial = false, force = false }: WorkspaceSwitchOptions = {},
   ): Promise<void> {
     if (this.closed) throw new Error('application is closing');
     const workspace = this.config.workspaces.find((candidate) => candidate.id === workspaceId);
-    if (!workspace) throw new Error(`unknown workspace: ${workspaceId}`);
-    if (!initial && workspaceId === this.activeWorkspaceId) {
+    const layout = this.workspaceLayouts.get(workspaceId);
+    if (!workspace || !layout) throw new Error(`unknown workspace: ${workspaceId}`);
+    if (!initial && !force && workspaceId === this.activeWorkspaceId) {
       this.applyActivePaneFocus();
       return;
     }
@@ -1478,46 +1922,118 @@ export class NeonCodeApp {
     this.updateWorkspaceSelector();
     this.setStatus(`Switching to ${workspace.name}...`);
     try {
-      try {
-        await this.window.neoncodeDesktop.setActiveWorkspace(workspaceId);
-      } catch (error) {
-        if (!initial) throw error;
-        this.addRuntimeWarning(`Active workspace could not be persisted: ${errorMessage(error)}`);
+      if (workspaceId !== this.activeWorkspaceId || initial) {
+        try {
+          await this.window.neoncodeDesktop.setActiveWorkspace(workspaceId);
+        } catch (error) {
+          if (!initial) throw error;
+          this.addRuntimeWarning(`Active workspace could not be persisted: ${errorMessage(error)}`);
+        }
       }
-      if (this.panes.length > 0) {
-        await Promise.all(this.panes.map((pane) => pane.detachAndClose()));
-        for (const pane of this.panes) pane.dispose();
+      for (const pane of this.panes) {
+        await pane.detachAndClose();
+        pane.dispose();
       }
       this.panes = [];
       if (this.closed) return;
       this.terminalGrid.replaceChildren();
+      const activeTab = layout.tabs.find((tab) => tab.tabId === layout.activeTabId);
+      if (!activeTab) throw new Error(`active tab is unavailable: ${layout.activeTabId}`);
+      const leaves = orderedPaneLeaves(activeTab.root);
+      this.focusModel.setPaneOrder(workspaceId, leaves.map((leaf) => leaf.paneId));
       this.focusModel.activateWorkspace(workspaceId);
+      this.focusModel.focusPane(activeTab.focusedPaneId);
       this.sessionModel.resetPanes(workspaceId);
-      this.configureWorkspaceGrid(workspace);
+      this.renderWorkspaceTabs(workspaceId);
       this.updateWorkspaceSelector();
-
-      for (const descriptor of workspace.panes) {
-        this.createPaneSurface(descriptor);
-        this.createPane(descriptor);
-        this.discoveredSessionIds.add(descriptor.sessionId);
-        this.visitedSessionIds.add(descriptor.sessionId);
-      }
+      this.renderLayoutNode(activeTab.root, workspace, this.terminalGrid);
       this.sessionModel.setActiveWorkspace(workspaceId);
       this.applyActivePaneFocus();
       this.setStatus(`Workspace: ${workspace.name}`);
     } finally {
       this.switching = false;
       this.updateWorkspaceSelector();
+      const createButton = requiredElement<HTMLButtonElement>(this.document, 'tab-create-button');
+      createButton.disabled = this.createDefaultTabDisabledReason() !== null;
     }
   }
 
-  configureWorkspaceGrid(workspace: WorkspaceDescriptor): void {
-    const rows = Math.ceil(workspace.panes.length / workspace.layout.columns);
-    this.terminalGrid.style.gridTemplateColumns = `repeat(${workspace.layout.columns}, minmax(0, 1fr))`;
-    this.terminalGrid.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+  renderWorkspaceTabs(workspaceId: string): void {
+    const layout = this.workspaceLayouts.get(workspaceId);
+    this.workspaceTabs.replaceChildren();
+    if (!layout) return;
+    for (const [index, tab] of layout.tabs.entries()) {
+      const button = this.document.createElement('button');
+      const active = tab.tabId === layout.activeTabId;
+      button.type = 'button';
+      button.className = 'workspace-tab';
+      button.id = `workspace-tab-${workspaceId}-${tab.tabId}`;
+      button.dataset.workspaceId = workspaceId;
+      button.dataset.tabId = tab.tabId;
+      button.dataset.testid = `workspace-tab-${tab.tabId}`;
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', String(active));
+      button.setAttribute('aria-controls', 'terminal-grid');
+      button.tabIndex = active ? 0 : -1;
+      button.textContent = tab.title;
+      button.addEventListener('click', () => {
+        void this.dispatchCommand({ id: 'tab.open', args: { workspaceId, tabId: tab.tabId } });
+      });
+      button.addEventListener('keydown', (event) => {
+        let target: TabLayout | undefined;
+        if (event.key === 'ArrowRight') target = layout.tabs[(index + 1) % layout.tabs.length];
+        else if (event.key === 'ArrowLeft') {
+          target = layout.tabs[(index - 1 + layout.tabs.length) % layout.tabs.length];
+        } else if (event.key === 'Home') target = layout.tabs[0];
+        else if (event.key === 'End') target = layout.tabs.at(-1);
+        if (!target) return;
+        event.preventDefault();
+        void this.dispatchCommand({ id: 'tab.open', args: { workspaceId, tabId: target.tabId } });
+      });
+      this.workspaceTabs.append(button);
+    }
+    requiredElement<HTMLButtonElement>(this.document, 'tab-create-button').disabled = (
+      this.createDefaultTabDisabledReason() !== null
+    );
   }
 
-  createPaneSurface(descriptor: PaneDescriptor): void {
+  descriptorForLeaf(workspace: WorkspaceDescriptor, leaf: PaneLeaf): PaneDescriptor {
+    const configured = workspace.panes.find((pane) => pane.sessionKey === leaf.sessionKey);
+    if (!configured) throw new Error(`layout references an unconfigured session: ${leaf.sessionKey}`);
+    return {
+      ...configured,
+      paneId: leaf.paneId,
+      terminalElementId: `terminal-${workspace.id}-${leaf.paneId}`,
+      launchProfile: { ...configured.launchProfile, args: [...configured.launchProfile.args] },
+    };
+  }
+
+  renderLayoutNode(node: LayoutNode, workspace: WorkspaceDescriptor, parent: HTMLElement): void {
+    if (node.type === 'pane') {
+      const descriptor = this.descriptorForLeaf(workspace, node);
+      this.createPaneSurface(descriptor, parent);
+      this.createPane(descriptor);
+      this.discoveredSessionIds.add(descriptor.sessionId);
+      this.visitedSessionIds.add(descriptor.sessionId);
+      return;
+    }
+    const split = this.document.createElement('div');
+    split.className = 'layout-split';
+    split.dataset.splitId = node.splitId;
+    split.dataset.direction = node.direction;
+    const first = this.document.createElement('div');
+    first.className = 'layout-child';
+    first.style.flex = `0 1 ${node.ratio * 100}%`;
+    const second = this.document.createElement('div');
+    second.className = 'layout-child';
+    second.style.flex = `0 1 ${(1 - node.ratio) * 100}%`;
+    split.append(first, second);
+    parent.append(split);
+    this.renderLayoutNode(node.first, workspace, first);
+    this.renderLayoutNode(node.second, workspace, second);
+  }
+
+  createPaneSurface(descriptor: PaneDescriptor, parent: HTMLElement): void {
     const pane = this.document.createElement('section');
     pane.className = 'terminal-pane';
     pane.dataset.testid = `terminal-pane-${descriptor.paneId}`;
@@ -1528,10 +2044,10 @@ export class NeonCodeApp {
     pane.setAttribute('aria-label', `${descriptor.title} terminal pane`);
     pane.setAttribute('aria-current', 'false');
     pane.addEventListener('pointerdown', () => {
-      this.dispatchCommand({ id: 'pane.focus', args: { paneId: descriptor.paneId } });
+      void this.dispatchCommand({ id: 'pane.focus', args: { paneId: descriptor.paneId } });
     });
     pane.addEventListener('focusin', () => {
-      this.dispatchCommand({ id: 'pane.focus', args: { paneId: descriptor.paneId } });
+      void this.dispatchCommand({ id: 'pane.focus', args: { paneId: descriptor.paneId } });
     });
 
     const titleBar = this.document.createElement('div');
@@ -1552,7 +2068,7 @@ export class NeonCodeApp {
     terminal.className = 'terminal';
     terminal.dataset.testid = `terminal-${descriptor.paneId}`;
     pane.append(titleBar, terminal);
-    this.terminalGrid.append(pane);
+    parent.append(pane);
   }
 
   createPane(descriptor: PaneDescriptor): void {
@@ -1754,6 +2270,7 @@ export class NeonCodeApp {
     this.stopMetadataRefresh();
     this.closePromise = (async () => {
       await this.switchPromise;
+      await Promise.all(this.layoutSavePromises.values());
       if (this.config.persistencePolicy === 'kill') {
         for (const pane of this.panes) pane.close();
         await Promise.all([...this.visitedSessionIds].map((sessionId) => this.killDetachedSession(sessionId)));

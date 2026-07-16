@@ -65,7 +65,9 @@ config-store.ts      versioned config/state validation, migration, recovery, and
 token-loader.ts      validated environment/WSL hub capability loading
 preload.ts           narrow context-isolated desktop bridge
 renderer.ts          typed browser-bundle bootstrap entrypoint
-renderer/app.ts      typed app/bootstrap and pane grid orchestration
+renderer/app.ts      typed app/bootstrap and workspace tab/split orchestration
+renderer/tab-dialog.ts
+                     reusable accessible tab rename/close dialog
 renderer/hub-client.ts
                      typed WebSocket protocol client and validators
 renderer/session-model.ts
@@ -85,9 +87,9 @@ tests/               strict unit/fake-hub tests and hidden-window Playwright fun
 
 `npm run check` performs strict type-checking, creates a clean `dist/`, bundles the browser renderer, and runs unit tests from generated CommonJS. Published Electron also executes only `dist/` artifacts; no runtime TypeScript loader is used. Node, renderer, and test compiler projects all disable `allowJs`, and no JavaScript source files remain in the Electron frontend.
 
-On startup, Electron main loads `%APPDATA%\\NeonCode\\config.json`, validates configured workspaces/sessions/process profiles, and sends a deeply frozen bootstrap object to the renderer. The renderer calls `list_sessions`, restores the active workspace, attaches matching stable sessions, and starts missing sessions with configured command/args/cwd. The sidebar switches workspaces through detach/reattach and shows hub-owned configured launch cwd when available (with frontend-config fallback) plus aggregate running/reconnecting/detached/available/in-use/error state and retained exit attention with explicit dismissal. The close policy waits for `detached` or `killed` acknowledgements. Attach replays up to 2 MiB of recent ordered terminal output before live output continues, so normal shell history and prompts reappear.
+On startup, Electron main loads `%APPDATA%\\NeonCode\\config.json`, validates configured workspaces/sessions/process profiles, and sends a deeply frozen bootstrap object to the renderer. The renderer validates and reconciles persisted workspace tab/split layouts, calls `list_sessions`, restores the active workspace/tab/focused pane, attaches matching visible stable sessions, and starts missing visible sessions with configured command/args/cwd. The sidebar switches workspaces through detach/reattach and shows hub-owned configured launch cwd when available (with frontend-config fallback) plus aggregate running/reconnecting/detached/available/in-use/error state and retained exit attention with explicit dismissal. The close policy waits for `detached` or `killed` acknowledgements. Attach replays up to 2 MiB of recent ordered terminal output before live output continues, so normal shell history and prompts reappear.
 
-Schema version 4 supports 1–16 named workspaces with 1–8 dynamically rendered panes and simple grid columns, while applying validated font family/size, cursor blink, core theme colors, and a named 16-color ANSI scheme to every xterm pane. Window content size and active workspace are stored atomically in `%APPDATA%\\NeonCode\\state.json`. Valid backups and visible recovery diagnostics protect malformed configuration. See [`docs/configuration.md`](../../docs/configuration.md) for the schema, launch-profile examples, and manual preview workflow.
+Configuration schema version 6 supports 1–16 named workspaces with 1–8 durable session definitions. State schema 3 stores each workspace's visible tabs and split trees separately. A missing layout deterministically seeds one tab from the configured grid; inactive tabs remain detached, while the active tree's leaves receive xterm surfaces and replay-capable hub attachments. Window content size, active workspace, tab layouts, and focused panes are stored atomically in `%APPDATA%\\NeonCode\\state.json`. Valid backups and visible recovery diagnostics protect malformed configuration. See [`docs/configuration.md`](../../docs/configuration.md) for the schema, launch-profile examples, and manual preview workflow.
 
 After authenticated protocol-version/boot-ID negotiation, panes start persistent hub sessions. Unexpected socket loss shows `Reconnecting` with capped exponential backoff, then attaches the same PTY and replay stream. If the hub rebooted, attach falls back once to a fresh persistent session. Graceful window close still follows the configured detach/kill policy.
 
@@ -112,7 +114,7 @@ With the hub running:
 ./dev electron-test
 ```
 
-The test launches a hidden Electron window and uses structured renderer/Electron APIs, restoring clipboard state after copy checks rather than relying on it for terminal/session correctness. It does not use foreground-window automation, `SendKeys`, or log scraping. It switches between two- and three-pane workspaces, verifies hub session metadata, retained status-7 exit attention/acknowledgement, sidebar lifecycle transitions, detach/reattach state continuity, and closes/reopens the real Electron app to verify active-workspace restoration.
+The test launches a hidden Electron window and uses structured renderer/Electron APIs, restoring clipboard state after copy checks rather than relying on it for terminal/session correctness. It does not use foreground-window automation, `SendKeys`, or log scraping. It switches between workspaces and tabs, verifies accessible tab state, create/rename/relaunch/close transactions, active-tab-only attachments and F6 scope, positive split dimensions, hub metadata, retained status-7 exit attention/acknowledgement, sidebar lifecycle transitions, detach/reattach continuity, and active workspace/tab restoration.
 
 Automated terminal coverage includes navigation/function keys, Ctrl+C/D/Z, selection copy and paste-race handling, interactive tmux/Neovim workflows, SGR mouse reports, tmux split/copy-mode mouse handling, Neovim click/wheel handling, Unicode, and a 20,000-line output soak.
 

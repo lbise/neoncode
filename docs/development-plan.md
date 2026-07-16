@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: App-created durable workspaces complete
+Stage: Persistent visible workspace tabs complete
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: visible dynamic tabs/splits on the mutable workspace foundation, then GUI polish
+Next focus: interactive pane splitting/resizing, then GUI polish
 ```
 
 The Windows tech stack is now:
@@ -177,7 +177,7 @@ Limitations:
 
 - the schema 6 Settings UI edits supported General values and keybindings; launch profiles still require JSON edits, while workspace definitions can be created/renamed/deleted in-app;
 - General values are restart-required in this slice, while keybinding overrides and workspace catalog edits apply live;
-- schema 6 supports simple column grids rather than visible tabs/free-form splits;
+- schema 6 grids seed persisted visible tab/split trees; interactive pane splitting/resizing is not exposed yet;
 - live appearance reload, font discovery, and external workspace files remain future work;
 - changing a configured ID does not automatically kill an old detached hub session.
 
@@ -398,10 +398,11 @@ General endpoint/session/appearance fields and close policy are explicitly resta
 
 - [x] Define terminology and identity: workspace = project/context, tab = top-level layout, pane = session surface, panel = auxiliary UI.
 - [x] Add the pure typed tab/split tree, deterministic configured-grid seeding, validated state schema 3 persistence, and typed save IPC groundwork.
-- [ ] Replace configured-grid-only rendering with visible tab strips and split-tree DOM, including headers, focus rings, empty states, and accessible state.
-- [ ] Create/close/rename/reorder tabs and split/close/focus/resize panes through catalog commands before adding mouse-only controls.
-- [ ] Persist dynamic pane definitions that reference validated launch profiles without coupling pane identity to hub session identity.
-- [ ] Restore tabs/splits and dynamic terminal surfaces across relaunch, reconnect, missing sessions, and replacement session incarnations.
+- [x] Replace configured-grid-only rendering with an accessible visible tab strip and recursive split-tree DOM for seeded/restored trees.
+- [x] Add typed create/open/rename/reorder/close tab commands, contextual palette actions, durable session transactions, and detach/kill semantics with a last-tab guard.
+- [x] Keep dynamic pane definitions in the durable workspace catalog, derive new tab pane IDs from stable session IDs, and apply workspace path cwd overrides.
+- [x] Restore/reconcile tabs and focused panes across relaunch, attach visible leaves with replay, and leave inactive tabs unattached.
+- [ ] Add interactive split/close/resize pane commands and controls without changing the hub's layout-agnostic contract.
 
 #### Phase 6: authenticated local app-control transport for CLI
 
@@ -411,7 +412,7 @@ General endpoint/session/appearance fields and close policy are explicitly resta
 - [ ] Extend `neoncode` CLI workspace list/open and app-control commands over that transport.
 - [ ] Keep `neoncode-hub` layout-agnostic: it continues to own PTY/session lifecycle while Electron owns workspaces, tabs, splits, palette, and presentation.
 
-Future shortcut candidates (subject to conflict tests): `Ctrl+Shift+T` new tab, `Ctrl+PageUp/PageDown` tab navigation, Windows-Terminal-style `Alt+Shift+D/-/=` splitting, directional pane focus, and close operations. `F6`/`Shift+F6`, `Alt+1..9`, and `Ctrl+Shift+P` are the current defaults.
+Current tab defaults are `Ctrl+Shift+T` for a new tab and `Ctrl+PageUp/PageDown` for tab navigation. Future shortcut candidates (subject to conflict tests) include Windows-Terminal-style `Alt+Shift+D/-/=` splitting, directional pane focus, and close operations. `F6`/`Shift+F6`, `Alt+1..9`, and `Ctrl+Shift+P` remain defaults.
 
 Acceptance for the full cockpit milestone: starting from the keyboard, a user can switch/open a workspace, create and rename a tab, split and focus panes, start a terminal from a profile, resize/close the layout, inspect attention, and restore the same view after relaunch without disrupting normal terminal input.
 

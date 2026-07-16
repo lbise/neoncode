@@ -29,6 +29,22 @@ const validInvocations: CommandInvocation[] = [
   { id: 'workspace.next' },
   { id: 'workspace.previous' },
   { id: 'workspace.dismissAttention', args: { workspaceId: 'review' } },
+  {
+    id: 'tab.create',
+    args: {
+      workspaceId: 'review', tabId: 'tab-review', title: 'Review',
+      sessionId: 'review-shell', launchProfile: 'default-shell',
+    },
+  },
+  { id: 'tab.open', args: { workspaceId: 'review', tabId: 'tab-review' } },
+  { id: 'tab.rename', args: { workspaceId: 'review', tabId: 'tab-review', title: 'Renamed' } },
+  { id: 'tab.move', args: { workspaceId: 'review', tabId: 'tab-review', toIndex: 0 } },
+  { id: 'tab.close', args: { workspaceId: 'review', tabId: 'tab-review', disposition: 'detach' } },
+  { id: 'tab.createDefault' },
+  { id: 'tab.next' },
+  { id: 'tab.previous' },
+  { id: 'tab.renameDialog' },
+  { id: 'tab.closeDialog' },
   { id: 'pane.focus', args: { paneId: 'tasks' } },
   { id: 'pane.next' },
   { id: 'pane.previous' },
@@ -42,12 +58,15 @@ for (const metadata of listCommandMetadata()) {
   assert.equal(metadata.owningLayer, 'renderer');
   assert.equal(typeof metadata.externalInvocation, 'boolean');
 }
+const internalCommands = new Set([
+  'palette.open', 'palette.close', 'settings.open', 'settings.close',
+  'workspace.createDialog', 'workspace.renameDialog', 'workspace.deleteDialog',
+  'tab.createDefault', 'tab.next', 'tab.previous', 'tab.renameDialog', 'tab.closeDialog',
+]);
 for (const metadata of listCommandMetadata()) {
   assert.equal(
     metadata.externalInvocation,
-    !metadata.id.startsWith('palette.')
-      && !metadata.id.startsWith('settings.')
-      && !metadata.id.endsWith('Dialog'),
+    !internalCommands.has(metadata.id),
     `${metadata.id} has incorrect future CLI eligibility`,
   );
 }
@@ -78,6 +97,14 @@ for (const invalid of [
   { id: 'workspace.open', args: { workspaceId: 'not valid' } },
   { id: 'workspace.open', args: { workspaceId: 'review', extra: true } },
   { id: 'workspace.dismissAttention', args: { workspaceId: 7 } },
+  { id: 'tab.createDefault', args: {} },
+  { id: 'tab.create', args: {
+    workspaceId: 'review', tabId: 'tab', title: '', sessionId: 'session', launchProfile: 'shell',
+  } },
+  { id: 'tab.open', args: { workspaceId: 'review' } },
+  { id: 'tab.rename', args: { workspaceId: 'review', tabId: 'tab', title: 'bad\ntitle' } },
+  { id: 'tab.move', args: { workspaceId: 'review', tabId: 'tab', toIndex: 8 } },
+  { id: 'tab.close', args: { workspaceId: 'review', tabId: 'tab', disposition: 'later' } },
   { id: 'pane.focus', args: { paneId: 'bad\nvalue' } },
   { id: 'pane.focus', args: { paneId: 'x'.repeat(129) } },
 ]) {

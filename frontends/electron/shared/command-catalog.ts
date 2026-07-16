@@ -13,14 +13,24 @@ export const COMMAND_IDS = Object.freeze([
   'workspace.next',
   'workspace.previous',
   'workspace.dismissAttention',
+  'tab.create',
+  'tab.open',
+  'tab.rename',
+  'tab.move',
+  'tab.close',
+  'tab.createDefault',
+  'tab.next',
+  'tab.previous',
+  'tab.renameDialog',
+  'tab.closeDialog',
   'pane.focus',
   'pane.next',
   'pane.previous',
 ] as const);
 
 export type CommandId = typeof COMMAND_IDS[number];
-export type CommandCategory = 'Application' | 'Workspace' | 'Pane';
-export type CommandContext = 'application' | 'workspace' | 'pane';
+export type CommandCategory = 'Application' | 'Workspace' | 'Tab' | 'Pane';
+export type CommandContext = 'application' | 'workspace' | 'tab' | 'pane';
 export type CommandOwningLayer = 'renderer' | 'main' | 'hub';
 
 export interface WorkspaceCreateCommandArgs {
@@ -50,6 +60,31 @@ export interface WorkspaceDismissAttentionCommandArgs {
   workspaceId: string;
 }
 
+export interface TabCreateCommandArgs {
+  workspaceId: string;
+  tabId: string;
+  title: string;
+  sessionId: string;
+  launchProfile: string;
+}
+
+export interface TabOpenCommandArgs {
+  workspaceId: string;
+  tabId: string;
+}
+
+export interface TabRenameCommandArgs extends TabOpenCommandArgs {
+  title: string;
+}
+
+export interface TabMoveCommandArgs extends TabOpenCommandArgs {
+  toIndex: number;
+}
+
+export interface TabCloseCommandArgs extends TabOpenCommandArgs {
+  disposition: 'detach' | 'kill';
+}
+
 export interface PaneFocusCommandArgs {
   paneId: string;
 }
@@ -69,6 +104,16 @@ export interface CommandArgumentMap {
   'workspace.next': undefined;
   'workspace.previous': undefined;
   'workspace.dismissAttention': WorkspaceDismissAttentionCommandArgs;
+  'tab.create': TabCreateCommandArgs;
+  'tab.open': TabOpenCommandArgs;
+  'tab.rename': TabRenameCommandArgs;
+  'tab.move': TabMoveCommandArgs;
+  'tab.close': TabCloseCommandArgs;
+  'tab.createDefault': undefined;
+  'tab.next': undefined;
+  'tab.previous': undefined;
+  'tab.renameDialog': undefined;
+  'tab.closeDialog': undefined;
   'pane.focus': PaneFocusCommandArgs;
   'pane.next': undefined;
   'pane.previous': undefined;
@@ -94,6 +139,12 @@ export type CommandDisabledReason =
   | 'Workspace is unavailable'
   | 'Workspace switch is in progress'
   | 'Workspace has no attention to dismiss'
+  | 'Tab limit reached'
+  | 'Tab already exists'
+  | 'Cannot close the last tab'
+  | 'No active tab is available'
+  | 'No other tab is available'
+  | 'Tab is unavailable'
   | 'No active pane is available'
   | 'No other pane is available'
   | 'Pane is unavailable';
@@ -121,6 +172,16 @@ export interface CommandResultMap {
   'workspace.next': CommandOperationResult;
   'workspace.previous': CommandOperationResult;
   'workspace.dismissAttention': CommandOperationResult;
+  'tab.create': CommandOperationResult;
+  'tab.open': CommandOperationResult;
+  'tab.rename': CommandOperationResult;
+  'tab.move': CommandOperationResult;
+  'tab.close': CommandOperationResult;
+  'tab.createDefault': CommandOperationResult;
+  'tab.next': CommandOperationResult;
+  'tab.previous': CommandOperationResult;
+  'tab.renameDialog': CommandOperationResult;
+  'tab.closeDialog': CommandOperationResult;
   'pane.focus': CommandOperationResult;
   'pane.next': CommandOperationResult;
   'pane.previous': CommandOperationResult;
@@ -285,6 +346,96 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     owningLayer: 'renderer',
     externalInvocation: true,
   }),
+  'tab.create': Object.freeze({
+    id: 'tab.create',
+    title: 'Create Tab',
+    category: 'Tab',
+    context: 'tab',
+    searchTerms: ['new', 'terminal', 'session'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'tab.open': Object.freeze({
+    id: 'tab.open',
+    title: 'Open Tab',
+    category: 'Tab',
+    context: 'tab',
+    searchTerms: ['switch', 'activate', 'terminal'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'tab.rename': Object.freeze({
+    id: 'tab.rename',
+    title: 'Rename Tab',
+    category: 'Tab',
+    context: 'tab',
+    searchTerms: ['edit', 'title'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'tab.move': Object.freeze({
+    id: 'tab.move',
+    title: 'Move Tab',
+    category: 'Tab',
+    context: 'tab',
+    searchTerms: ['reorder', 'position'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'tab.close': Object.freeze({
+    id: 'tab.close',
+    title: 'Close Tab',
+    category: 'Tab',
+    context: 'tab',
+    searchTerms: ['remove', 'detach', 'kill'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'tab.createDefault': Object.freeze({
+    id: 'tab.createDefault',
+    title: 'New Tab',
+    category: 'Tab',
+    context: 'tab',
+    searchTerms: ['create', 'terminal', 'session'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'tab.next': Object.freeze({
+    id: 'tab.next',
+    title: 'Next Tab',
+    category: 'Tab',
+    context: 'tab',
+    searchTerms: ['switch', 'cycle', 'forward'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'tab.previous': Object.freeze({
+    id: 'tab.previous',
+    title: 'Previous Tab',
+    category: 'Tab',
+    context: 'tab',
+    searchTerms: ['switch', 'cycle', 'back'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'tab.renameDialog': Object.freeze({
+    id: 'tab.renameDialog',
+    title: 'Rename Current Tab…',
+    category: 'Tab',
+    context: 'tab',
+    searchTerms: ['edit', 'title'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'tab.closeDialog': Object.freeze({
+    id: 'tab.closeDialog',
+    title: 'Close Current Tab…',
+    category: 'Tab',
+    context: 'tab',
+    searchTerms: ['remove', 'detach', 'kill'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
   'pane.focus': Object.freeze({
     id: 'pane.focus',
     title: 'Focus Pane',
@@ -377,6 +528,11 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
     case 'workspace.deleteDialog':
     case 'workspace.next':
     case 'workspace.previous':
+    case 'tab.createDefault':
+    case 'tab.next':
+    case 'tab.previous':
+    case 'tab.renameDialog':
+    case 'tab.closeDialog':
     case 'pane.next':
     case 'pane.previous':
       if (!hasExactKeys(value, ['id'])) throw new Error(`Invalid ${value.id} command invocation`);
@@ -438,6 +594,74 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
       }
       const args = validateTargetArgs(value.args, 'workspaceId');
       return { id: value.id, args };
+    }
+    case 'tab.create': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, ['workspaceId', 'tabId', 'title', 'sessionId', 'launchProfile'])
+          || !isBoundedIdentifier(value.args.workspaceId)
+          || !isBoundedIdentifier(value.args.tabId)
+          || !isBoundedLabel(value.args.title)
+          || !isBoundedIdentifier(value.args.sessionId)
+          || !isBoundedIdentifier(value.args.launchProfile)) {
+        throw new Error('Invalid tab.create command arguments');
+      }
+      return { id: value.id, args: {
+        workspaceId: value.args.workspaceId,
+        tabId: value.args.tabId,
+        title: value.args.title,
+        sessionId: value.args.sessionId,
+        launchProfile: value.args.launchProfile,
+      } };
+    }
+    case 'tab.open': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, ['workspaceId', 'tabId'])
+          || !isBoundedIdentifier(value.args.workspaceId)
+          || !isBoundedIdentifier(value.args.tabId)) {
+        throw new Error('Invalid tab.open command arguments');
+      }
+      return { id: value.id, args: { workspaceId: value.args.workspaceId, tabId: value.args.tabId } };
+    }
+    case 'tab.rename': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, ['workspaceId', 'tabId', 'title'])
+          || !isBoundedIdentifier(value.args.workspaceId)
+          || !isBoundedIdentifier(value.args.tabId)
+          || !isBoundedLabel(value.args.title)) {
+        throw new Error('Invalid tab.rename command arguments');
+      }
+      return { id: value.id, args: {
+        workspaceId: value.args.workspaceId, tabId: value.args.tabId, title: value.args.title,
+      } };
+    }
+    case 'tab.move': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, ['workspaceId', 'tabId', 'toIndex'])
+          || !isBoundedIdentifier(value.args.workspaceId)
+          || !isBoundedIdentifier(value.args.tabId)
+          || typeof value.args.toIndex !== 'number'
+          || !Number.isInteger(value.args.toIndex)
+          || value.args.toIndex < 0
+          || value.args.toIndex > 7) {
+        throw new Error('Invalid tab.move command arguments');
+      }
+      return { id: value.id, args: {
+        workspaceId: value.args.workspaceId, tabId: value.args.tabId, toIndex: value.args.toIndex,
+      } };
+    }
+    case 'tab.close': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, ['workspaceId', 'tabId', 'disposition'])
+          || !isBoundedIdentifier(value.args.workspaceId)
+          || !isBoundedIdentifier(value.args.tabId)
+          || (value.args.disposition !== 'detach' && value.args.disposition !== 'kill')) {
+        throw new Error('Invalid tab.close command arguments');
+      }
+      return { id: value.id, args: {
+        workspaceId: value.args.workspaceId,
+        tabId: value.args.tabId,
+        disposition: value.args.disposition,
+      } };
     }
     case 'pane.focus': {
       if (!hasExactKeys(value, ['id', 'args'])) throw new Error('Invalid pane.focus command invocation');

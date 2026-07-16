@@ -9,6 +9,7 @@ import {
   movePane,
   moveTab,
   orderedDepthFirstPanes,
+  reconcileWorkspaceLayout,
   renameTab,
   resizeSplit,
   seedWorkspaceLayout,
@@ -363,6 +364,53 @@ function testStrictValidationAndLimits(): void {
   }), /1-8 tabs|at most 8 panes/);
 }
 
+function testLayoutReconciliationPreservesSurvivors(): void {
+  const persisted = addTab(seed(), {
+    tabId: 'tab-review',
+    title: 'My review',
+    paneId: 'pane-review',
+    sessionKey: 'review',
+    activate: false,
+  });
+  const result = reconcileWorkspaceLayout({
+    name: 'Development',
+    layout: { columns: 2 },
+    sessions: [
+      { id: 'shell', title: 'Shell' },
+      { id: 'agent', title: 'Agent' },
+      { id: 'logs', title: 'Logs' },
+      { id: 'review', title: 'Review' },
+      { id: 'new-session', title: 'New session' },
+    ],
+  }, persisted);
+
+  assert(result.changed);
+  assert.deepEqual(result.removedSessionKeys, ['tasks']);
+  assert.deepEqual(result.addedSessionKeys, ['new-session']);
+  assert.equal(result.state.activeTabId, 'tab-main');
+  assert.equal(result.state.tabs.find((tab) => tab.tabId === 'tab-review')?.title, 'My review');
+  assert.deepEqual(
+    orderedDepthFirstPanes(result.state).map((pane) => pane.sessionKey),
+    ['shell', 'agent', 'logs', 'review', 'new-session'],
+  );
+  assert.equal(result.state.tabs.at(-1)?.title, 'New session');
+
+  const unchanged = reconcileWorkspaceLayout({
+    name: 'Development',
+    layout: { columns: 2 },
+    sessions: sourceWorkspace.sessions,
+  }, seed());
+  assert.equal(unchanged.changed, false);
+
+  const seeded = reconcileWorkspaceLayout(sourceWorkspace);
+  assert(seeded.changed);
+  assert.deepEqual(
+    orderedDepthFirstPanes(seeded.state).map((pane) => pane.sessionKey),
+    sourceWorkspace.sessions.map((session) => session.id),
+  );
+  assert.deepEqual(reconcileWorkspaceLayout(sourceWorkspace).state, seeded.state);
+}
+
 function testSharedNodeAndCyclesAreRejected(): void {
   const leaf: PaneLeaf = { type: 'pane', paneId: 'shared', sessionKey: 'shared' };
   const shared = {
@@ -391,6 +439,7 @@ for (const test of [
   testPaneMovesWithinAndAcrossTabs,
   testClosingRootPaneRemovesItsTab,
   testStrictValidationAndLimits,
+  testLayoutReconciliationPreservesSurvivors,
   testSharedNodeAndCyclesAreRejected,
 ]) {
   test();

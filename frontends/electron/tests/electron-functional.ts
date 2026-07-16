@@ -892,11 +892,28 @@ async function runFirstLaunchChecks(
       'workspace.next',
       'workspace.previous',
       'workspace.dismissAttention',
+      'tab.create',
+      'tab.open',
+      'tab.rename',
+      'tab.move',
+      'tab.close',
+      'tab.createDefault',
+      'tab.next',
+      'tab.previous',
+      'tab.renameDialog',
+      'tab.closeDialog',
       'pane.focus',
       'pane.next',
       'pane.previous',
     ]),
     `unexpected command registry metadata: ${commandIds.join(',')}`,
+  );
+  const workspaceTabs = page.getByTestId('workspace-tabs');
+  assert(await workspaceTabs.getAttribute('role') === 'tablist', 'workspace tablist role was not rendered');
+  assert(await workspaceTabs.getByRole('tab').count() === 1, 'seeded workspace did not render one tab');
+  assert(
+    await workspaceTabs.getByRole('tab').getAttribute('aria-selected') === 'true',
+    'seeded workspace tab was not selected',
   );
   assert(
     await page.getByTestId('pane-title-shell').textContent() === 'Configured Shell',
@@ -1480,6 +1497,110 @@ async function runWorkspaceCatalogCheck(runToken: string): Promise<void> {
   }
 }
 
+async function runPersistentTabCheck(runToken: string): Promise<void> {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-tabs-'));
+  const sessionPrefix = `tabs-${runToken}`;
+  let instance: ElectronTestInstance | undefined;
+  try {
+    writeTestConfig(directory);
+    instance = await launchApp(sessionPrefix, directory);
+    const { page } = instance;
+    const tabs = page.getByTestId('workspace-tabs').getByRole('tab');
+    assert(await tabs.count() === 1, 'configured grid did not seed one visible tab');
+    const seededTabId = await tabs.first().getAttribute('data-tab-id');
+    assert(seededTabId, 'seeded tab omitted its stable ID');
+
+    await page.keyboard.press('Control+Shift+T');
+    await page.waitForFunction(() => (
+      document.querySelectorAll('#workspace-tabs [role="tab"]').length === 2
+      && window.neoncodeTest.getState().panes.length === 1
+    ));
+    const selected = page.locator('#workspace-tabs [role="tab"][aria-selected="true"]');
+    const createdTabId = await selected.getAttribute('data-tab-id');
+    assert(createdTabId && createdTabId !== seededTabId, 'create shortcut did not activate a new stable tab');
+    assert(await page.locator('.terminal-pane').count() === 1, 'inactive tab retained an xterm attachment');
+    const createdPaneId = (await getState(page)).panes[0]?.paneId;
+    assert(createdPaneId, 'created tab did not attach its terminal pane');
+    const createdBox = await page.getByTestId(`terminal-pane-${createdPaneId}`).boundingBox();
+    assert(
+      createdBox !== null && createdBox.width > 0 && createdBox.height > 0,
+      'created tab terminal did not receive positive dimensions',
+    );
+
+    const renameOpen = await page.evaluate(() => window.neoncodeTest.executeCommand('tab.renameDialog'));
+    assert(renameOpen.status === 'completed', 'rename tab dialog command failed');
+    await page.getByTestId('tab-title').fill('Persistent tab');
+    await page.getByTestId('tab-title').press('Enter');
+    await page.waitForFunction(() => (
+      document.querySelector('#workspace-tabs [role="tab"][aria-selected="true"]')?.textContent
+        === 'Persistent tab'
+    ));
+
+    const continuityMarker = `tab-continuity-${runToken}`;
+    await sendText(page, createdPaneId, `printf '${continuityMarker}\\n'\n`);
+    await waitForOutput(page, createdPaneId, continuityMarker);
+    await page.keyboard.press('Control+PageUp');
+    await page.waitForFunction((expectedTabId) => (
+      document.querySelector('#workspace-tabs [role="tab"][aria-selected="true"]')
+        ?.getAttribute('data-tab-id') === expectedTabId
+      && window.neoncodeTest.getState().panes.length === 2
+    ), seededTabId);
+    const seededPaneIds = (await getState(page)).panes.map((pane) => pane.paneId);
+    await page.keyboard.press('F6');
+    assert(
+      seededPaneIds.includes((await getState(page)).workspace.activePaneId ?? ''),
+      'F6 escaped the active tab pane order',
+    );
+    await page.keyboard.press('Control+PageDown');
+    await page.waitForFunction((expectedTabId) => (
+      document.querySelector('#workspace-tabs [role="tab"][aria-selected="true"]')
+        ?.getAttribute('data-tab-id') === expectedTabId
+      && window.neoncodeTest.getState().panes.length === 1
+    ), createdTabId);
+    await waitForOutput(page, createdPaneId, continuityMarker);
+
+    await closeInstance(instance);
+    instance = undefined;
+    instance = await launchApp(sessionPrefix, directory);
+    const restored = instance.page.locator('#workspace-tabs [role="tab"][aria-selected="true"]');
+    assert(await restored.textContent() === 'Persistent tab', 'renamed active tab was not restored');
+    assert(await restored.getAttribute('data-tab-id') === createdTabId, 'restored tab identity changed');
+    assert((await getState(instance.page)).panes.length === 1, 'inactive restored tab attached terminals');
+
+    const closeResult = await instance.page.evaluate(({ tabId }) => (
+      window.neoncodeTest.executeCommand('tab.close', {
+        workspaceId: 'default', tabId, disposition: 'kill',
+      })
+    ), { tabId: createdTabId });
+    assert(closeResult.status === 'completed', 'kill-close tab transaction failed');
+    await instance.page.waitForFunction(() => (
+      document.querySelectorAll('#workspace-tabs [role="tab"]').length === 1
+      && window.neoncodeTest.getState().panes.length === 2
+    ));
+    const lastGuard = await instance.page.evaluate(({ tabId }) => (
+      window.neoncodeTest.executeCommand('tab.close', {
+        workspaceId: 'default', tabId, disposition: 'detach',
+      })
+    ), { tabId: seededTabId });
+    assert(
+      lastGuard.status === 'disabled' && lastGuard.reason === 'Cannot close the last tab',
+      'last-tab close guard was not enforced',
+    );
+    const persistedConfig = parseJson<DesktopConfig>(
+      fs.readFileSync(path.join(directory, 'config.json'), 'utf8'),
+      'tab test config',
+    );
+    assert(
+      persistedConfig.workspaces.find((workspace) => workspace.id === 'default')?.sessions.length === 2,
+      'closed tab session remained in the durable catalog',
+    );
+    await killAllPanes(instance);
+  } finally {
+    await closeInstance(instance).catch(() => {});
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 async function runKillPolicyCheck(runToken: string): Promise<void> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-kill-policy-'));
   const sessionPrefix = `kill-policy-${runToken}`;
@@ -1562,7 +1683,10 @@ async function main(): Promise<void> {
     );
     assert(persistedState.schemaVersion === 3, 'workspace state schema was not persisted');
     assert(persistedState.activeWorkspaceId === 'review', 'active workspace was not persisted');
-    assert(Object.keys(persistedState.workspaceLayouts).length === 0, 'renderer unexpectedly saved a layout');
+    assert(
+      JSON.stringify(Object.keys(persistedState.workspaceLayouts).sort()) === JSON.stringify(['default', 'review']),
+      'renderer did not persist seeded workspace layouts',
+    );
     const configBackupPath = path.join(configDirectory, 'config.json.bak');
     const changedBackup = parseJson<DesktopConfig>(
       fs.readFileSync(configBackupPath, 'utf8'),
@@ -1584,6 +1708,7 @@ async function main(): Promise<void> {
     await closeInstance(instance);
     instance = undefined;
     await runWorkspaceCatalogCheck(runToken);
+    await runPersistentTabCheck(runToken);
     await runKillPolicyCheck(runToken);
     await runInvalidConfigurationCheck(runToken);
     log('passed');

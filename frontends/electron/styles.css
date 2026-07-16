@@ -287,7 +287,95 @@ main {
   background: #111827;
 }
 
+.terminal-workspace {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.tab-toolbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workspace-tabs {
+  min-width: 0;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 3px;
+  overflow-x: auto;
+}
+
+.workspace-tab,
+.tab-create-button {
+  min-height: 30px;
+  padding: 5px 10px;
+  color: #94a3b8;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  background: #172033;
+  border: 1px solid #334155;
+  border-radius: 4px 4px 0 0;
+  cursor: pointer;
+}
+
+.workspace-tab:hover,
+.tab-create-button:hover {
+  color: #e2e8f0;
+  background: #1e293b;
+}
+
+.workspace-tab[aria-selected="true"] {
+  color: #ecfeff;
+  background: #164e63;
+  border-color: #0e7490;
+}
+
+.workspace-tab:focus-visible,
+.tab-create-button:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: -2px;
+}
+
+.tab-create-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+#terminal-grid {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.layout-split {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.layout-split[data-direction="horizontal"] {
+  flex-direction: row;
+}
+
+.layout-split[data-direction="vertical"] {
+  flex-direction: column;
+}
+
+.layout-child {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
 .terminal-pane {
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: grid;

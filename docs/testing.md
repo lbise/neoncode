@@ -155,6 +155,7 @@ Then assert `result-token`. Other options are base64-decoding a random token in 
 - [x] Add strict catalog/registry plus pure palette-filter/navigation/keybinding/focus tests and narrow hidden-Electron checks for the keyboard-first defaults and terminal pass-through.
 - [x] Add accessible hidden-Electron palette checks for the visible button, shortcut, initial focus, keyboard selection, Escape restoration, and Dismiss command metadata.
 - [x] Add schema-5 pure/config-store coverage and hidden-Electron Settings checks for button/palette reachability, keyboard recording, Save, live/relaunch binding behavior, Unbind/Reset/conflict, and Escape focus restoration while preserving terminal controls and paste.
-- [x] Add exhaustive pure tab/split layout-model and persisted state schema 3 tests; runtime GUI layout checks remain pending.
+- [x] Add exhaustive pure tab/split layout-model, reconciliation, command/registry/keybinding, and persisted state schema 3 tests.
+- [x] Add hidden-Electron tab ARIA, create/navigation/rename/relaunch/close, inactive attachment, positive split-dimension, active-tab F6 scope, and terminal pass-through checks.
 - [ ] Extend scripted fake-hub coverage to backpressure and malformed output payloads.
 - [ ] Add a narrow PowerShell window-launch/desktop compatibility smoke when installer/DPI/multi-monitor work begins.

@@ -10,6 +10,11 @@ import {
   type CommandMetadata,
   type CommandOperationResult,
   type PaneFocusCommandArgs,
+  type TabCloseCommandArgs,
+  type TabCreateCommandArgs,
+  type TabMoveCommandArgs,
+  type TabOpenCommandArgs,
+  type TabRenameCommandArgs,
   type WorkspaceCreateCommandArgs,
   type WorkspaceDeleteCommandArgs,
   type WorkspaceDismissAttentionCommandArgs,
@@ -32,6 +37,16 @@ export interface CommandHandlers {
   'workspace.next': () => void | Promise<void>;
   'workspace.previous': () => void | Promise<void>;
   'workspace.dismissAttention': (args: WorkspaceDismissAttentionCommandArgs) => void | Promise<void>;
+  'tab.create': (args: TabCreateCommandArgs) => void | Promise<void>;
+  'tab.open': (args: TabOpenCommandArgs) => void | Promise<void>;
+  'tab.rename': (args: TabRenameCommandArgs) => void | Promise<void>;
+  'tab.move': (args: TabMoveCommandArgs) => void | Promise<void>;
+  'tab.close': (args: TabCloseCommandArgs) => void | Promise<void>;
+  'tab.createDefault': () => void | Promise<void>;
+  'tab.next': () => void | Promise<void>;
+  'tab.previous': () => void | Promise<void>;
+  'tab.renameDialog': () => void | Promise<void>;
+  'tab.closeDialog': () => void | Promise<void>;
   'pane.focus': (args: PaneFocusCommandArgs) => void | Promise<void>;
   'pane.next': () => void | Promise<void>;
   'pane.previous': () => void | Promise<void>;
@@ -54,6 +69,16 @@ export interface CommandEnablement {
   'workspace.dismissAttention'?: (
     args: WorkspaceDismissAttentionCommandArgs,
   ) => CommandDisabledReason | null;
+  'tab.create'?: (args: TabCreateCommandArgs) => CommandDisabledReason | null;
+  'tab.open'?: (args: TabOpenCommandArgs) => CommandDisabledReason | null;
+  'tab.rename'?: (args: TabRenameCommandArgs) => CommandDisabledReason | null;
+  'tab.move'?: (args: TabMoveCommandArgs) => CommandDisabledReason | null;
+  'tab.close'?: (args: TabCloseCommandArgs) => CommandDisabledReason | null;
+  'tab.createDefault'?: () => CommandDisabledReason | null;
+  'tab.next'?: () => CommandDisabledReason | null;
+  'tab.previous'?: () => CommandDisabledReason | null;
+  'tab.renameDialog'?: () => CommandDisabledReason | null;
+  'tab.closeDialog'?: () => CommandDisabledReason | null;
   'pane.focus'?: (args: PaneFocusCommandArgs) => CommandDisabledReason | null;
   'pane.next'?: () => CommandDisabledReason | null;
   'pane.previous'?: () => CommandDisabledReason | null;
@@ -147,6 +172,36 @@ export class CommandRegistry {
       case 'workspace.dismissAttention':
         await this.handlers['workspace.dismissAttention'](invocation.args);
         return completed();
+      case 'tab.create':
+        await this.handlers['tab.create'](invocation.args);
+        return completed();
+      case 'tab.open':
+        await this.handlers['tab.open'](invocation.args);
+        return completed();
+      case 'tab.rename':
+        await this.handlers['tab.rename'](invocation.args);
+        return completed();
+      case 'tab.move':
+        await this.handlers['tab.move'](invocation.args);
+        return completed();
+      case 'tab.close':
+        await this.handlers['tab.close'](invocation.args);
+        return completed();
+      case 'tab.createDefault':
+        await this.handlers['tab.createDefault']();
+        return completed();
+      case 'tab.next':
+        await this.handlers['tab.next']();
+        return completed();
+      case 'tab.previous':
+        await this.handlers['tab.previous']();
+        return completed();
+      case 'tab.renameDialog':
+        await this.handlers['tab.renameDialog']();
+        return completed();
+      case 'tab.closeDialog':
+        await this.handlers['tab.closeDialog']();
+        return completed();
       case 'pane.focus':
         await this.handlers['pane.focus'](invocation.args);
         return completed();
@@ -189,6 +244,26 @@ export class CommandRegistry {
         return this.enablement['workspace.previous']?.() ?? null;
       case 'workspace.dismissAttention':
         return this.enablement['workspace.dismissAttention']?.(command.args) ?? null;
+      case 'tab.create':
+        return this.enablement['tab.create']?.(command.args) ?? null;
+      case 'tab.open':
+        return this.enablement['tab.open']?.(command.args) ?? null;
+      case 'tab.rename':
+        return this.enablement['tab.rename']?.(command.args) ?? null;
+      case 'tab.move':
+        return this.enablement['tab.move']?.(command.args) ?? null;
+      case 'tab.close':
+        return this.enablement['tab.close']?.(command.args) ?? null;
+      case 'tab.createDefault':
+        return this.enablement['tab.createDefault']?.() ?? null;
+      case 'tab.next':
+        return this.enablement['tab.next']?.() ?? null;
+      case 'tab.previous':
+        return this.enablement['tab.previous']?.() ?? null;
+      case 'tab.renameDialog':
+        return this.enablement['tab.renameDialog']?.() ?? null;
+      case 'tab.closeDialog':
+        return this.enablement['tab.closeDialog']?.() ?? null;
       case 'pane.focus':
         return this.enablement['pane.focus']?.(command.args) ?? null;
       case 'pane.next':

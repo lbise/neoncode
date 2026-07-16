@@ -32,7 +32,13 @@
       <button id="workspace-create-button" class="workspace-create-button" type="button" aria-haspopup="dialog" aria-controls="workspace-dialog" data-testid="workspace-create-button">+ Workspace</button>
       <nav id="workspace-list" class="workspace-list" data-testid="workspace-list"></nav>
     </aside>
-    <main id="terminal-grid" aria-label="xterm terminal region" data-testid="terminal-grid"></main>
+    <main class="terminal-workspace" aria-label="Terminal workspace">
+      <div class="tab-toolbar">
+        <div id="workspace-tabs" class="workspace-tabs" role="tablist" aria-label="Workspace tabs" data-testid="workspace-tabs"></div>
+        <button id="tab-create-button" class="tab-create-button" type="button" aria-label="Create tab" title="New tab (Ctrl+Shift+T)" data-testid="tab-create-button">+ Tab</button>
+      </div>
+      <div id="terminal-grid" aria-label="xterm terminal region" data-testid="terminal-grid"></div>
+    </main>
   </div>
   <div id="command-palette-overlay" class="command-palette-overlay" data-testid="command-palette-overlay" hidden>
     <section id="command-palette" class="command-palette" role="dialog" aria-modal="true" aria-labelledby="command-palette-title">
@@ -82,6 +88,31 @@
         <span id="settings-status" role="status" data-testid="settings-status"></span>
         <button id="settings-cancel" class="settings-secondary-button" type="button" data-testid="settings-cancel">Cancel</button>
         <button id="settings-save" class="settings-primary-button" type="submit" data-testid="settings-save">Save</button>
+      </footer>
+    </form>
+  </div>
+  <div id="tab-dialog-overlay" class="workspace-dialog-overlay" data-testid="tab-dialog-overlay" hidden>
+    <form id="tab-dialog" class="workspace-dialog tab-dialog" role="dialog" aria-modal="true" aria-labelledby="tab-dialog-title" novalidate>
+      <header class="workspace-dialog-header">
+        <div>
+          <h2 id="tab-dialog-title">Tab</h2>
+          <p id="tab-dialog-description"></p>
+        </div>
+        <button id="tab-dialog-close" class="workspace-dialog-secondary" type="button" aria-label="Close tab dialog" data-testid="tab-dialog-close">Close</button>
+      </header>
+      <div class="workspace-dialog-content">
+        <label id="tab-title-field">Title<input id="tab-title" data-testid="tab-title" type="text" maxlength="64" required autocomplete="off" /></label>
+        <fieldset id="tab-disposition-field" hidden>
+          <legend>Session disposition</legend>
+          <label><input name="tab-disposition" type="radio" value="detach" checked /> Detach sessions and keep them running</label>
+          <label><input name="tab-disposition" type="radio" value="kill" /> Kill tab sessions</label>
+        </fieldset>
+      </div>
+      <p id="tab-dialog-error" class="workspace-dialog-error" role="alert" data-testid="tab-dialog-error" hidden></p>
+      <footer class="workspace-dialog-footer">
+        <span id="tab-dialog-status" role="status" data-testid="tab-dialog-status"></span>
+        <button id="tab-dialog-cancel" class="workspace-dialog-secondary" type="button" data-testid="tab-dialog-cancel">Cancel</button>
+        <button id="tab-dialog-submit" class="workspace-dialog-primary" type="submit" data-testid="tab-dialog-submit">Save</button>
       </footer>
     </form>
   </div>

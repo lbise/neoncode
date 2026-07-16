@@ -64,6 +64,13 @@ export function commandInvocationSignature(command: CommandInvocation): string {
     case 'workspace.open':
     case 'workspace.dismissAttention':
       return `${command.id}:${command.args.workspaceId}`;
+    case 'tab.create':
+    case 'tab.rename':
+    case 'tab.move':
+    case 'tab.close':
+      return `${command.id}:${JSON.stringify(command.args)}`;
+    case 'tab.open':
+      return `${command.id}:${command.args.workspaceId}:${command.args.tabId}`;
     case 'pane.focus':
       return `${command.id}:${command.args.paneId}`;
     default:
@@ -180,6 +187,11 @@ export function createConcreteCommandInvocations(
     { id: 'workspace.deleteDialog' },
     { id: 'workspace.next' },
     { id: 'workspace.previous' },
+    { id: 'tab.createDefault' },
+    { id: 'tab.next' },
+    { id: 'tab.previous' },
+    { id: 'tab.renameDialog' },
+    { id: 'tab.closeDialog' },
     { id: 'pane.next' },
     { id: 'pane.previous' },
     ...workspaceIds.flatMap((workspaceId): CommandInvocation[] => [
@@ -209,6 +221,30 @@ export function createDefaultKeybindings(workspaceIds: readonly string[]): Keybi
       command: { id: 'palette.open' },
     },
     ...workspaceBindings,
+    {
+      code: 'KeyT',
+      altKey: false,
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: true,
+      command: { id: 'tab.createDefault' },
+    },
+    {
+      code: 'PageDown',
+      altKey: false,
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      command: { id: 'tab.next' },
+    },
+    {
+      code: 'PageUp',
+      altKey: false,
+      ctrlKey: true,
+      metaKey: false,
+      shiftKey: false,
+      command: { id: 'tab.previous' },
+    },
     {
       code: 'F6',
       altKey: false,

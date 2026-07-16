@@ -27,7 +27,10 @@ const router = new KeybindingRouter(bindings);
 
 assert.deepEqual(
   bindings.map((binding) => binding.code),
-  ['KeyP', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'F6', 'F6'],
+  [
+    'KeyP', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7',
+    'Digit8', 'Digit9', 'KeyT', 'PageDown', 'PageUp', 'F6', 'F6',
+  ],
   'default bindings contained an unexpected shortcut',
 );
 
@@ -45,6 +48,18 @@ assert.deepEqual(
     execute: true,
     command: { id: 'workspace.open', args: { workspaceId: 'two' } },
   },
+);
+assert.deepEqual(
+  router.resolve(key({ code: 'KeyT', ctrlKey: true, shiftKey: true })),
+  { claimed: true, execute: true, command: { id: 'tab.createDefault' } },
+);
+assert.deepEqual(
+  router.resolve(key({ code: 'PageDown', ctrlKey: true })),
+  { claimed: true, execute: true, command: { id: 'tab.next' } },
+);
+assert.deepEqual(
+  router.resolve(key({ code: 'PageUp', ctrlKey: true })),
+  { claimed: true, execute: true, command: { id: 'tab.previous' } },
 );
 assert.deepEqual(
   router.resolve(key({ code: 'F6' })),

@@ -24,6 +24,16 @@ async function run(): Promise<void> {
     'workspace.dismissAttention': ({ workspaceId }) => {
       calls.push(`workspace.dismissAttention:${workspaceId}`);
     },
+    'tab.create': ({ tabId }) => { calls.push(`tab.create:${tabId}`); },
+    'tab.open': ({ tabId }) => { calls.push(`tab.open:${tabId}`); },
+    'tab.rename': ({ title }) => { calls.push(`tab.rename:${title}`); },
+    'tab.move': ({ toIndex }) => { calls.push(`tab.move:${toIndex}`); },
+    'tab.close': ({ disposition }) => { calls.push(`tab.close:${disposition}`); },
+    'tab.createDefault': () => { calls.push('tab.createDefault'); },
+    'tab.next': () => { calls.push('tab.next'); },
+    'tab.previous': () => { calls.push('tab.previous'); },
+    'tab.renameDialog': () => { calls.push('tab.renameDialog'); },
+    'tab.closeDialog': () => { calls.push('tab.closeDialog'); },
     'pane.focus': ({ paneId }) => { calls.push(`pane.focus:${paneId}`); },
     'pane.next': async () => { calls.push('pane.next'); },
     'pane.previous': () => { calls.push('pane.previous'); },
@@ -51,13 +61,23 @@ async function run(): Promise<void> {
       'workspace.next',
       'workspace.previous',
       'workspace.dismissAttention',
+      'tab.create',
+      'tab.open',
+      'tab.rename',
+      'tab.move',
+      'tab.close',
+      'tab.createDefault',
+      'tab.next',
+      'tab.previous',
+      'tab.renameDialog',
+      'tab.closeDialog',
       'pane.focus',
       'pane.next',
       'pane.previous',
     ],
   );
   assert(registry.list().every((command) => command.title.length > 0));
-  assert(registry.list().every((command) => ['Application', 'Workspace', 'Pane'].includes(command.category)));
+  assert(registry.list().every((command) => ['Application', 'Workspace', 'Tab', 'Pane'].includes(command.category)));
 
   const firstList = registry.list();
   const workspaceOpen = firstList.find((command) => command.id === 'workspace.open');
@@ -106,6 +126,21 @@ async function run(): Promise<void> {
   await registry.execute('workspace.next');
   await registry.execute('workspace.previous');
   await registry.execute('workspace.dismissAttention', { workspaceId: 'review' });
+  await registry.execute('tab.create', {
+    workspaceId: 'review', tabId: 'tab-review', title: 'Review',
+    sessionId: 'review-shell', launchProfile: 'default-shell',
+  });
+  await registry.execute('tab.open', { workspaceId: 'review', tabId: 'tab-review' });
+  await registry.execute('tab.rename', { workspaceId: 'review', tabId: 'tab-review', title: 'Renamed' });
+  await registry.execute('tab.move', { workspaceId: 'review', tabId: 'tab-review', toIndex: 0 });
+  await registry.execute('tab.close', {
+    workspaceId: 'review', tabId: 'tab-review', disposition: 'detach',
+  });
+  await registry.execute('tab.createDefault');
+  await registry.execute('tab.next');
+  await registry.execute('tab.previous');
+  await registry.execute('tab.renameDialog');
+  await registry.execute('tab.closeDialog');
   await registry.execute('pane.focus', { paneId: 'tasks' });
   paneNextEnabled = true;
   await registry.execute('pane.next');
@@ -125,6 +160,16 @@ async function run(): Promise<void> {
     'workspace.next',
     'workspace.previous',
     'workspace.dismissAttention:review',
+    'tab.create:tab-review',
+    'tab.open:tab-review',
+    'tab.rename:Renamed',
+    'tab.move:0',
+    'tab.close:detach',
+    'tab.createDefault',
+    'tab.next',
+    'tab.previous',
+    'tab.renameDialog',
+    'tab.closeDialog',
     'pane.focus:tasks',
     'pane.next',
     'pane.previous',
@@ -150,6 +195,16 @@ async function run(): Promise<void> {
     'workspace.next': () => {},
     'workspace.previous': () => {},
     'workspace.dismissAttention': () => {},
+    'tab.create': () => {},
+    'tab.open': () => {},
+    'tab.rename': () => {},
+    'tab.move': () => {},
+    'tab.close': () => {},
+    'tab.createDefault': () => {},
+    'tab.next': () => {},
+    'tab.previous': () => {},
+    'tab.renameDialog': () => {},
+    'tab.closeDialog': () => {},
     'pane.focus': () => {},
     'pane.next': () => {},
     'pane.previous': () => {},
