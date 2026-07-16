@@ -5,7 +5,7 @@
 ```text
 Stage: Keyboard-first workspace cockpit UX
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: dynamic tabs/splits on the command and focus foundation, then GUI polish
+Next focus: dynamic tabs/splits on the command/settings foundation, then GUI polish
 ```
 
 The Windows tech stack is now:
@@ -175,8 +175,9 @@ Acceptance criteria:
 
 Limitations:
 
-- configuration is user-edited JSON with restart-to-apply; no settings UI/live reload yet;
-- schema 4 supports simple column grids rather than free-form splits;
+- the schema 5 Settings UI edits supported General values and keybindings; launch profiles/workspaces still require JSON edits;
+- General values are restart-required in this slice, while keybinding overrides apply live;
+- schema 5 supports simple column grids rather than free-form splits;
 - live appearance reload, font discovery, and external workspace files remain future work;
 - changing a configured ID does not automatically kill an old detached hub session.
 
@@ -218,7 +219,7 @@ Manual preview: add a second workspace using `docs/configuration.md`, reopen Neo
 - [x] Introduce a small state model for panes/sessions/workspaces.
 - [x] Add app-level error display for hub disconnect/session exit/protocol errors.
 - [x] Add config storage under `%APPDATA%\NeonCode`.
-- [x] Load validated font, cursor, and 16-color terminal appearance from schema-version-4 app config with named Windows-Terminal-style colors.
+- [x] Load validated font, cursor, and 16-color terminal appearance from schema-version-5 app config with named Windows-Terminal-style colors.
 
 ### 2. Security hardening
 
@@ -351,7 +352,7 @@ Status: protocol, retention, polling UI, and acknowledgement complete; CLI publi
 
 ### Immediate product priority: keyboard-first workspace cockpit
 
-Status: phases 1–2 now deliver the typed command boundary and keyboard-complete palette for existing operations. Schema 5 settings/keybindings, visible runtime tabs/splits, and authenticated external app control remain later phases.
+Status: phases 1–3 now deliver the typed command boundary, keyboard-complete palette, and persisted editable Settings/keybindings. Visible runtime tabs/splits and authenticated external app control remain later phases.
 
 #### Phase 1: shared typed command contract, results, and context
 
@@ -374,16 +375,18 @@ Status: phases 1–2 now deliver the typed command boundary and keyboard-complet
 
 #### Phase 3: configuration schema 5 keybindings and settings
 
-- [ ] Add schema 5 with strict migration from schema 4 and validated per-command keybinding overrides, including explicit unbinding.
-- [ ] Reject duplicate, AltGraph/Ctrl+Alt, reserved, malformed, and terminal-conflicting overrides at the trusted main-process configuration boundary.
-- [ ] Persist settings atomically with backup/recovery behavior matching existing config/state storage.
-- [ ] Add an accessible settings UI for viewing/editing keybindings and other supported preferences without direct JSON edits or restart-only application.
-- [ ] Make palette shortcut labels and conflict diagnostics update from effective defaults plus overrides.
+- [x] Add schema 5 with strict migration from schema 4 and validated per-command keybinding overrides, including explicit unbinding.
+- [x] Reject duplicate, AltGraph/Ctrl+Alt, reserved, malformed, unsafe printable, and terminal-conflicting overrides at the trusted main-process configuration boundary.
+- [x] Persist only allowed Settings fields through sender-checked, stale-revision-checked IPC and atomic config/backup writes without persisting environment-overridden effective values.
+- [x] Add an accessible General/Keyboard Settings UI reachable from the palette and visible button, with trapped keyboard navigation, exact shortcut recording, Unbind/Reset, inline errors, and focus restoration.
+- [x] Rebuild the keybinding router after Save and update palette/header shortcut labels from effective defaults plus overrides.
+
+General endpoint/session/appearance fields and close policy are explicitly restart-required for this slice. Launch-profile/workspace editing, live appearance changes, tabs/splits, and CLI transport are not part of phase 3.
 
 #### Phase 4: visible tabs/splits and dynamic pane definitions
 
 - [x] Define terminology and identity: workspace = project/context, tab = top-level layout, pane = session surface, panel = auxiliary UI.
-- [x] Add the pure typed tab/split tree, deterministic schema 4 grid seeding, validated state schema 3 persistence, and typed save IPC groundwork.
+- [x] Add the pure typed tab/split tree, deterministic configured-grid seeding, validated state schema 3 persistence, and typed save IPC groundwork.
 - [ ] Replace configured-grid-only rendering with visible tab strips and split-tree DOM, including headers, focus rings, empty states, and accessible state.
 - [ ] Create/close/rename/reorder tabs and split/close/focus/resize panes through catalog commands before adding mouse-only controls.
 - [ ] Persist dynamic pane definitions that reference validated launch profiles without coupling pane identity to hub session identity.

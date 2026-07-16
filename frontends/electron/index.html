@@ -17,8 +17,9 @@
     <div class="header-controls">
       <button id="commands-button" class="commands-button" type="button" aria-haspopup="dialog" aria-controls="command-palette" aria-expanded="false" data-testid="commands-button">
         <span>Commands</span>
-        <kbd>Ctrl+Shift+P</kbd>
+        <kbd id="commands-shortcut">Ctrl+Shift+P</kbd>
       </button>
+      <button id="settings-button" class="settings-button" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" aria-expanded="false" data-testid="settings-button">Settings</button>
       <div class="header-statuses">
         <div id="configuration-status" class="configuration-status" data-state="ready" data-testid="configuration-status"></div>
         <div id="status" class="status" data-testid="hub-status">Connecting to neoncode-hub...</div>
@@ -43,6 +44,45 @@
       <div id="command-palette-results" class="command-palette-results" role="listbox" aria-label="Matching commands" data-testid="command-palette-results"></div>
       <p id="command-palette-empty" class="command-palette-empty" role="status" hidden>No matching commands</p>
     </section>
+  </div>
+  <div id="settings-overlay" class="settings-overlay" data-testid="settings-overlay" hidden>
+    <form id="settings-dialog" class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title" novalidate>
+      <header class="settings-header">
+        <div>
+          <h2 id="settings-title">Settings</h2>
+          <p>Configure NeonCode. Restart-required values are saved for the next launch.</p>
+        </div>
+        <button id="settings-close" class="settings-secondary-button" type="button" aria-label="Close Settings" data-testid="settings-close">Close</button>
+      </header>
+      <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button id="settings-general-tab" class="settings-tab" type="button" role="tab" aria-selected="true" aria-controls="settings-general-panel" data-testid="settings-general-tab">General</button>
+        <button id="settings-keyboard-tab" class="settings-tab" type="button" role="tab" aria-selected="false" aria-controls="settings-keyboard-panel" data-testid="settings-keyboard-tab">Keyboard</button>
+      </div>
+      <div class="settings-content">
+        <section id="settings-general-panel" class="settings-panel settings-general" role="tabpanel" aria-labelledby="settings-general-tab">
+          <h3>General</h3>
+          <label>Hub endpoint <span class="restart-badge">Restart required</span><input id="settings-endpoint" data-testid="settings-endpoint" type="url" required autocomplete="off" /></label>
+          <label>Session prefix <span class="restart-badge">Restart required</span><input id="settings-session-prefix" data-testid="settings-session-prefix" type="text" required autocomplete="off" /></label>
+          <label>Close policy <span class="restart-badge">Restart required</span><select id="settings-close-policy" data-testid="settings-close-policy"><option value="detach">Detach sessions</option><option value="kill">Kill sessions</option></select></label>
+          <label>Terminal font family <span class="restart-badge">Restart required</span><input id="settings-font-family" data-testid="settings-font-family" type="text" required /></label>
+          <label>Terminal font size <span class="restart-badge">Restart required</span><input id="settings-font-size" data-testid="settings-font-size" type="number" min="8" max="32" step="1" required /></label>
+          <label class="settings-checkbox"><input id="settings-cursor-blink" data-testid="settings-cursor-blink" type="checkbox" /> Cursor blink <span class="restart-badge">Restart required</span></label>
+          <label>Background color <span class="restart-badge">Restart required</span><input id="settings-background" data-testid="settings-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
+          <label>Foreground color <span class="restart-badge">Restart required</span><input id="settings-foreground" data-testid="settings-foreground" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
+        </section>
+        <section id="settings-keyboard-panel" class="settings-panel settings-keyboard" role="tabpanel" aria-labelledby="settings-keyboard-tab" hidden>
+          <h3>Keyboard shortcuts</h3>
+          <p>Shortcuts use physical key positions. Terminal conventions and AltGraph input are protected.</p>
+          <div id="settings-keybindings" class="settings-keybindings" data-testid="settings-keybindings"></div>
+        </section>
+      </div>
+      <p id="settings-error" class="settings-error" role="alert" data-testid="settings-error" hidden></p>
+      <footer class="settings-footer">
+        <span id="settings-status" role="status" data-testid="settings-status"></span>
+        <button id="settings-cancel" class="settings-secondary-button" type="button" data-testid="settings-cancel">Cancel</button>
+        <button id="settings-save" class="settings-primary-button" type="submit" data-testid="settings-save">Save</button>
+      </footer>
+    </form>
   </div>
   <script src="dist/renderer.bundle.js"></script>
 </body>

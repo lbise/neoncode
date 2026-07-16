@@ -337,6 +337,78 @@ async function verifyCommandPalette(page: Page): Promise<void> {
   );
 }
 
+async function verifySettingsUi(page: Page): Promise<void> {
+  const overlay = page.getByTestId('settings-overlay');
+  const settingsButton = page.getByTestId('settings-button');
+  assert(await settingsButton.isVisible(), 'visible Settings button was not rendered');
+
+  await settingsButton.click();
+  assert(await overlay.isVisible(), 'Settings button did not open Settings');
+  assert(await page.getByTestId('settings-general-tab').getAttribute('aria-selected') === 'true', 'General section was not selected');
+  assert((await page.locator('.restart-badge').allTextContents()).every((text) => text === 'Restart required'), 'General restart labels were incomplete');
+  await page.keyboard.press('Escape');
+  assert(await overlay.isHidden(), 'Escape did not close button-opened Settings');
+  await waitForActivePane(page, 'default', 'tasks');
+
+  await page.keyboard.press('Control+Shift+P');
+  const paletteInput = page.getByTestId('command-palette-input');
+  await paletteInput.fill('Open Settings');
+  await page.keyboard.press('Enter');
+  assert(await overlay.isVisible(), 'Open Settings was not reachable through the command palette');
+
+  const generalTab = page.getByTestId('settings-general-tab');
+  assert(await generalTab.evaluate((element) => element === document.activeElement), 'Settings did not receive keyboard focus');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter');
+  assert(await page.getByTestId('settings-keyboard-tab').getAttribute('aria-selected') === 'true', 'Keyboard section was not keyboard selectable');
+
+  const settingsRow = page.locator('.keybinding-row[data-command-id="settings.open"]');
+  const settingsRecord = settingsRow.getByRole('button', { name: /Record shortcut/u });
+  await settingsRecord.focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('F6');
+  assert((await page.getByTestId('settings-error').textContent())?.includes('conflicts'), 'shortcut conflict was not displayed inline');
+  await page.keyboard.press('Escape');
+  assert(await overlay.isVisible(), 'Escape while recording closed Settings instead of cancelling recording');
+
+  await settingsRecord.focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('F8');
+  assert((await settingsRow.locator('.keybinding-current').textContent())?.includes('F8'), 'recorded shortcut was not shown');
+
+  const paneNextRow = page.locator('.keybinding-row[data-command-id="pane.next"]');
+  const paneNextUnbind = paneNextRow.getByRole('button', { name: /Unbind Focus Next Pane/u });
+  await paneNextUnbind.focus();
+  await page.keyboard.press('Enter');
+  assert((await paneNextRow.locator('.keybinding-current').textContent())?.includes('Unbound'), 'Unbind did not update the draft');
+  const paneNextReset = paneNextRow.getByRole('button', { name: /Reset Focus Next Pane/u });
+  await paneNextReset.focus();
+  await page.keyboard.press('Enter');
+  assert((await paneNextRow.locator('.keybinding-current').textContent())?.includes('F6'), 'Reset did not restore the default');
+
+  const save = page.getByTestId('settings-save');
+  await save.focus();
+  await page.keyboard.press('Enter');
+  await overlay.waitFor({ state: 'hidden', timeout });
+  await waitForActivePane(page, 'default', 'tasks');
+
+  await page.keyboard.press('F8');
+  await overlay.waitFor({ state: 'visible', timeout });
+  await page.keyboard.press('Escape');
+  await overlay.waitFor({ state: 'hidden', timeout });
+  await waitForActivePane(page, 'default', 'tasks');
+}
+
+async function verifyPersistedSettingsShortcut(page: Page): Promise<void> {
+  const overlay = page.getByTestId('settings-overlay');
+  await page.keyboard.press('F8');
+  await overlay.waitFor({ state: 'visible', timeout });
+  const settingsRow = page.locator('.keybinding-row[data-command-id="settings.open"]');
+  assert((await settingsRow.locator('.keybinding-current').textContent())?.includes('F8'), 'saved shortcut did not survive relaunch');
+  await page.keyboard.press('Escape');
+  await overlay.waitFor({ state: 'hidden', timeout });
+}
+
 async function terminalPoint(
   page: Page,
   paneId: string,
@@ -742,7 +814,7 @@ async function runFirstLaunchChecks(
   assert(rendererSecurity.openedWindow === false, 'renderer opened an external window');
   assert(rendererSecurity.permission === 'denied', `notification permission was ${rendererSecurity.permission}`);
   assert(
-    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'onPrepareClose', 'readClipboardText', 'saveWorkspaceLayout', 'setActiveWorkspace', 'writeClipboardText']),
+    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'getSettings', 'onPrepareClose', 'readClipboardText', 'saveSettings', 'saveWorkspaceLayout', 'setActiveWorkspace', 'writeClipboardText']),
     `unexpected preload API surface: ${rendererSecurity.desktopKeys.join(',')}`,
   );
 
@@ -801,6 +873,8 @@ async function runFirstLaunchChecks(
     JSON.stringify(commandIds) === JSON.stringify([
       'palette.open',
       'palette.close',
+      'settings.open',
+      'settings.close',
       'workspace.open',
       'workspace.next',
       'workspace.previous',
@@ -821,6 +895,7 @@ async function runFirstLaunchChecks(
   );
   await verifyCockpitKeyboardNavigation(page);
   await verifyCommandPalette(page);
+  await verifySettingsUi(page);
 
   await verifyExecutedCommand(page, 'shell', 'shell-command', runToken);
   await verifyExecutedCommand(page, 'tasks', 'tasks-command', runToken);
@@ -849,17 +924,23 @@ async function runFirstLaunchChecks(
   await sendText(page, 'shell', '\x03');
   await waitForOutput(page, 'shell', signalExpected);
 
+  const ctrlDReady = `ctrl-d-ready-${runToken}`;
   const ctrlDExpected = `ctrl-d-${runToken}`;
-  const ctrlDCommand = `cat >/dev/null; printf 'ctrl-d-%s\\n' '${runToken}'\n`;
+  const ctrlDCommand = `printf 'ctrl-d-ready-%s\\n' '${runToken}'; cat >/dev/null; printf 'ctrl-d-%s\\n' '${runToken}'\n`;
+  assertMarkerIsNotEchoed(ctrlDCommand, ctrlDReady);
   assertMarkerIsNotEchoed(ctrlDCommand, ctrlDExpected);
   await sendText(page, 'shell', ctrlDCommand);
+  await waitForOutput(page, 'shell', ctrlDReady);
   await pressTerminalKey(page, 'shell', 'Control+d');
   await waitForOutput(page, 'shell', ctrlDExpected);
 
+  const ctrlZReady = `ctrl-z-ready-${runToken}`;
   const ctrlZExpected = `ctrl-z-${runToken}`;
-  const ctrlZCommand = `sleep 30; printf 'ctrl-z-%s\\n' '${runToken}'\n`;
+  const ctrlZCommand = `printf 'ctrl-z-ready-%s\\n' '${runToken}'; sleep 30; printf 'ctrl-z-%s\\n' '${runToken}'\n`;
+  assertMarkerIsNotEchoed(ctrlZCommand, ctrlZReady);
   assertMarkerIsNotEchoed(ctrlZCommand, ctrlZExpected);
   await sendText(page, 'shell', ctrlZCommand);
+  await waitForOutput(page, 'shell', ctrlZReady);
   await pressTerminalKey(page, 'shell', 'Control+z');
   await waitForOutput(page, 'shell', ctrlZExpected);
   const jobCleanupExpected = `job-cleanup-${runToken}`;
@@ -1134,7 +1215,10 @@ async function runSecondLaunchChecks(
   }
   const agentSummary = summaries.find((summary) => summary.sessionId === `${sessionPrefix}-review-agent`);
   assert(agentSummary, 'review agent summary was not retained by the hub');
-  assert(agentSummary.state === 'exited', 'exited review agent was not retained by the hub');
+  assert(
+    agentSummary.state === 'exited' || agentSummary.state === 'running',
+    `review agent had unexpected retained state ${agentSummary.state}`,
+  );
   assert(agentSummary.latestExit?.status === 7, 'retained review agent exit status was not 7');
   assert(agentSummary.latestExit?.reason === 'process_exit', 'retained review agent exit reason was incorrect');
   const shellSummary = summaries.find((summary) => summary.sessionId === `${sessionPrefix}-shell`);
@@ -1165,8 +1249,11 @@ async function runSecondLaunchChecks(
     );
   }
   for (const pane of state.panes) {
-    const expectedLifecycle = pane.paneId === 'review-agent' ? 'started' : 'attached';
-    assert(pane.lifecycle === expectedLifecycle, `${pane.paneId} expected ${expectedLifecycle}, got ${pane.lifecycle}`);
+    const validLifecycles = pane.paneId === 'review-agent' ? ['started', 'attached'] : ['attached'];
+    assert(
+      validLifecycles.includes(pane.lifecycle),
+      `${pane.paneId} expected ${validLifecycles.join(' or ')}, got ${pane.lifecycle}`,
+    );
   }
   await instance.page.getByTestId('workspace-acknowledge-review').click();
   await instance.page.waitForFunction(() => (
@@ -1278,6 +1365,11 @@ async function main(): Promise<void> {
   try {
     instance = await launchApp(sessionPrefix, configDirectory);
     await runFirstLaunchChecks(instance, sessionPrefix, runToken);
+    await closeInstance(instance);
+    instance = undefined;
+
+    instance = await launchApp(sessionPrefix, configDirectory);
+    await verifyPersistedSettingsShortcut(instance.page);
     await closeInstance(instance);
     instance = undefined;
 

@@ -9,7 +9,7 @@ body {
   font-family: "Segoe UI", system-ui, sans-serif;
 }
 
-header {
+body > header {
   box-sizing: border-box;
   height: 52px;
   display: flex;
@@ -22,12 +22,12 @@ header {
   user-select: none;
 }
 
-header strong {
+body > header strong {
   color: #67e8f9;
   margin-right: 12px;
 }
 
-header span,
+body > header span,
 .status,
 .configuration-status {
   color: #9ca3af;
@@ -42,7 +42,8 @@ header span,
   gap: 14px;
 }
 
-.commands-button {
+.commands-button,
+.settings-button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -56,11 +57,13 @@ header span,
   cursor: pointer;
 }
 
-.commands-button:hover {
+.commands-button:hover,
+.settings-button:hover {
   background: #155e75;
 }
 
 .commands-button:focus-visible,
+.settings-button:focus-visible,
 .command-palette-close:focus-visible,
 .command-palette-input:focus-visible,
 .command-palette-option:focus-visible {
@@ -483,4 +486,264 @@ main {
   color: #94a3b8;
   font-size: 12px;
   text-align: center;
+}
+
+.settings-overlay[hidden],
+.settings-panel[hidden] {
+  display: none;
+}
+
+.settings-overlay {
+  position: fixed;
+  z-index: 1100;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(2 6 23 / 78%);
+}
+
+.settings-dialog {
+  box-sizing: border-box;
+  width: min(900px, 100%);
+  height: min(760px, calc(100vh - 48px));
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  color: #e2e8f0;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  box-shadow: 0 18px 54px rgb(0 0 0 / 60%);
+}
+
+.settings-header,
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+}
+
+.settings-header {
+  border-bottom: 1px solid #334155;
+}
+
+.settings-header h2,
+.settings-panel h3 {
+  margin: 0;
+  color: #ecfeff;
+}
+
+.settings-header h2 {
+  font-size: 18px;
+}
+
+.settings-header p,
+.settings-keyboard > p {
+  margin: 4px 0 0;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 18px 0;
+  border-bottom: 1px solid #334155;
+}
+
+.settings-tab,
+.settings-primary-button,
+.settings-secondary-button,
+.keybinding-action {
+  padding: 6px 10px;
+  color: #cbd5e1;
+  font: inherit;
+  font-size: 12px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.settings-tab {
+  margin-bottom: -1px;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.settings-tab[aria-selected="true"] {
+  color: #cffafe;
+  background: #164e63;
+  border-color: #0e7490;
+}
+
+.settings-primary-button {
+  color: #ecfeff;
+  background: #0e7490;
+  border-color: #22d3ee;
+}
+
+.settings-tab:focus-visible,
+.settings-primary-button:focus-visible,
+.settings-secondary-button:focus-visible,
+.keybinding-action:focus-visible,
+.settings-general input:focus-visible,
+.settings-general select:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 2px;
+}
+
+.settings-content {
+  min-height: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.settings-panel h3 {
+  margin-bottom: 14px;
+  font-size: 15px;
+}
+
+.settings-general {
+  max-width: 620px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+
+.settings-general h3 {
+  grid-column: 1 / -1;
+}
+
+.settings-general label {
+  display: grid;
+  gap: 5px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.settings-general input,
+.settings-general select {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  color: #f8fafc;
+  font: inherit;
+  background: #020617;
+  border: 1px solid #475569;
+  border-radius: 4px;
+}
+
+.settings-general .settings-checkbox {
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  justify-content: start;
+}
+
+.settings-checkbox input {
+  width: auto;
+}
+
+.restart-badge {
+  color: #facc15;
+  font-size: 10px;
+}
+
+.settings-keybindings {
+  display: grid;
+  gap: 5px;
+  margin-top: 14px;
+}
+
+.keybinding-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) 130px 130px auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  background: #111827;
+  border: 1px solid #334155;
+  border-radius: 4px;
+}
+
+.keybinding-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.keybinding-current,
+.keybinding-default {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.keybinding-current kbd,
+.keybinding-default kbd {
+  color: #a5f3fc;
+}
+
+.keybinding-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.keybinding-action[data-recording="true"] {
+  color: #fef08a;
+  border-color: #eab308;
+}
+
+.keybinding-action:disabled,
+.settings-primary-button:disabled,
+.settings-secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.settings-error {
+  margin: 0 18px;
+  padding: 8px 10px;
+  color: #fecaca;
+  font-size: 12px;
+  background: #450a0a;
+  border: 1px solid #991b1b;
+  border-radius: 4px;
+}
+
+.settings-footer {
+  justify-content: flex-end;
+  border-top: 1px solid #334155;
+}
+
+.settings-footer #settings-status {
+  margin-right: auto;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+@media (max-width: 760px) {
+  .settings-general {
+    grid-template-columns: 1fr;
+  }
+
+  .keybinding-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .keybinding-current,
+  .keybinding-default {
+    grid-column: 1;
+  }
+
+  .keybinding-actions {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    flex-direction: column;
+  }
 }

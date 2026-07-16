@@ -11,6 +11,8 @@ import {
 const validInvocations: CommandInvocation[] = [
   { id: 'palette.open' },
   { id: 'palette.close' },
+  { id: 'settings.open' },
+  { id: 'settings.close' },
   { id: 'workspace.open', args: { workspaceId: 'review' } },
   { id: 'workspace.next' },
   { id: 'workspace.previous' },
@@ -31,7 +33,7 @@ for (const metadata of listCommandMetadata()) {
 for (const metadata of listCommandMetadata()) {
   assert.equal(
     metadata.externalInvocation,
-    !metadata.id.startsWith('palette.'),
+    !metadata.id.startsWith('palette.') && !metadata.id.startsWith('settings.'),
     `${metadata.id} has incorrect future CLI eligibility`,
   );
 }

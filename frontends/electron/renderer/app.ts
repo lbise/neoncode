@@ -20,14 +20,23 @@ import {
   type CommandMetadata,
   type CommandOperationResult,
 } from '../shared/command-catalog';
+import {
+  createConcreteCommandInvocations,
+  createDefaultKeybindings,
+  mergeKeybindings,
+  validateKeybindingSettings,
+  type Keybinding,
+  type KeybindingOverride,
+} from '../shared/keybindings';
 import { CommandPalette, type PaletteCommandEntry } from './command-palette';
 import { CommandRegistry } from './command-registry';
 import { HubClient, type UnknownMessage } from './hub-client';
-import { KeybindingRouter, createDefaultKeybindings } from './keybinding-router';
+import { KeybindingRouter } from './keybinding-router';
 import { validateWorkspaceLayoutState } from '../shared/layout-model';
 import type { WorkspaceLayoutState } from '../shared/layout-model';
 import { PaneFocusModel } from './pane-focus-model';
 import { SessionModel } from './session-model';
+import { SettingsView, type BindableCommandEntry } from './settings-view';
 import { TerminalPane } from './terminal-pane';
 import { installRendererTestApi } from './test-api';
 
@@ -256,6 +265,15 @@ export function createAppConfig(bootstrap: unknown = {}): RendererAppConfig {
   const source = isRecord(bootstrap) ? bootstrap : {};
   const diagnostics = isRecord(source.diagnostics) ? source.diagnostics : {};
   const persistencePolicy: PersistencePolicy = source.persistencePolicy === 'kill' ? 'kill' : 'detach';
+  const workspaces = createWorkspaceDescriptors(source);
+  const keybindingOverrides = validateKeybindingSettings(
+    { overrides: source.keybindingOverrides ?? [] },
+    createDefaultKeybindings(workspaces.map((workspace) => workspace.id)),
+    createConcreteCommandInvocations(
+      workspaces.map((workspace) => workspace.id),
+      workspaces.flatMap((workspace) => workspace.panes.map((pane) => pane.paneId)),
+    ),
+  ).overrides;
   return {
     schemaVersion: source.schemaVersion,
     configurationValid: source.configurationValid === true,
@@ -264,6 +282,7 @@ export function createAppConfig(bootstrap: unknown = {}): RendererAppConfig {
     sessionPrefix: stringOr(source.sessionPrefix, ''),
     persistencePolicy,
     terminal: source.terminal ? parseTerminalAppearance(source.terminal) : null,
+    keybindingOverrides,
     testMode: source.testMode === true,
     activeWorkspaceId: typeof source.activeWorkspaceId === 'string' && source.activeWorkspaceId
       ? source.activeWorkspaceId
@@ -275,7 +294,7 @@ export function createAppConfig(bootstrap: unknown = {}): RendererAppConfig {
       warnings: stringArrayOrEmpty(diagnostics.warnings),
       errors: stringArrayOrEmpty(diagnostics.errors),
     },
-    workspaces: createWorkspaceDescriptors(source),
+    workspaces,
   };
 }
 
@@ -290,9 +309,14 @@ export class NeonCodeApp {
   readonly sessionModel: SessionModel;
   readonly focusModel: PaneFocusModel;
   readonly commandRegistry: CommandRegistry;
-  readonly keybindingRouter: KeybindingRouter;
+  keybindingRouter: KeybindingRouter;
   readonly commandPalette: CommandPalette;
+  readonly settingsView: SettingsView;
   readonly onDocumentKeyDown = (event: KeyboardEvent): void => {
+    if (this.settingsView.isOpen) {
+      this.settingsView.handleKeyDown(event);
+      return;
+    }
     if (this.commandPalette.isOpen) {
       this.commandPalette.handleKeyDown(event);
       return;
@@ -341,6 +365,8 @@ export class NeonCodeApp {
     this.commandRegistry = new CommandRegistry({
       'palette.open': () => this.commandPalette.open(),
       'palette.close': () => this.commandPalette.close(),
+      'settings.open': () => this.settingsView.open(),
+      'settings.close': () => this.settingsView.close(),
       'workspace.open': ({ workspaceId }) => this.switchWorkspace(workspaceId),
       'workspace.next': () => this.switchRelativeWorkspace(1),
       'workspace.previous': () => this.switchRelativeWorkspace(-1),
@@ -351,8 +377,14 @@ export class NeonCodeApp {
     }, {
       'palette.open': () => this.closed
         ? 'Application is closing'
-        : this.commandPalette.isOpen ? 'Command palette is already open' : null,
+        : this.settingsView.isOpen
+          ? 'Another overlay is open'
+          : this.commandPalette.isOpen ? 'Command palette is already open' : null,
       'palette.close': () => this.commandPalette.isOpen ? null : 'Command palette is not open',
+      'settings.open': () => this.closed
+        ? 'Application is closing'
+        : this.settingsView.isOpen ? 'Settings are already open' : null,
+      'settings.close': () => this.settingsView.isOpen ? null : 'Settings are not open',
       'workspace.open': ({ workspaceId }) => this.workspaceCommandDisabledReason(workspaceId),
       'workspace.next': () => this.relativeWorkspaceCommandDisabledReason(),
       'workspace.previous': () => this.relativeWorkspaceCommandDisabledReason(),
@@ -361,9 +393,10 @@ export class NeonCodeApp {
       'pane.next': () => this.relativePaneCommandDisabledReason(),
       'pane.previous': () => this.relativePaneCommandDisabledReason(),
     });
-    this.keybindingRouter = new KeybindingRouter(
-      createDefaultKeybindings(this.config.workspaces.map((workspace) => workspace.id)),
-    );
+    this.keybindingRouter = new KeybindingRouter(mergeKeybindings(
+      this.defaultKeybindings(),
+      this.config.keybindingOverrides,
+    ));
     this.commandPalette = new CommandPalette({
       documentRef: this.document,
       registry: this.commandRegistry,
@@ -371,9 +404,24 @@ export class NeonCodeApp {
       dispatch: (invocation) => this.dispatchCommand(invocation),
       restoreActivePaneFocus: () => this.applyActivePaneFocus(),
     });
+    this.settingsView = new SettingsView({
+      documentRef: this.document,
+      getEntries: () => this.createBindableCommandEntries(),
+      getDefaults: () => this.defaultKeybindings(),
+      getAllowedInvocations: () => this.allowedKeybindingInvocations(),
+      loadSettings: () => this.window.neoncodeDesktop.getSettings(),
+      saveSettings: (snapshot) => this.window.neoncodeDesktop.saveSettings(snapshot),
+      onSaved: (snapshot) => this.applySavedKeybindings(snapshot.settings.keybindings.overrides),
+      closeCommand: () => { void this.dispatchCommand({ id: 'settings.close' }); },
+      restoreActivePaneFocus: () => this.applyActivePaneFocus(),
+    });
     requiredElement(this.document, 'commands-button').addEventListener('click', () => {
       void this.dispatchCommand({ id: 'palette.open' });
     });
+    requiredElement(this.document, 'settings-button').addEventListener('click', () => {
+      void this.dispatchCommand({ id: 'settings.open' });
+    });
+    this.updateCommandsShortcutLabel();
     this.document.addEventListener('keydown', this.onDocumentKeyDown, true);
     this.sessionModel.setConfiguration({
       valid: this.config.configurationValid,
@@ -482,6 +530,68 @@ export class NeonCodeApp {
     return activeWorkspace.panes.length === 1 ? 'No other pane is available' : null;
   }
 
+  defaultKeybindings(): Keybinding[] {
+    return createDefaultKeybindings(this.config.workspaces.map((workspace) => workspace.id));
+  }
+
+  allowedKeybindingInvocations(): CommandInvocation[] {
+    return createConcreteCommandInvocations(
+      this.config.workspaces.map((workspace) => workspace.id),
+      this.config.workspaces.flatMap((workspace) => workspace.panes.map((pane) => pane.paneId)),
+    );
+  }
+
+  applySavedKeybindings(overrides: readonly KeybindingOverride[]): void {
+    const validated = validateKeybindingSettings(
+      { overrides },
+      this.defaultKeybindings(),
+      this.allowedKeybindingInvocations(),
+    );
+    this.config.keybindingOverrides = structuredClone(validated.overrides);
+    this.keybindingRouter = new KeybindingRouter(mergeKeybindings(
+      this.defaultKeybindings(),
+      validated.overrides,
+    ));
+    this.updateCommandsShortcutLabel();
+  }
+
+  updateCommandsShortcutLabel(): void {
+    const label = requiredElement(this.document, 'commands-shortcut');
+    label.textContent = this.keybindingRouter.shortcutFor({ id: 'palette.open' }) ?? 'Unbound';
+  }
+
+  createBindableCommandEntries(): BindableCommandEntry[] {
+    const entries: BindableCommandEntry[] = [
+      { invocation: { id: 'palette.open' }, title: getCommandMetadata('palette.open').title },
+      { invocation: { id: 'settings.open' }, title: getCommandMetadata('settings.open').title },
+      { invocation: { id: 'workspace.next' }, title: getCommandMetadata('workspace.next').title },
+      { invocation: { id: 'workspace.previous' }, title: getCommandMetadata('workspace.previous').title },
+    ];
+    for (const workspace of this.config.workspaces) {
+      entries.push({
+        invocation: { id: 'workspace.open', args: { workspaceId: workspace.id } },
+        title: `Open Workspace: ${workspace.name}`,
+      });
+      for (const pane of workspace.panes) {
+        entries.push({
+          invocation: { id: 'pane.focus', args: { paneId: pane.paneId } },
+          title: `Focus Pane: ${pane.title} (${workspace.name})`,
+        });
+      }
+    }
+    entries.push(
+      { invocation: { id: 'pane.next' }, title: getCommandMetadata('pane.next').title },
+      { invocation: { id: 'pane.previous' }, title: getCommandMetadata('pane.previous').title },
+    );
+    for (const workspace of this.config.workspaces) {
+      entries.push({
+        invocation: { id: 'workspace.dismissAttention', args: { workspaceId: workspace.id } },
+        title: `Dismiss Attention: ${workspace.name}`,
+      });
+    }
+    return entries;
+  }
+
   createPaletteEntries(): PaletteCommandEntry[] {
     const entries: PaletteCommandEntry[] = [];
     const add = (invocation: CommandInvocation, title: string, additionalSearchTerms: string[] = []): void => {
@@ -495,6 +605,7 @@ export class NeonCodeApp {
       });
     };
 
+    add({ id: 'settings.open' }, getCommandMetadata('settings.open').title);
     add({ id: 'workspace.next' }, getCommandMetadata('workspace.next').title);
     add({ id: 'workspace.previous' }, getCommandMetadata('workspace.previous').title);
     for (const workspace of this.config.workspaces) {

@@ -1,7 +1,12 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 import type { WorkspaceLayoutState } from './shared/layout-model';
-import type { NeoncodeDesktopApi, PrepareCloseCallback } from './shared/types';
+import type {
+  NeoncodeDesktopApi,
+  PrepareCloseCallback,
+  SaveSettingsRequest,
+  SettingsSnapshot,
+} from './shared/types';
 
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -15,6 +20,19 @@ function deepFreeze<T>(value: T): T {
 
 function isPrepareCloseCallback(value: unknown): value is PrepareCloseCallback {
   return typeof value === 'function';
+}
+
+function settingsSnapshot(value: unknown): SettingsSnapshot {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('settings IPC returned an invalid response');
+  }
+  const response = value as { revision?: unknown; settings?: unknown };
+  if (!Number.isSafeInteger(response.revision)
+      || response.settings === null || typeof response.settings !== 'object'
+      || Array.isArray(response.settings)) {
+    throw new Error('settings IPC returned an invalid response');
+  }
+  return structuredClone(value) as SettingsSnapshot;
 }
 
 const bootstrap: unknown = ipcRenderer.sendSync('neoncode:get-renderer-config');
@@ -51,6 +69,17 @@ const desktopApi = Object.freeze({
     layout: WorkspaceLayoutState,
   ): Promise<void> {
     await ipcRenderer.invoke('neoncode:save-workspace-layout', workspaceId, layout);
+  },
+
+  async getSettings(): Promise<SettingsSnapshot> {
+    return settingsSnapshot(await ipcRenderer.invoke('neoncode:get-settings'));
+  },
+
+  async saveSettings(request: SaveSettingsRequest): Promise<SettingsSnapshot> {
+    return settingsSnapshot(await ipcRenderer.invoke(
+      'neoncode:save-settings',
+      structuredClone(request),
+    ));
   },
 
   onPrepareClose(callback: PrepareCloseCallback): void {

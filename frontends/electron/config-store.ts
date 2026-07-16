@@ -5,20 +5,27 @@ import {
   orderedDepthFirstPanes,
   validateWorkspaceLayoutState,
 } from './shared/layout-model';
+import {
+  createConcreteCommandInvocations,
+  createDefaultKeybindings,
+  validateKeybindingSettings,
+} from './shared/keybindings';
 import type {
   ConfigStorageStatus,
   DesktopBootstrapResult,
   DesktopConfig,
   DesktopDiagnostics,
   DesktopLaunchProfile,
+  DesktopSettings,
   DesktopState,
+  KeybindingSettings,
   DesktopWorkspaceConfig,
   StateStorageStatus,
   TerminalAppearance,
   TerminalTheme,
 } from './shared/types';
 
-export const CONFIG_SCHEMA_VERSION = 4;
+export const CONFIG_SCHEMA_VERSION = 5;
 export const STATE_SCHEMA_VERSION = 3;
 const MAX_CONFIG_BYTES = 64 * 1024;
 const MAX_STATE_BYTES = 64 * 1024;
@@ -49,7 +56,8 @@ type MigrationSource =
   | 'schema_1'
   | 'schema_1_legacy_terminal'
   | 'schema_2'
-  | 'schema_3';
+  | 'schema_3'
+  | 'schema_4';
 
 interface ConfigMigrationResult {
   document: unknown;
@@ -137,6 +145,7 @@ export function defaultConfig(): DesktopConfig {
       onWindowClose: 'detach',
     },
     terminal: defaultTerminalAppearance(),
+    keybindings: { overrides: [] },
     launchProfiles: {
       'default-shell': {
         type: 'process',
@@ -313,7 +322,7 @@ function migrateSchemaThreeConfig(document: UnknownRecord): UnknownRecord {
   const { sessions, ...rest } = document;
   return {
     ...rest,
-    schemaVersion: CONFIG_SCHEMA_VERSION,
+    schemaVersion: 4,
     workspaces: [{
       id: 'default',
       name: 'Default',
@@ -323,10 +332,30 @@ function migrateSchemaThreeConfig(document: UnknownRecord): UnknownRecord {
   };
 }
 
+function migrateSchemaFourConfig(document: UnknownRecord): UnknownRecord {
+  requireExactKeys(
+    document,
+    ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'terminal', 'launchProfiles', 'workspaces'],
+    'schema 4 config',
+  );
+  return {
+    ...document,
+    schemaVersion: CONFIG_SCHEMA_VERSION,
+    keybindings: { overrides: [] },
+  };
+}
+
 function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigrationResult {
   const document = requireObject(raw, 'config');
   if (document.schemaVersion === CONFIG_SCHEMA_VERSION) {
     return { document, migrated: false, migrationSource: null };
+  }
+  if (document.schemaVersion === 4) {
+    return {
+      document: migrateSchemaFourConfig(document),
+      migrated: true,
+      migrationSource: 'schema_4',
+    };
   }
   if (document.schemaVersion === undefined
       && Object.keys(document).length === 1
@@ -341,7 +370,7 @@ function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigr
   if (document.schemaVersion === 3) {
     requireLegacyDesktopConfigKeys(document, { terminal: true });
     return {
-      document: migrateSchemaThreeConfig(document),
+      document: migrateSchemaFourConfig(migrateSchemaThreeConfig(document)),
       migrated: true,
       migrationSource: 'schema_3',
     };
@@ -354,7 +383,7 @@ function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigr
       terminal: migrateSchemaTwoTerminal(document.terminal),
     };
     return {
-      document: migrateSchemaThreeConfig(schemaThree),
+      document: migrateSchemaFourConfig(migrateSchemaThreeConfig(schemaThree)),
       migrated: true,
       migrationSource: 'schema_2',
     };
@@ -367,7 +396,7 @@ function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigr
       terminal: legacyTerminal ? migrateLegacyTerminal(legacyTerminal) : defaultTerminalAppearance(),
     };
     return {
-      document: migrateSchemaThreeConfig(schemaThree),
+      document: migrateSchemaFourConfig(migrateSchemaThreeConfig(schemaThree)),
       migrated: true,
       migrationSource: legacyTerminal ? 'schema_1_legacy_terminal' : 'schema_1',
     };
@@ -381,7 +410,7 @@ function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigr
     );
   }
   if (document.schemaVersion !== 0) {
-    throw new ConfigurationError('config.schemaVersion must be 0, 1, 2, 3, or 4');
+    throw new ConfigurationError('config.schemaVersion must be 0, 1, 2, 3, 4, or 5');
   }
 
   requireExactKeys(
@@ -427,7 +456,7 @@ export function validateConfig(
   const { document: migratedDocument, migrated, migrationSource } = migrateConfig(raw, legacyTerminal);
   const document = requireExactKeys(
     migratedDocument,
-    ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'terminal', 'launchProfiles', 'workspaces'],
+    ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'terminal', 'keybindings', 'launchProfiles', 'workspaces'],
     'config',
   );
   if (document.schemaVersion !== CONFIG_SCHEMA_VERSION) {
@@ -567,6 +596,20 @@ export function validateConfig(
     return { id, name, layout: { columns }, sessions };
   });
 
+  let keybindings: KeybindingSettings;
+  try {
+    keybindings = validateKeybindingSettings(
+      document.keybindings,
+      createDefaultKeybindings(workspaces.map((workspace) => workspace.id)),
+      createConcreteCommandInvocations(
+        workspaces.map((workspace) => workspace.id),
+        workspaces.flatMap((workspace) => workspace.sessions.map((session) => session.id)),
+      ),
+    );
+  } catch (error) {
+    throw new ConfigurationError(`config.${errorMessage(error)}`);
+  }
+
   return {
     value: {
       schemaVersion: CONFIG_SCHEMA_VERSION,
@@ -574,12 +617,40 @@ export function validateConfig(
       sessionPrefix,
       persistence: { onWindowClose },
       terminal,
+      keybindings,
       launchProfiles,
       workspaces,
     },
     migrated,
     migrationSource,
   };
+}
+
+export function settingsFromConfig(config: DesktopConfig): DesktopSettings {
+  return cloneJson({
+    hub: config.hub,
+    sessionPrefix: config.sessionPrefix,
+    persistence: config.persistence,
+    terminal: config.terminal,
+    keybindings: config.keybindings,
+  });
+}
+
+export function validateSettingsForConfig(raw: unknown, baseConfig: DesktopConfig): DesktopSettings {
+  const settings = requireExactKeys(
+    raw,
+    ['hub', 'sessionPrefix', 'persistence', 'terminal', 'keybindings'],
+    'settings',
+  );
+  const validated = validateConfig({
+    ...baseConfig,
+    hub: settings.hub,
+    sessionPrefix: settings.sessionPrefix,
+    persistence: settings.persistence,
+    terminal: settings.terminal,
+    keybindings: settings.keybindings,
+  }).value;
+  return settingsFromConfig(validated);
 }
 
 function requireWindowDimension(value: unknown, dimension: 'width' | 'height'): number {
@@ -725,7 +796,7 @@ export function applyEnvironmentOverrides(config: DesktopConfig, env: unknown): 
       ? 'kill'
       : 'detach';
   }
-  return validateConfig(effective).value;
+  return effective;
 }
 
 function readJsonFile(filePath: string, maximumBytes: number): unknown {
@@ -1047,6 +1118,29 @@ export class ConfigStore {
       state: stateResult.state,
       diagnostics,
     };
+  }
+
+  getStoredSettings(): DesktopSettings {
+    if (!fs.existsSync(this.configPath)) {
+      throw new ConfigurationError('config.json is missing');
+    }
+    return settingsFromConfig(this.validateStoredConfig(this.configPath).value);
+  }
+
+  saveSettings(settings: unknown): DesktopConfig {
+    if (!fs.existsSync(this.configPath)) {
+      throw new ConfigurationError('config.json is missing');
+    }
+    const previous = this.validateStoredConfig(this.configPath).value;
+    const validatedSettings = validateSettingsForConfig(settings, previous);
+    const replacement = validateConfig({
+      ...previous,
+      ...validatedSettings,
+      schemaVersion: CONFIG_SCHEMA_VERSION,
+    }).value;
+    writeJsonAtomic(this.configBackupPath, previous);
+    writeJsonAtomic(this.configPath, replacement);
+    return replacement;
   }
 
   saveState(state: unknown): DesktopState {

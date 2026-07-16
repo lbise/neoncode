@@ -2,11 +2,19 @@ import type { FitAddon } from '@xterm/addon-fit';
 import type { Terminal } from '@xterm/xterm';
 
 import type { WorkspaceLayoutState } from './layout-model';
+import type { KeybindingOverride, KeybindingSettings } from './keybindings';
 import type {
   CommandExecutionArguments,
   CommandMetadata,
   CommandOperationResult,
 } from './command-catalog';
+
+export type {
+  KeyCombination,
+  Keybinding,
+  KeybindingOverride,
+  KeybindingSettings,
+} from './keybindings';
 
 export type {
   CommandArgumentMap,
@@ -182,12 +190,26 @@ export interface DesktopWorkspaceConfig {
   sessions: DesktopSessionConfig[];
 }
 
-export interface DesktopConfig {
-  schemaVersion: number;
+export interface DesktopSettings {
   hub: { endpoint: string };
   sessionPrefix: string;
   persistence: { onWindowClose: PersistencePolicy };
   terminal: TerminalAppearance;
+  keybindings: KeybindingSettings;
+}
+
+export interface SettingsSnapshot {
+  revision: number;
+  settings: DesktopSettings;
+}
+
+export interface SaveSettingsRequest {
+  revision: number;
+  settings: DesktopSettings;
+}
+
+export interface DesktopConfig extends DesktopSettings {
+  schemaVersion: number;
   launchProfiles: Record<string, DesktopLaunchProfile>;
   workspaces: DesktopWorkspaceConfig[];
 }
@@ -236,6 +258,7 @@ export interface RendererBootstrapConfig {
   sessionPrefix: string;
   persistencePolicy: PersistencePolicy;
   terminal: TerminalAppearance | null;
+  keybindingOverrides: KeybindingOverride[];
   activeWorkspaceId: string | null;
   workspaceLayouts: Record<string, WorkspaceLayoutState>;
   workspaces: RendererBootstrapWorkspace[];
@@ -276,6 +299,7 @@ export interface RendererAppConfig {
   sessionPrefix: string;
   persistencePolicy: PersistencePolicy;
   terminal: TerminalAppearance | null;
+  keybindingOverrides: KeybindingOverride[];
   testMode: boolean;
   activeWorkspaceId: string | null;
   workspaceLayouts: Record<string, WorkspaceLayoutState>;
@@ -390,6 +414,8 @@ export interface NeoncodeDesktopApi {
   writeClipboardText(text: string): Promise<void>;
   setActiveWorkspace(workspaceId: string): Promise<string>;
   saveWorkspaceLayout(workspaceId: string, layout: WorkspaceLayoutState): Promise<void>;
+  getSettings(): Promise<SettingsSnapshot>;
+  saveSettings(request: SaveSettingsRequest): Promise<SettingsSnapshot>;
   onPrepareClose(callback: PrepareCloseCallback): void;
 }
 

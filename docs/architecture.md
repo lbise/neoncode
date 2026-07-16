@@ -36,8 +36,9 @@ Current role:
 - renders 1–8 panes for the active configured workspace and opens one WebSocket per pane/session;
 - switches named workspaces by detaching the old panes and attaching/starting the selected panes;
 - restores the active workspace from app-owned state;
-- routes workspace, pane-focus, palette, and attention-dismissal actions through a typed central command registry;
-- renders an accessible command palette for catalog operations and concrete configured workspace/current-pane targets, including effective shortcut labels and disabled reasons;
+- routes workspace, pane-focus, palette, Settings, and attention-dismissal actions through a typed central command registry;
+- renders an accessible command palette for catalog operations and concrete configured workspace/current-pane targets, including live effective shortcut labels and disabled reasons;
+- renders a keyboard-accessible General/Keyboard Settings dialog and applies validated persisted keybinding overrides live;
 - owns the active pane in a DOM-free focus model, remembers one pane per workspace, and restores xterm focus after workspace changes;
 - summarizes hub-owned WSL launch metadata and aggregate pane lifecycle in the workspace sidebar, falling back to configured locations for sessions not yet created;
 - displays and explicitly acknowledges retained exit attention without conflating it with a replacement session's running state;
@@ -132,7 +133,8 @@ frontends/electron/renderer/        strict TypeScript renderer modules:
   app.ts                            typed app/bootstrap, dispatch, and pane grid orchestration
   command-palette.ts                accessible catalog search/navigation/execution DOM UI
   command-registry.ts               renderer handlers, enablement, and bounded operation results
-  keybinding-router.ts              pure exact-match default shortcut resolver and labels
+  keybinding-router.ts              pure exact-match effective shortcut resolver and labels
+  settings-view.ts                  accessible General/Keyboard editor and shortcut recorder
   pane-focus-model.ts               DOM-free ordered pane focus/memory model
   hub-client.ts                     typed WebSocket protocol client and validators
   session-model.ts                  typed pane/session state and bounded output view
@@ -141,6 +143,7 @@ frontends/electron/renderer/        strict TypeScript renderer modules:
   test-api.ts                       typed test-mode structured renderer API
   globals.d.ts                      context-isolated desktop, public-state, and test globals
 frontends/electron/shared/command-catalog.ts stable command IDs, metadata, argument/result maps, and runtime validation
+frontends/electron/shared/keybindings.ts     shared physical-key persistence, merge, format, conflict, and validation contract
 frontends/electron/shared/layout-model.ts pure validated frontend tab/split tree and operations
 frontends/electron/shared/types.ts  shared protocol and renderer-state contracts
 frontends/electron/tsconfig.*.json  strict Node, renderer, and test compiler boundaries
@@ -154,21 +157,23 @@ The Electron frontend uses strict TypeScript throughout without a runtime TypeSc
 
 ## Renderer command, palette, and focus boundary
 
-`shared/command-catalog.ts` is the stable contract for `palette.open`, `palette.close`, `workspace.open`, `workspace.next`, `workspace.previous`, `workspace.dismissAttention`, `pane.focus`, `pane.next`, and `pane.previous`. It maps each ID to exact argument/result types and records title, category, context, search terms, owning layer, and future external-invocation eligibility. Runtime validation rejects unknown IDs, extra fields, missing arguments, and invalid target identifiers. The external marker is descriptive only; this commit adds no app-control listener or transport.
+`shared/command-catalog.ts` is the stable contract for `palette.open`, `palette.close`, `settings.open`, `settings.close`, `workspace.open`, `workspace.next`, `workspace.previous`, `workspace.dismissAttention`, `pane.focus`, `pane.next`, and `pane.previous`. It maps each ID to exact argument/result types and records title, category, context, search terms, owning layer, and future external-invocation eligibility. Runtime validation rejects unknown IDs, extra fields, missing arguments, and invalid target identifiers. The external marker is descriptive only; this commit adds no app-control listener or transport.
 
-`renderer/command-registry.ts` remains the implementation boundary. It checks contextual enablement before invoking handlers, reports a bounded typed disabled reason for expected unavailable operations, and otherwise returns a completed result. Handler exceptions may reject inside the registry; app dispatch logs and converts them to a typed failed result so DOM event paths do not create unhandled rejections. Sidebar workspace buttons, pane pointer/focus changes, the Commands and palette controls, Dismiss attention, keyboard shortcuts, and the typed test API all reach these handlers.
+`renderer/command-registry.ts` remains the implementation boundary. It checks contextual enablement before invoking handlers, reports a bounded typed disabled reason for expected unavailable operations, and otherwise returns a completed result. Handler exceptions may reject inside the registry; app dispatch logs and converts them to a typed failed result so DOM event paths do not create unhandled rejections. Sidebar workspace buttons, pane pointer/focus changes, the Commands/Settings/palette controls, Dismiss attention, keyboard shortcuts, and the typed test API all reach these handlers.
 
-One document capture-phase `keydown` listener gives an open palette first claim on Escape, arrows, Enter, and Tab. While closed, a DOM-free exact-match router owns only `Ctrl+Shift+P`, `Alt+Digit1..9` for configured workspaces, `F6`, and `Shift+F6`. Already-prevented, Ctrl+Alt/AltGraph, extra-modifier, repeat execution, and unclaimed events are untouched, so xterm remains responsible for terminal input, copy/paste, and special keys.
+One document capture-phase `keydown` listener gives an open Settings dialog first claim on navigation and recording, then an open palette first claim on Escape, arrows, Enter, and Tab. While overlays are closed, a DOM-free exact-match router uses effective defaults plus persisted overrides. Defaults are `Ctrl+Shift+P`, `Alt+Digit1..9` for configured workspaces, `F6`, and `Shift+F6`. Already-prevented, Ctrl+Alt/AltGraph, extra-modifier, repeat execution, and unclaimed events are untouched, so xterm remains responsible for terminal input, copy/paste, and special keys. A successful Settings save safely replaces the router and updates palette/header labels without restarting.
 
 The palette is an accessible modal DOM surface with initial search focus, catalog/dynamic-target filtering, categories, current shortcut labels, disabled reasons, wrapping arrow selection, one-shot Enter dispatch, Escape close, and a two-control Tab focus loop. Closing restores the element focused before opening when it still exists; otherwise the authoritative active pane is focused.
+
+Settings is a separate accessible modal with General and Keyboard sections, trapped Tab movement, exact physical-key recording, inline validation/storage errors, one save in flight, Escape recording cancellation/close, and active-pane focus restoration. General fields are restart-required in this slice; only keybindings apply live.
 
 The focus model owns ordered panes, wrapping, active workspace/pane identity, per-workspace pane memory, and deterministic first-pane fallback after removal. The DOM mirrors that state through active data/ARIA attributes and CSS; it does not infer focus ownership. `workspace.activePaneId` is part of structured renderer state.
 
 ## Frontend layout-state boundary
 
-`shared/layout-model.ts` now defines the DOM-free frontend layout vocabulary: a workspace has ordered tabs, each tab has one binary pane/split tree, and each pane leaf references a session key without becoming the backend session identity. IDs are caller-supplied rather than generated inside the model. Pure immutable operations validate add/rename/reorder/activate/close tab, focus/split/move/close pane, and clamped split-resize transitions; pane ordering is first-child/second-child depth-first. A deterministic helper converts a schema 4 configured session grid to one initial tab while retaining configured session keys.
+`shared/layout-model.ts` now defines the DOM-free frontend layout vocabulary: a workspace has ordered tabs, each tab has one binary pane/split tree, and each pane leaf references a session key without becoming the backend session identity. IDs are caller-supplied rather than generated inside the model. Pure immutable operations validate add/rename/reorder/activate/close tab, focus/split/move/close pane, and clamped split-resize transitions; pane ordering is first-child/second-child depth-first. A deterministic helper converts a schema 5 configured session grid to one initial tab while retaining configured session keys.
 
-App-owned state schema 3 stores validated layouts under `workspaceLayouts`, separately from configuration schema 4 and hub lifecycle state. The state boundary allows at most 16 workspace entries, 64 leaves total, 8 tabs and 8 panes per workspace, tree depth 8, and a 64 KiB state file. Electron main accepts layout saves only for a workspace in the current validated config, validates before merge, and persists through the existing backup plus atomic-rename path.
+App-owned state schema 3 stores validated layouts under `workspaceLayouts`, separately from configuration schema 5 and hub lifecycle state. The state boundary allows at most 16 workspace entries, 64 leaves total, 8 tabs and 8 panes per workspace, tree depth 8, and a 64 KiB state file. Electron main accepts layout saves only for a workspace in the current validated config, validates before merge, and persists through the existing backup plus atomic-rename path.
 
 This commit is model and persistence groundwork only. The renderer still constructs and displays the existing configured grid, does not seed/restore `workspaceLayouts` at runtime, and does not call `saveWorkspaceLayout` yet. Tabs, free-form split DOM, and layout commands remain unchecked GUI work.
 
@@ -182,7 +187,7 @@ nodeIntegration: false
 sandbox: true
 ```
 
-The browser-world renderer is bundled with `esbuild-wasm` and receives only a narrow preload API for validated bootstrap configuration (including the local hub capability), bounded clipboard reads/writes, and graceful-close coordination. The app applies a restrictive CSP and denies unexpected navigation, new windows, webviews, and permission requests.
+The browser-world renderer is bundled with `esbuild-wasm` and receives only a narrow preload API for validated bootstrap configuration (including the local hub capability), revisioned Settings get/save, bounded clipboard reads/writes, layout/state saves, and graceful-close coordination. Settings IPC accepts only the current BrowserWindow sender; main rereads disk config, validates the complete request, preserves non-Settings fields, and atomically writes the backup and replacement. The sandbox preload stays self-contained and exposes no arbitrary filesystem or command primitive. The app applies a restrictive CSP and denies unexpected navigation, new windows, webviews, and permission requests.
 
 Playwright asserts the effective BrowserWindow preferences, absence of renderer `process`/`require`, exact preload API keys, deeply frozen bootstrap configuration, denied window creation, and denied notification permission.
 
@@ -190,7 +195,7 @@ Playwright asserts the effective BrowserWindow preferences, absence of renderer 
 
 Electron main exclusively owns `%APPDATA%\\NeonCode\\config.json` and `state.json`. Versioned strict validation produces a narrow bootstrap object containing the loopback endpoint, configured session IDs/titles, resolved process launch profiles, close policy, and diagnostics. The capability token remains environment-only.
 
-Configuration schema 4 supports 1–16 named workspaces, 1–8 sessions per workspace (64 total), simple validated grid columns, named terminal appearance, and explicit process profiles (`command`, `args`, `cwd`). It does not yet support keybinding overrides or a settings UI; those are planned for schema 5. State schema 3 stores window content size, the active workspace, and validated layout groundwork. Normal close either detaches active panes or kills sessions visited by this app instance according to policy; runtime workspace switching always detaches. Hub sessions remain authoritative backend state. Writes use same-directory temporary files and atomic rename, and valid backups support visible recovery from malformed JSON.
+Configuration schema 5 supports 1–16 named workspaces, 1–8 sessions per workspace (64 total), simple validated grid columns, named terminal appearance, explicit process profiles (`command`, `args`, `cwd`), and at most 64 strict per-command keybinding overrides with explicit unbinding. Schema 4 migrates by adding an empty override list. The accessible Settings UI persists supported General values and edits keybindings; keybindings apply live while other displayed settings are restart-required. State schema 3 stores window content size, the active workspace, and validated layout groundwork. Normal close either detaches active panes or kills sessions visited by this app instance according to policy; runtime workspace switching always detaches. Hub sessions remain authoritative backend state. Writes use same-directory temporary files and atomic rename, and valid backups support visible recovery from malformed JSON.
 
 See [configuration.md](configuration.md) for the schema and manual workflow.
 
@@ -275,7 +280,7 @@ A terminal pane should be an attachment/surface for a session, not the session i
 
 ## Workspace model
 
-Configuration schema 4 describes desired sessions independently of UI runtime state:
+Configuration schema 5 describes desired sessions independently of UI runtime state:
 
 ```yaml
 name: audio-fw
@@ -305,7 +310,7 @@ The frontend should own:
 - sidebar/status presentation;
 - notifications/attention UI;
 - browser/external surfaces;
-- a future authenticated local app-control transport for externally eligible CLI commands.
+- a future authenticated local app-control transport for externally eligible CLI commands. The shared command contract is ready for that transport, but this slice does not add one.
 
 The PTY hub remains layout-agnostic. CLI control of app-owned workspaces/tabs/splits must use the future desktop app-control transport rather than extending the hub with frontend layout state.
 

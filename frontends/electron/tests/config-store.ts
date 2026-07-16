@@ -119,7 +119,9 @@ function nestedWorkspaceLayout(depth: number): WorkspaceLayoutState {
 function schemaThreeConfig(): LegacyConfigFixture {
   const current = defaultConfig();
   const workspace = workspaceAt(current);
-  const { workspaces, ...legacy } = current;
+  const { workspaces, keybindings, ...legacy } = current;
+  void workspaces;
+  void keybindings;
   return { ...legacy, schemaVersion: 3, sessions: workspace.sessions };
 }
 
@@ -172,7 +174,7 @@ function testUnversionedTerminalConfigMigration() {
     assert.equal(result.diagnostics.configStatus, 'migrated');
     assert.equal(loadedConfig(result).terminal.fontFamily, 'FiraCode Nerd Font Mono');
     assert.equal(loadedConfig(result).terminal.theme.background, '#0c0c0c');
-    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 4);
+    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 5);
     assert(result.diagnostics.warnings.some((warning) => warning.includes('were imported')));
     const preserved = fs.readdirSync(directory)
       .find((name) => name.startsWith('config.json.pre-migration-'));
@@ -206,7 +208,7 @@ function testSchemaTwoColorArrayMigration() {
     fs.writeFileSync(store.configPath, `${JSON.stringify(schemaTwo)}\n`);
 
     const result = store.load({});
-    assert.equal(loadedConfig(result).schemaVersion, 4);
+    assert.equal(loadedConfig(result).schemaVersion, 5);
     assert.equal(loadedConfig(result).terminal.theme.purple, named.purple);
     assert.equal(loadedConfig(result).terminal.theme.brightPurple, named.brightPurple);
     assert.equal(loadedConfig(result).terminal.theme.name, 'NeonCode Default');
@@ -227,7 +229,7 @@ function testSchemaOneImportsPreservedLegacyAppearance() {
     }));
 
     const result = store.load({});
-    assert.equal(loadedConfig(result).schemaVersion, 4);
+    assert.equal(loadedConfig(result).schemaVersion, 5);
     assert.equal(sessionAt(workspaceAt(loadedConfig(result))).title, 'Keep Me');
     assert.equal(loadedConfig(result).terminal.fontFamily, 'Legacy Font');
     assert.equal(loadedConfig(result).terminal.fontSize, 17);
@@ -247,11 +249,11 @@ function testLegacyMigration() {
     }));
     const result = store.load({});
     assert.equal(result.diagnostics.configStatus, 'migrated');
-    assert.equal(loadedConfig(result).schemaVersion, 4);
+    assert.equal(loadedConfig(result).schemaVersion, 5);
     assert.equal(loadedConfig(result).hub.endpoint, 'ws://127.0.0.1:45000/ws');
     assert.equal(loadedConfig(result).persistence.onWindowClose, 'kill');
     assert.equal(workspaceAt(loadedConfig(result)).sessions.length, 1);
-    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 4);
+    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 5);
   });
 }
 
@@ -327,11 +329,102 @@ function testFutureSchemaIsPreservedAndFatal() {
   });
 }
 
+function testSchemaFourKeybindingMigration() {
+  withStore((store, directory) => {
+    fs.mkdirSync(directory, { recursive: true });
+    const current = defaultConfig();
+    const { keybindings, ...schemaFour } = current;
+    void keybindings;
+    fs.writeFileSync(store.configPath, `${JSON.stringify({ ...schemaFour, schemaVersion: 4 })}\n`);
+    const result = store.load({});
+    assert.equal(result.diagnostics.configStatus, 'migrated');
+    assert.equal(loadedConfig(result).schemaVersion, 5);
+    assert.deepEqual(loadedConfig(result).keybindings, { overrides: [] });
+    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 5);
+    assert(fs.readdirSync(directory).some((name) => name.startsWith('config.json.pre-migration-')));
+  });
+}
+
+function testSettingsSaveMergesStoredConfigAndBacksUp() {
+  withStore((store) => {
+    const created = loadedConfig(store.load({}));
+    const previous = structuredClone(created);
+    previous.launchProfiles['preserved-profile'] = {
+      type: 'process', command: 'bash', args: ['-l'], cwd: '/tmp',
+    };
+    previous.workspaces[0]!.sessions[0]!.title = 'Preserved Workspace';
+    fs.writeFileSync(store.configPath, `${JSON.stringify(previous)}\n`);
+
+    const effective = store.load({
+      NEONCODE_HUB_ENDPOINT: 'ws://127.0.0.1:45555/ws',
+      NEONCODE_SESSION_PREFIX: 'environment-prefix',
+    });
+    assert.equal(loadedConfig(effective).sessionPrefix, 'environment-prefix');
+    const settings = store.getStoredSettings();
+    assert.equal(settings.sessionPrefix, created.sessionPrefix);
+    settings.sessionPrefix = 'saved-prefix';
+    settings.terminal.fontSize = 18;
+    settings.keybindings.overrides = [{
+      command: { id: 'settings.open' },
+      binding: {
+        code: 'F8', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false,
+      },
+    }];
+    const saved = store.saveSettings(settings);
+    assert.equal(saved.sessionPrefix, 'saved-prefix');
+    assert.equal(saved.terminal.fontSize, 18);
+    assert.deepEqual(saved.launchProfiles, previous.launchProfiles);
+    assert.deepEqual(saved.workspaces, previous.workspaces);
+    assert.equal(readJson<DesktopConfig>(store.configBackupPath).sessionPrefix, created.sessionPrefix);
+    assert.deepEqual(readJson<DesktopConfig>(store.configPath), saved);
+  });
+}
+
+function testSettingsSaveValidationAndAtomicFailure() {
+  withStore((store, directory) => {
+    const previous = loadedConfig(store.load({}));
+    const unknown = store.getStoredSettings() as ReturnType<ConfigStore['getStoredSettings']> & {
+      unexpected?: boolean;
+    };
+    unknown.unexpected = true;
+    assert.throws(() => store.saveSettings(unknown), /settings keys must be exactly/u);
+
+    const conflicting = store.getStoredSettings();
+    conflicting.keybindings.overrides = [{
+      command: { id: 'settings.open' },
+      binding: {
+        code: 'F6', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false,
+      },
+    }];
+    assert.throws(() => store.saveSettings(conflicting), /conflicts/u);
+    assert.deepEqual(readJson<DesktopConfig>(store.configPath), previous);
+
+    const replacement = store.getStoredSettings();
+    replacement.sessionPrefix = 'atomic-replacement';
+    const mutableFs = fs as { renameSync: typeof fs.renameSync };
+    const originalRename = mutableFs.renameSync;
+    mutableFs.renameSync = (source, destination) => {
+      if (destination.toString() === store.configPath) {
+        throw new Error('injected settings save failure');
+      }
+      return originalRename(source, destination);
+    };
+    try {
+      assert.throws(() => store.saveSettings(replacement), /injected settings save failure/u);
+    } finally {
+      mutableFs.renameSync = originalRename;
+    }
+    assert.deepEqual(readJson<DesktopConfig>(store.configPath), previous);
+    assert.deepEqual(readJson<DesktopConfig>(store.configBackupPath), previous);
+    assert(!fs.readdirSync(directory).some((name) => name.startsWith('.config.json.tmp-')));
+  });
+}
+
 function testSchemaThreeWorkspaceMigration() {
   const legacy = schemaThreeConfig();
   legacy.sessions[0]!.title = 'Migrated Shell';
   const result = validateConfig(legacy);
-  assert.equal(result.value.schemaVersion, 4);
+  assert.equal(result.value.schemaVersion, 5);
   assert.equal(workspaceAt(result.value).id, 'default');
   assert.equal(workspaceAt(result.value).layout.columns, 2);
   assert.equal(sessionAt(workspaceAt(result.value)).title, 'Migrated Shell');
@@ -634,6 +727,9 @@ for (const test of [
   testMissingPrimaryWithUnusableBackupIsFatal,
   testBackupWriteFailureKeepsValidatedPrimary,
   testFutureSchemaIsPreservedAndFatal,
+  testSchemaFourKeybindingMigration,
+  testSettingsSaveMergesStoredConfigAndBacksUp,
+  testSettingsSaveValidationAndAtomicFailure,
   testSchemaThreeWorkspaceMigration,
   testWorkspaceValidationAndEightPanes,
   testStateSchemaOneMigration,

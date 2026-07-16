@@ -8,6 +8,8 @@ async function run(): Promise<void> {
   const registry = new CommandRegistry({
     'palette.open': () => { calls.push('palette.open'); },
     'palette.close': () => { calls.push('palette.close'); },
+    'settings.open': () => { calls.push('settings.open'); },
+    'settings.close': () => { calls.push('settings.close'); },
     'workspace.open': ({ workspaceId }) => { calls.push(`workspace.open:${workspaceId}`); },
     'workspace.next': () => { calls.push('workspace.next'); },
     'workspace.previous': () => { calls.push('workspace.previous'); },
@@ -29,6 +31,8 @@ async function run(): Promise<void> {
     [
       'palette.open',
       'palette.close',
+      'settings.open',
+      'settings.close',
       'workspace.open',
       'workspace.next',
       'workspace.previous',
@@ -69,6 +73,8 @@ async function run(): Promise<void> {
 
   await registry.execute('palette.open');
   await registry.execute('palette.close');
+  await registry.execute('settings.open');
+  await registry.execute('settings.close');
   await registry.execute('workspace.open', { workspaceId: 'review' });
   await registry.execute('workspace.next');
   await registry.execute('workspace.previous');
@@ -80,6 +86,8 @@ async function run(): Promise<void> {
   assert.deepEqual(calls, [
     'palette.open',
     'palette.close',
+    'settings.open',
+    'settings.close',
     'workspace.open:review',
     'workspace.next',
     'workspace.previous',
@@ -97,6 +105,8 @@ async function run(): Promise<void> {
   const failing = new CommandRegistry({
     'palette.open': () => { throw new Error('unexpected handler failure'); },
     'palette.close': () => {},
+    'settings.open': () => {},
+    'settings.close': () => {},
     'workspace.open': () => {},
     'workspace.next': () => {},
     'workspace.previous': () => {},

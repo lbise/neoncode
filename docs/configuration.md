@@ -11,15 +11,15 @@ NeonCode stores user-level Electron configuration and app-owned window state und
 
 Electron main owns all filesystem access. The sandboxed renderer receives only a validated bootstrap object through the preload bridge. The hub capability token is never written to these files.
 
-Configuration is read at startup. There is no settings UI or live reload yet; close and reopen NeonCode after editing `config.json`.
+Configuration is read at startup. The keyboard-accessible Settings dialog edits the supported General and Keyboard fields through validated main-process IPC. Keybinding overrides rebuild the renderer router immediately after Save; endpoint, session prefix, close policy, and terminal appearance are explicitly restart-required in this slice.
 
-## Version 4 schema
+## Version 5 schema
 
 The first launch creates:
 
 ```json
 {
-  "schemaVersion": 4,
+  "schemaVersion": 5,
   "hub": {
     "endpoint": "ws://127.0.0.1:44777/ws"
   },
@@ -55,6 +55,9 @@ The first launch creates:
       "brightWhite": "#f2f2f2"
     }
   },
+  "keybindings": {
+    "overrides": []
+  },
   "launchProfiles": {
     "default-shell": {
       "type": "process",
@@ -87,7 +90,7 @@ The first launch creates:
 }
 ```
 
-Version 4 supports 1–16 named workspaces and at most 64 configured sessions in total. Each workspace has 1–8 sessions and a simple grid layout whose `columns` value is between 1 and that workspace's session count. The sidebar switches workspaces immediately: the old workspace detaches, the selected workspace starts or reattaches, and the active workspace is restored after relaunch.
+Version 5 supports 1–16 named workspaces and at most 64 configured sessions in total. Each workspace has 1–8 sessions and a simple grid layout whose `columns` value is between 1 and that workspace's session count. The sidebar switches workspaces immediately: the old workspace detaches, the selected workspace starts or reattaches, and the active workspace is restored after relaunch.
 
 Session IDs are currently unique across the complete configuration. A hub session ID is:
 
@@ -96,6 +99,36 @@ Session IDs are currently unique across the complete configuration. A hub sessio
 ```
 
 Changing/removing a configured ID does not kill an already detached hub session with the old ID. Restart the in-memory hub if you intentionally want to clear all such sessions.
+
+## Settings and keybindings
+
+Open Settings with the visible header button or run **Open Settings** from the command palette; no Settings shortcut is required. The General section edits the loopback hub endpoint, session prefix, close policy, terminal font family/size, cursor blink, and terminal background/foreground colors. Those fields are saved atomically but take effect after restart. Environment overrides remain process-local and are never copied into `config.json` by a Settings save.
+
+`keybindings.overrides` contains at most 64 entries. Each entry identifies one exact typed command invocation and either supplies one physical `KeyboardEvent.code` combination with exact `altKey`, `ctrlKey`, `metaKey`, and `shiftKey` booleans, or uses `null` to unbind it:
+
+```json
+{
+  "command": { "id": "workspace.open", "args": { "workspaceId": "review" } },
+  "binding": {
+    "code": "KeyR",
+    "altKey": true,
+    "ctrlKey": false,
+    "metaKey": false,
+    "shiftKey": true
+  }
+}
+```
+
+```json
+{
+  "command": { "id": "pane.next" },
+  "binding": null
+}
+```
+
+An override replaces or unbinds the default for that exact command invocation. Defaults remain `Ctrl+Shift+P` for Commands, `Alt+1` through `Alt+9` for configured workspaces, and `F6`/`Shift+F6` for pane traversal. The Keyboard section shows current and default values and provides Record, Unbind, and Reset controls. Save validates the complete effective map and applies it live; Cancel or Escape discards the draft.
+
+Bindings reject unknown fields/codes/commands, malformed or unavailable concrete workspace/pane arguments, duplicate command overrides, duplicate active combinations, modifier-only and unsafe bare printable global keys, Ctrl+Alt/AltGraph semantics, and protected terminal conventions including Ctrl+C/D/Z/Space/L/R/A/E/K/U/W, Ctrl+Shift+C/V, and Shift+Insert.
 
 ## Workspaces and layout
 
@@ -199,7 +232,8 @@ Current validation includes:
 - unique workspace IDs, globally unique session IDs, and valid launch-profile references;
 - 1–16 workspaces, 1–8 sessions per workspace, at most 64 sessions total, and valid grid column counts;
 - bounded commands, arguments, working directories, titles, and file sizes;
-- `detach` or `kill` close policy.
+- `detach` or `kill` close policy;
+- at most 64 strict keybinding overrides, validated command invocations, physical key codes, safe modifiers, terminal-reserved combinations, and conflict-free effective bindings.
 
 On every valid load, NeonCode updates `config.json.bak`. If `config.json` later becomes malformed, NeonCode:
 
@@ -209,15 +243,15 @@ On every valid load, NeonCode updates `config.json.bak`. If `config.json` later 
 
 An unsupported future schema is preserved and is not downgraded automatically. If neither the primary nor backup is usable, NeonCode opens with a visible configuration error and launches no terminal sessions.
 
-Known pre-schema NeonCode files containing only a `terminal` object are preserved as `config.json.pre-migration-<timestamp>` and their compatible font, cursor, and color-table settings are imported into version 4. Schema versions 0, 1, 2, and 3 are migrated automatically. Version 2 positional `ansi` arrays are converted losslessly to named colors; version 3 top-level sessions become the `default` workspace without changing their IDs. When a preserved terminal-only file is available, schema 1 imports its appearance while retaining current pane/profile edits; otherwise it receives the default appearance.
+Known pre-schema NeonCode files containing only a `terminal` object are preserved as `config.json.pre-migration-<timestamp>` and their compatible font, cursor, and color-table settings are imported into version 5. Schema versions 0, 1, 2, 3, and 4 are migrated automatically; schema 4 gains an empty keybinding override list. Version 2 positional `ansi` arrays are converted losslessly to named colors; version 3 top-level sessions become the `default` workspace without changing their IDs. When a preserved terminal-only file is available, schema 1 imports its appearance while retaining current pane/profile edits; otherwise it receives the default appearance.
 
 App-owned state schema 3 stores content width/height, the active workspace ID, and a `workspaceLayouts` record. Each record value is a strict frontend-owned tab/split tree: tabs have a stable ID/title/focused pane, split branches have a stable ID/direction/ratio/two children, and pane leaves have a stable pane ID plus session key. Layout state is separate from configuration and does not redefine hub session identity.
 
 State validation permits at most 16 known-shape workspace entries, 8 tabs and 8 pane leaves per workspace, 64 leaves across the file, tree depth 8, unique IDs and session keys within a workspace, split ratios from `0.1` through `0.9`, and tab titles no larger than 64 UTF-8 bytes. The complete pretty-printed state file is limited to 64 KiB. Schema 1 migrates directly to schema 3 with a null active workspace and empty layouts; schema 2 preserves its window and active-workspace fields while adding empty layouts. Invalid, oversized, and unsupported future state is preserved and recovered from backup or reset safely. Window position is deliberately not persisted yet to avoid reopening off-screen.
 
-The preload bridge exposes a typed `saveWorkspaceLayout(workspaceId, layout)` call. Electron main accepts it only for a workspace in the current validated config and validates the complete merged state before writing. The renderer does not call this API or render the tab/split tree yet; the existing grid remains unchanged.
+The preload bridge exposes typed `saveWorkspaceLayout(workspaceId, layout)`, `getSettings()`, and revision-checked `saveSettings({revision, settings})` calls. Electron main accepts Settings IPC only from the current BrowserWindow, validates every field, rejects stale revisions, and merges only allowed Settings fields into a freshly read disk config. Launch profiles and workspaces are preserved, including when process-local environment overrides are active. There is no arbitrary file or command bridge. The renderer still does not render the persisted tab/split tree; the existing grid remains unchanged.
 
-Writes use same-directory temporary files, flush, and atomic rename. Electron also uses a single-instance lock to avoid competing state writers.
+Settings writes first atomically preserve the previous valid config as `config.json.bak`, then atomically replace `config.json`. Other writes use the same same-directory temporary-file, flush, and atomic-rename discipline. Electron also uses a single-instance lock to avoid competing state writers.
 
 ## Environment overrides
 
@@ -235,14 +269,10 @@ NEONCODE_PERSIST_SESSIONS
 ## Manual preview
 
 1. Run `./dev hub` and `./dev app` once.
-2. Close NeonCode normally.
-3. Open `%APPDATA%\NeonCode\config.json`.
-4. Add a second workspace, change pane titles, and give one profile a project `cwd`.
-5. Reopen with `./dev electron`.
-6. Switch between workspaces in the sidebar and confirm configured pane counts/titles/cwd.
-7. Set shell state in both workspaces, switch away and back, and confirm reattachment/output replay.
-8. Resize and close while the second workspace is active.
-9. Reopen and confirm window size and active workspace restoration.
-10. Optionally switch `onWindowClose` to `kill`; after closing/reopening, previously visited workspace sessions should start fresh.
+2. Open Settings from the header and edit General values; verify each restart-required label before saving.
+3. Open Keyboard, record a safe shortcut for a concrete command, save, and verify it executes immediately.
+4. Reopen Settings and exercise Unbind, Reset, conflict feedback, recorder Escape, and dialog Escape focus restoration.
+5. Close/reopen NeonCode and confirm the saved General values and shortcut remain.
+6. Continue editing launch profiles/workspaces directly in `%APPDATA%\NeonCode\config.json`; those structures are intentionally outside this Settings slice.
 
-External workspace files, visible free-form split layout controls, live appearance reload, font discovery, and a settings UI are later milestones.
+External workspace files, visible free-form split layout controls, live application of terminal appearance, font discovery, and CLI app-control transport are later milestones.

@@ -17,6 +17,8 @@ import {
 export interface CommandHandlers {
   'palette.open': () => void | Promise<void>;
   'palette.close': () => void | Promise<void>;
+  'settings.open': () => void | Promise<void>;
+  'settings.close': () => void | Promise<void>;
   'workspace.open': (args: WorkspaceOpenCommandArgs) => void | Promise<void>;
   'workspace.next': () => void | Promise<void>;
   'workspace.previous': () => void | Promise<void>;
@@ -29,7 +31,9 @@ export interface CommandHandlers {
 export interface CommandEnablement {
   'palette.open'?: () => CommandDisabledReason | null;
   'palette.close'?: () => CommandDisabledReason | null;
-  'workspace.open'?: (args: WorkspaceOpenCommandArgs) => CommandDisabledReason | null;
+  'settings.open'?: () => CommandDisabledReason | null;
+  'settings.close'?: () => CommandDisabledReason | null;
+  'workspace.open'?:  (args: WorkspaceOpenCommandArgs) => CommandDisabledReason | null;
   'workspace.next'?: () => CommandDisabledReason | null;
   'workspace.previous'?: () => CommandDisabledReason | null;
   'workspace.dismissAttention'?: (
@@ -92,6 +96,12 @@ export class CommandRegistry {
       case 'palette.close':
         await this.handlers['palette.close']();
         return completed();
+      case 'settings.open':
+        await this.handlers['settings.open']();
+        return completed();
+      case 'settings.close':
+        await this.handlers['settings.close']();
+        return completed();
       case 'workspace.open':
         await this.handlers['workspace.open'](invocation.args);
         return completed();
@@ -122,6 +132,10 @@ export class CommandRegistry {
         return this.enablement['palette.open']?.() ?? null;
       case 'palette.close':
         return this.enablement['palette.close']?.() ?? null;
+      case 'settings.open':
+        return this.enablement['settings.open']?.() ?? null;
+      case 'settings.close':
+        return this.enablement['settings.close']?.() ?? null;
       case 'workspace.open':
         return this.enablement['workspace.open']?.(command.args) ?? null;
       case 'workspace.next':

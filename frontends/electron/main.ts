@@ -14,13 +14,22 @@ import {
   type WebContents,
 } from 'electron';
 
-import { ConfigStore, STATE_SCHEMA_VERSION, defaultState } from './config-store';
+import {
+  CONFIG_SCHEMA_VERSION,
+  ConfigStore,
+  STATE_SCHEMA_VERSION,
+  applyEnvironmentOverrides,
+  defaultState,
+  settingsFromConfig,
+} from './config-store';
 import { validateWorkspaceLayoutState } from './shared/layout-model';
 import type {
   DesktopBootstrapResult,
   DesktopState,
   RendererBootstrapConfig,
   RendererBootstrapWorkspace,
+  SaveSettingsRequest,
+  SettingsSnapshot,
   TerminalAppearance,
 } from './shared/types';
 import type { WorkspaceLayoutState } from './shared/layout-model';
@@ -95,6 +104,7 @@ let allowWindowClose = false;
 let closeRequestInFlight = false;
 let closeTimeout: ReturnType<typeof setTimeout> | undefined;
 let stateSaveTimeout: ReturnType<typeof setTimeout> | undefined;
+let settingsRevision = 1;
 
 function processIntegrityLevel(): string {
   const result = spawnSync('whoami.exe', ['/groups'], { encoding: 'utf8', windowsHide: true });
@@ -146,13 +156,14 @@ function rendererConfig(): RendererBootstrapConfig {
     ? desktopState.activeWorkspaceId
     : config?.workspaces[0]?.id || null;
   return {
-    schemaVersion: config?.schemaVersion || 4,
+    schemaVersion: config?.schemaVersion || CONFIG_SCHEMA_VERSION,
     configurationValid: Boolean(config),
     endpoint: config?.hub.endpoint || '',
     capabilityToken: hubCapabilityToken,
     sessionPrefix: config?.sessionPrefix || '',
     persistencePolicy: config?.persistence.onWindowClose || 'detach',
     terminal: config ? cloneTerminalAppearance(config.terminal) : null,
+    keybindingOverrides: config ? structuredClone(config.keybindings.overrides) : [],
     activeWorkspaceId,
     workspaceLayouts: rendererWorkspaceLayouts(),
     workspaces: rendererWorkspaces(),
@@ -168,6 +179,52 @@ function rendererConfig(): RendererBootstrapConfig {
 
 ipcMain.on('neoncode:get-renderer-config', (event) => {
   event.returnValue = rendererConfig();
+});
+
+function requireCurrentRenderer(sender: WebContents): BrowserWindow {
+  const window = mainWindow;
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()
+      || sender !== window.webContents) {
+    throw new Error('settings IPC sender is not the current NeonCode window');
+  }
+  return window;
+}
+
+ipcMain.handle('neoncode:get-settings', (event): SettingsSnapshot => {
+  requireCurrentRenderer(event.sender);
+  if (!configStore) throw new Error('configuration storage is unavailable');
+  return {
+    revision: settingsRevision,
+    settings: configStore.getStoredSettings(),
+  };
+});
+
+ipcMain.handle('neoncode:save-settings', (event, request: unknown): SettingsSnapshot => {
+  requireCurrentRenderer(event.sender);
+  if (!configStore) throw new Error('configuration storage is unavailable');
+  if (request === null || typeof request !== 'object' || Array.isArray(request)) {
+    throw new Error('settings save request must be an object');
+  }
+  const document = request as Partial<SaveSettingsRequest> & Record<string, unknown>;
+  const keys = Object.keys(document).sort();
+  if (keys.length !== 2 || keys[0] !== 'revision' || keys[1] !== 'settings') {
+    throw new Error('settings save request keys must be exactly: revision, settings');
+  }
+  if (!Number.isSafeInteger(document.revision) || document.revision !== settingsRevision) {
+    throw new Error('settings have changed; reopen Settings and try again');
+  }
+  const saved = configStore.saveSettings(document.settings);
+  const effective = applyEnvironmentOverrides(saved, process.env);
+  bootstrapResult = {
+    ...bootstrapResult,
+    config: effective,
+  };
+  settingsRevision += 1;
+  log('settings.saved', { revision: settingsRevision });
+  return {
+    revision: settingsRevision,
+    settings: settingsFromConfig(saved),
+  };
 });
 
 ipcMain.handle('neoncode:read-clipboard-text', () => clipboard.readText());

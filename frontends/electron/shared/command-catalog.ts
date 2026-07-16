@@ -1,6 +1,8 @@
 export const COMMAND_IDS = Object.freeze([
   'palette.open',
   'palette.close',
+  'settings.open',
+  'settings.close',
   'workspace.open',
   'workspace.next',
   'workspace.previous',
@@ -30,6 +32,8 @@ export interface PaneFocusCommandArgs {
 export interface CommandArgumentMap {
   'palette.open': undefined;
   'palette.close': undefined;
+  'settings.open': undefined;
+  'settings.close': undefined;
   'workspace.open': WorkspaceOpenCommandArgs;
   'workspace.next': undefined;
   'workspace.previous': undefined;
@@ -43,6 +47,9 @@ export type CommandDisabledReason =
   | 'Application is closing'
   | 'Command palette is already open'
   | 'Command palette is not open'
+  | 'Settings are already open'
+  | 'Settings are not open'
+  | 'Another overlay is open'
   | 'No configured workspace is available'
   | 'No other workspace is available'
   | 'Workspace is unavailable'
@@ -63,6 +70,8 @@ export type CommandDispatchResult =
 export interface CommandResultMap {
   'palette.open': CommandOperationResult;
   'palette.close': CommandOperationResult;
+  'settings.open': CommandOperationResult;
+  'settings.close': CommandOperationResult;
   'workspace.open': CommandOperationResult;
   'workspace.next': CommandOperationResult;
   'workspace.previous': CommandOperationResult;
@@ -120,6 +129,24 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     category: 'Application',
     context: 'application',
     searchTerms: ['commands', 'dismiss', 'escape'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'settings.open': Object.freeze({
+    id: 'settings.open',
+    title: 'Open Settings',
+    category: 'Application',
+    context: 'application',
+    searchTerms: ['preferences', 'configuration', 'keyboard', 'general'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'settings.close': Object.freeze({
+    id: 'settings.close',
+    title: 'Close Settings',
+    category: 'Application',
+    context: 'application',
+    searchTerms: ['preferences', 'dismiss', 'escape'],
     owningLayer: 'renderer',
     externalInvocation: false,
   }),
@@ -230,6 +257,8 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
   switch (value.id) {
     case 'palette.open':
     case 'palette.close':
+    case 'settings.open':
+    case 'settings.close':
     case 'workspace.next':
     case 'workspace.previous':
     case 'pane.next':
