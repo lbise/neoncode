@@ -703,8 +703,19 @@ async function killAllPanes(instance: ElectronTestInstance): Promise<void> {
   await instance.page.evaluate(async (paneIds) => {
     await Promise.all(paneIds.map((paneId) => window.neoncodeTest.killPane(paneId)));
   }, targets);
-  const state = await getState(instance.page);
-  assert(state.panes.every((pane) => pane.lifecycle === 'killed'), 'test sessions were not killed');
+  try {
+    await instance.page.waitForFunction((paneIds) => {
+      const panes = window.neoncodeTest.getState().panes;
+      return paneIds.every((paneId) => panes.find((pane) => pane.paneId === paneId)?.lifecycle === 'killed');
+    }, targets, { timeout: 10_000 });
+  } catch {
+    const state = await getState(instance.page);
+    throw new Error(`test sessions were not killed: ${JSON.stringify(state.panes.map((pane) => ({
+      paneId: pane.paneId,
+      lifecycle: pane.lifecycle,
+      error: pane.error,
+    })))}`);
+  }
 }
 
 async function killAllWorkspaces(instance: ElectronTestInstance): Promise<void> {
@@ -1573,10 +1584,12 @@ async function runPersistentTabCheck(runToken: string): Promise<void> {
       })
     ), { tabId: createdTabId });
     assert(closeResult.status === 'completed', 'kill-close tab transaction failed');
-    await instance.page.waitForFunction(() => (
-      document.querySelectorAll('#workspace-tabs [role="tab"]').length === 1
-      && window.neoncodeTest.getState().panes.length === 2
-    ));
+    await instance.page.waitForFunction(() => {
+      const panes = window.neoncodeTest.getState().panes;
+      return document.querySelectorAll('#workspace-tabs [role="tab"]').length === 1
+        && panes.length === 2
+        && panes.every((pane) => pane.started);
+    });
     const lastGuard = await instance.page.evaluate(({ tabId }) => (
       window.neoncodeTest.executeCommand('tab.close', {
         workspaceId: 'default', tabId, disposition: 'detach',

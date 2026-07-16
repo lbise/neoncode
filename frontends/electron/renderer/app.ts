@@ -2077,7 +2077,7 @@ export class NeonCodeApp {
     if (!this.config.terminal) throw new Error('Terminal appearance is unavailable');
 
     const pane = new TerminalPane({
-      index: descriptor.index,
+      index: this.panes.length,
       paneId: descriptor.paneId,
       sessionKey: descriptor.sessionKey,
       sessionId: descriptor.sessionId,
