@@ -294,6 +294,18 @@ The registry removes the disconnected connection from every attachment set. Nonp
 
 Persistent sessions and sessions explicitly detached before disconnect are left running, report zero/fewer attachments through `list_sessions`, and can be reattached with `attach`.
 
+## CLI automation
+
+`./dev cli` loads the managed hub token through the environment and performs the same mutual WebSocket authentication as Electron. It never places the token on the command line.
+
+```bash
+./dev cli status
+./dev cli sessions
+./dev cli notify shell info "Tests complete" "All checks passed"
+```
+
+`status` prints bounded aggregate counts, `sessions` emits authenticated JSON summaries, and `notify` publishes retained generation-safe workspace attention. Workspace open/switch commands remain future work.
+
 ## Manual smoke test
 
 Start the hub:

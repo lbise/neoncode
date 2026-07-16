@@ -475,10 +475,10 @@ Release acceptance: a production artifact installs and launches on a clean, full
 
 ### 7. CLI/API
 
-- [ ] Add minimal `neoncode` CLI or local API client.
-- [ ] Support session list/status.
+- [x] Add minimal authenticated `neoncode` CLI client (`./dev cli`).
+- [x] Support session list/status.
 - [ ] Support workspace list/open.
-- [ ] Support notification injection for scripts/agents.
+- [x] Support notification injection for scripts/agents.
 
 ## Later milestones
 

@@ -57,6 +57,7 @@ Run from WSL repo root unless noted.
 ./dev publish   # build/copy app artifacts; preserve stable Electron runtime
 ./dev check     # strict TypeScript + Rust fmt/check/test/clippy
 ./dev reset-token # rotate local hub capability; restart hub/app afterward
+./dev cli status   # authenticated hub/session diagnostics
 ```
 
 The app expects the hub at:

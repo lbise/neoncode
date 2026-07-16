@@ -17,6 +17,7 @@ Daily commands:
   ./dev hub          Run the Rust NeonCode hub
   ./dev check        Run strict TypeScript + Rust tests/fmt/check/clippy
   ./dev soak [secs]  Repeat real PTY metadata/reconnect tests (default: 300)
+  ./dev cli <args>   Run authenticated NeonCode CLI (status/sessions/notify)
 
 Electron app commands:
   ./dev electron-publish              Publish Electron app
@@ -161,6 +162,11 @@ case "$command" in
   hub)
     ensure_hub_token
     cargo run -p neoncode-hub
+    ;;
+
+  cli)
+    ensure_hub_token
+    cargo run -q -p neoncode-hub --bin neoncode -- "$@"
     ;;
 
   soak)
