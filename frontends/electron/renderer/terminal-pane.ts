@@ -258,6 +258,10 @@ export class TerminalPane {
     this.scheduleFitAndResize();
   }
 
+  focus(): void {
+    if (!this.disposed) this.state.terminal.focus();
+  }
+
   setLifecycle(lifecycle: SessionLifecycle, error = ''): void {
     this.sessionModel.setLifecycle(this.state, lifecycle, error);
     if (this.statusElement) {

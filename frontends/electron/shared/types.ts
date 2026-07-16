@@ -319,11 +319,53 @@ export interface PublicPaneState {
   replayResetEvents: number;
 }
 
+export type CommandId =
+  | 'workspace.open'
+  | 'workspace.next'
+  | 'workspace.previous'
+  | 'pane.focus'
+  | 'pane.next'
+  | 'pane.previous';
+
+export type CommandContext = 'workspace' | 'pane';
+
+export interface CommandMetadata {
+  id: CommandId;
+  title: string;
+  category: 'Workspace' | 'Pane';
+  context: CommandContext;
+}
+
+export interface WorkspaceOpenCommandArgs {
+  workspaceId: string;
+}
+
+export interface PaneFocusCommandArgs {
+  paneId: string;
+}
+
+export type CommandInvocation =
+  | { id: 'workspace.open'; args: WorkspaceOpenCommandArgs }
+  | { id: 'workspace.next' }
+  | { id: 'workspace.previous' }
+  | { id: 'pane.focus'; args: PaneFocusCommandArgs }
+  | { id: 'pane.next' }
+  | { id: 'pane.previous' };
+
+export type CommandExecutionArguments =
+  | [commandId: 'workspace.open', args: WorkspaceOpenCommandArgs]
+  | [commandId: 'workspace.next']
+  | [commandId: 'workspace.previous']
+  | [commandId: 'pane.focus', args: PaneFocusCommandArgs]
+  | [commandId: 'pane.next']
+  | [commandId: 'pane.previous'];
+
 export interface RendererPublicState {
   configuration: PublicConfiguration;
   panes: PublicPaneState[];
   workspace: {
     activeWorkspaceId: string | null;
+    activePaneId: string | null;
     summaries: WorkspaceSummary[];
   };
   sessionDiscovery: {
@@ -337,6 +379,8 @@ export interface RendererPublicState {
 
 export interface RendererTestApi {
   getState(): RendererPublicState;
+  executeCommand(...command: CommandExecutionArguments): Promise<void>;
+  listCommands(): CommandMetadata[];
   sendText(paneId: string, text: string): void;
   pasteText(paneId: string, text: string): void;
   killPane(paneId: string): Promise<void>;

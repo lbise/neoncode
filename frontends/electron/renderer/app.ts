@@ -1,4 +1,7 @@
 import type {
+  CommandExecutionArguments,
+  CommandInvocation,
+  CommandMetadata,
   ExitSummary,
   LaunchProfile,
   NormalizedSessionSummary,
@@ -11,7 +14,10 @@ import type {
   WorkspaceSummary,
   WorkspaceSummaryState,
 } from '../shared/types';
+import { CommandRegistry } from './command-registry';
 import { HubClient, type UnknownMessage } from './hub-client';
+import { KeybindingRouter, createDefaultKeybindings } from './keybinding-router';
+import { PaneFocusModel } from './pane-focus-model';
 import { SessionModel } from './session-model';
 import { TerminalPane } from './terminal-pane';
 import { installRendererTestApi } from './test-api';
@@ -264,6 +270,25 @@ export class NeonCodeApp {
   readonly workspaceList: HTMLElement;
   readonly terminalGrid: HTMLElement;
   readonly sessionModel: SessionModel;
+  readonly focusModel: PaneFocusModel;
+  readonly commandRegistry: CommandRegistry;
+  readonly keybindingRouter: KeybindingRouter;
+  readonly onDocumentKeyDown = (event: KeyboardEvent): void => {
+    const resolution = this.keybindingRouter.resolve({
+      code: event.code,
+      altKey: event.altKey,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      shiftKey: event.shiftKey,
+      altGraphKey: event.getModifierState('AltGraph'),
+      defaultPrevented: event.defaultPrevented,
+      repeat: event.repeat,
+    });
+    if (!resolution.claimed) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (resolution.execute) this.dispatchCommand(resolution.command);
+  };
   sessionDiscoveryClient: HubClient | undefined;
   metadataRefreshTimer: ReturnType<typeof setInterval> | undefined;
   metadataRefreshPending = false;
@@ -272,7 +297,6 @@ export class NeonCodeApp {
   readonly visitedSessionIds = new Set<string>();
   readonly workspaceSessionStates: Map<string, WorkspaceSessionState>;
   panes: TerminalPane[] = [];
-  activeWorkspaceId: string | null = null;
   closed = false;
   closePromise: Promise<void> | undefined;
   switchPromise: Promise<void> = Promise.resolve();
@@ -287,6 +311,22 @@ export class NeonCodeApp {
     this.workspaceList = requiredElement(this.document, 'workspace-list');
     this.terminalGrid = requiredElement(this.document, 'terminal-grid');
     this.sessionModel = new SessionModel({ windowRef: this.window });
+    this.focusModel = new PaneFocusModel(this.config.workspaces.map((workspace) => ({
+      workspaceId: workspace.id,
+      paneIds: workspace.panes.map((pane) => pane.paneId),
+    })));
+    this.commandRegistry = new CommandRegistry({
+      'workspace.open': ({ workspaceId }) => this.switchWorkspace(workspaceId),
+      'workspace.next': () => this.switchRelativeWorkspace(1),
+      'workspace.previous': () => this.switchRelativeWorkspace(-1),
+      'pane.focus': ({ paneId }) => this.focusPane(paneId),
+      'pane.next': () => this.focusNextPane(),
+      'pane.previous': () => this.focusPreviousPane(),
+    });
+    this.keybindingRouter = new KeybindingRouter(
+      createDefaultKeybindings(this.config.workspaces.map((workspace) => workspace.id)),
+    );
+    this.document.addEventListener('keydown', this.onDocumentKeyDown, true);
     this.sessionModel.setConfiguration({
       valid: this.config.configurationValid,
       configStatus: this.config.diagnostics.configStatus,
@@ -320,6 +360,65 @@ export class NeonCodeApp {
       ])),
     );
     if (this.config.testMode) installRendererTestApi(this);
+  }
+
+  get activeWorkspaceId(): string | null {
+    return this.focusModel.activeWorkspaceId;
+  }
+
+  executeCommand(...command: CommandExecutionArguments): Promise<void> {
+    return this.commandRegistry.execute(...command);
+  }
+
+  listCommands(): CommandMetadata[] {
+    return this.commandRegistry.list();
+  }
+
+  dispatchCommand(command: CommandInvocation): void {
+    void this.commandRegistry.executeInvocation(command).catch((error) => {
+      console.error('command_failed', command.id, error);
+      this.setStatus(`Command failed: ${errorMessage(error)}`);
+    });
+  }
+
+  switchRelativeWorkspace(direction: 1 | -1): Promise<void> {
+    const workspaces = this.config.workspaces;
+    if (workspaces.length === 0) return Promise.resolve();
+    const activeIndex = workspaces.findIndex((workspace) => workspace.id === this.activeWorkspaceId);
+    const targetIndex = activeIndex < 0
+      ? 0
+      : (activeIndex + direction + workspaces.length) % workspaces.length;
+    const target = workspaces[targetIndex];
+    return target ? this.switchWorkspace(target.id) : Promise.resolve();
+  }
+
+  focusPane(paneId: string): void {
+    this.focusModel.focusPane(paneId);
+    this.applyActivePaneFocus();
+  }
+
+  focusNextPane(): void {
+    this.focusModel.nextPane();
+    this.applyActivePaneFocus();
+  }
+
+  focusPreviousPane(): void {
+    this.focusModel.previousPane();
+    this.applyActivePaneFocus();
+  }
+
+  applyActivePaneFocus(): void {
+    const activePaneId = this.focusModel.activePaneId;
+    this.sessionModel.setActivePane(activePaneId);
+    for (const surface of this.terminalGrid.querySelectorAll<HTMLElement>('.terminal-pane')) {
+      const active = surface.dataset.paneId === activePaneId;
+      surface.dataset.active = String(active);
+      surface.dataset.activePane = String(active);
+      surface.setAttribute('aria-current', String(active));
+    }
+    if (activePaneId) {
+      this.panes.find((pane) => pane.paneId === activePaneId)?.focus();
+    }
   }
 
   setStatus(text: string): void {
@@ -591,10 +690,7 @@ export class NeonCodeApp {
       status.dataset.testid = `workspace-status-${workspace.id}`;
       button.append(identity, status);
       button.addEventListener('click', () => {
-        this.switchWorkspace(workspace.id).catch((error) => {
-          console.error('workspace_switch_failed', error);
-          this.setStatus(`Workspace switch failed: ${errorMessage(error)}`);
-        });
+        this.dispatchCommand({ id: 'workspace.open', args: { workspaceId: workspace.id } });
       });
       const acknowledge = this.document.createElement('button');
       acknowledge.type = 'button';
@@ -805,7 +901,10 @@ export class NeonCodeApp {
     if (this.closed) throw new Error('application is closing');
     const workspace = this.config.workspaces.find((candidate) => candidate.id === workspaceId);
     if (!workspace) throw new Error(`unknown workspace: ${workspaceId}`);
-    if (!initial && workspaceId === this.activeWorkspaceId) return;
+    if (!initial && workspaceId === this.activeWorkspaceId) {
+      this.applyActivePaneFocus();
+      return;
+    }
 
     this.switching = true;
     this.updateWorkspaceSelector();
@@ -824,8 +923,8 @@ export class NeonCodeApp {
       this.panes = [];
       if (this.closed) return;
       this.terminalGrid.replaceChildren();
+      this.focusModel.activateWorkspace(workspaceId);
       this.sessionModel.resetPanes(workspaceId);
-      this.activeWorkspaceId = workspaceId;
       this.configureWorkspaceGrid(workspace);
       this.updateWorkspaceSelector();
 
@@ -836,6 +935,7 @@ export class NeonCodeApp {
         this.visitedSessionIds.add(descriptor.sessionId);
       }
       this.sessionModel.setActiveWorkspace(workspaceId);
+      this.applyActivePaneFocus();
       this.setStatus(`Workspace: ${workspace.name}`);
     } finally {
       this.switching = false;
@@ -853,6 +953,18 @@ export class NeonCodeApp {
     const pane = this.document.createElement('section');
     pane.className = 'terminal-pane';
     pane.dataset.testid = `terminal-pane-${descriptor.paneId}`;
+    pane.dataset.paneId = descriptor.paneId;
+    pane.dataset.active = 'false';
+    pane.dataset.activePane = 'false';
+    pane.setAttribute('role', 'group');
+    pane.setAttribute('aria-label', `${descriptor.title} terminal pane`);
+    pane.setAttribute('aria-current', 'false');
+    pane.addEventListener('pointerdown', () => {
+      this.dispatchCommand({ id: 'pane.focus', args: { paneId: descriptor.paneId } });
+    });
+    pane.addEventListener('focusin', () => {
+      this.dispatchCommand({ id: 'pane.focus', args: { paneId: descriptor.paneId } });
+    });
 
     const titleBar = this.document.createElement('div');
     titleBar.className = 'pane-title';
@@ -1087,6 +1199,7 @@ export class NeonCodeApp {
 
   close(): void {
     this.closed = true;
+    this.document.removeEventListener('keydown', this.onDocumentKeyDown, true);
     this.stopMetadataRefresh();
     for (const pane of this.panes) pane.dispose();
   }

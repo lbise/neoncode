@@ -62,6 +62,7 @@ export class SessionModel {
       panes: [],
       workspace: {
         activeWorkspaceId: null,
+        activePaneId: null,
         summaries: [],
       },
       sessionDiscovery: {
@@ -94,9 +95,14 @@ export class SessionModel {
     this.publicState.configuration.activeWorkspaceId = workspaceId;
   }
 
+  setActivePane(paneId: string | null): void {
+    this.publicState.workspace.activePaneId = paneId;
+  }
+
   resetPanes(workspaceId: string): void {
     this.publicState.panes = [];
     this.setActiveWorkspace(workspaceId);
+    this.setActivePane(null);
   }
 
   setSessionDiscoveryStatus(status: string, error = ''): void {

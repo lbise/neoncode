@@ -5,7 +5,7 @@
 ```text
 Stage: Keyboard-first workspace cockpit UX
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: command/keybinding architecture and focus model, then dynamic tabs/splits and GUI polish
+Next focus: dynamic tabs/splits on the command and focus foundation, then GUI polish
 ```
 
 The Windows tech stack is now:
@@ -351,16 +351,17 @@ Status: protocol, retention, polling UI, and acknowledgement complete; CLI publi
 
 ### Immediate product priority: keyboard-first workspace cockpit
 
-Status: planned. The session/protocol foundation is sufficient to shift the main development focus from backend hardening to daily interactive product value.
+Status: first keyboard-first command/keybinding/pane-focus milestone complete. Dynamic tabs and splits are next.
 
 Interaction and command foundation:
 
-- [ ] Define stable command IDs and a central command registry instead of adding ad hoc `keydown` handlers.
-- [ ] Add command contexts (`global`, `workspace`, `tab`, `pane`, `terminal`) and route unhandled keys unchanged to xterm.
-- [ ] Track one authoritative active workspace/tab/pane focus target and restore focus after switch, split, close, and relaunch.
-- [ ] Define terminal-safe default shortcuts, conflict rules, discoverable labels, and future user override schema.
-- [ ] Add deterministic keybinding tests plus hidden-Electron checks proving claimed shortcuts execute once and unclaimed terminal keys remain unchanged.
-- [ ] Make every cockpit action available through the command registry even when it has no default shortcut.
+- [x] Define stable command IDs and a central command registry instead of adding ad hoc `keydown` handlers.
+- [x] Add enumerable command contexts/labels and route unhandled keys unchanged to xterm.
+- [x] Track one authoritative active workspace/pane focus target, remember it per workspace, and restore xterm focus after switches.
+- [x] Define the initial terminal-safe exact defaults and reject modifier/AltGraph conflicts.
+- [ ] Add a validated future user keybinding override schema.
+- [x] Add deterministic registry/keybinding/focus tests plus hidden-Electron checks for F6/Shift+F6 and Alt+1/2.
+- [x] Make all current workspace and pane-focus cockpit actions available through the command registry even without a default shortcut.
 
 Frontend-owned layout model:
 

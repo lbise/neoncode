@@ -1,4 +1,8 @@
-import type { RendererPublicState, RendererTestApi } from '../shared/types';
+import type {
+  CommandExecutionArguments,
+  RendererPublicState,
+  RendererTestApi,
+} from '../shared/types';
 import type { NeonCodeApp } from './app';
 import type { TerminalPane } from './terminal-pane';
 
@@ -18,6 +22,14 @@ export function installRendererTestApi(app: NeonCodeApp): RendererTestApi {
       return cloneJson(app.sessionModel.publicState);
     },
 
+    async executeCommand(...command: CommandExecutionArguments): Promise<void> {
+      await app.executeCommand(...command);
+    },
+
+    listCommands() {
+      return cloneJson(app.listCommands());
+    },
+
     sendText(paneId: string, text: string): void {
       const sent = findPane(app, paneId).sendTerminalText(text, 'test_api');
       if (!sent) throw new Error(`test input was not sent for pane: ${paneId}`);
@@ -33,7 +45,7 @@ export function installRendererTestApi(app: NeonCodeApp): RendererTestApi {
     },
 
     async switchWorkspace(workspaceId: string): Promise<void> {
-      await app.switchWorkspace(workspaceId);
+      await app.executeCommand('workspace.open', { workspaceId });
     },
 
     async acknowledgeWorkspaceAttention(workspaceId: string): Promise<void> {

@@ -70,7 +70,7 @@ Use injected/fake dependencies for:
 - timers/reconnect backoff;
 - persisted configuration.
 
-The current `frontends/electron/tests/hub-client-auth.ts` test uses a mock WebSocket, fake clock, and Node Web Crypto to verify that the renderer sends no bearer token, accepts a valid reciprocal hub proof, rejects fake hub proofs/malformed capabilities or replay manifests, enforces authentication/welcome deadlines, ignores late traffic, and strictly normalizes session lifecycle metadata. `frontends/electron/tests/reconnect-policy.ts` uses a fake clock to prove capped backoff, single-timer suppression, cancellation/reset, and bounded attach/start fallback without wall-clock sleeps. `frontends/electron/tests/session-model.ts` covers incarnation/reset/truncation sequence baselines, while `reconnect-output-soak.ts` runs 100 reconnect checkpoints over 10,000 chunks with duplicate suppression and bounded recent output. `terminal-pane-fake-hub.ts` drives the real pane controller through a scripted boot-A/boot-B race, stale callbacks, cursor attach/start fallback, replacement reset, and malformed manifest close. `frontends/electron/tests/config-store.ts` covers first-run defaults, environment precedence, migration, strict validation, backup recovery, future schemas, state clamping/persistence, stale temporary-file cleanup, unusable missing-primary backups, and injected backup-write failures. `./dev check` runs all of these without Electron.
+The current `frontends/electron/tests/hub-client-auth.ts` test uses a mock WebSocket, fake clock, and Node Web Crypto to verify that the renderer sends no bearer token, accepts a valid reciprocal hub proof, rejects fake hub proofs/malformed capabilities or replay manifests, enforces authentication/welcome deadlines, ignores late traffic, and strictly normalizes session lifecycle metadata. `frontends/electron/tests/reconnect-policy.ts` uses a fake clock to prove capped backoff, single-timer suppression, cancellation/reset, and bounded attach/start fallback without wall-clock sleeps. Pure `command-registry.ts`, `keybinding-router.ts`, and `pane-focus-model.ts` tests enumerate stable command metadata, verify exact defaults and unclaimed Ctrl+C/D/Z/readline keys, consume repeats without execution, and cover focus wrap, workspace memory, and removed-pane fallback. `frontends/electron/tests/session-model.ts` covers incarnation/reset/truncation sequence baselines, while `reconnect-output-soak.ts` runs 100 reconnect checkpoints over 10,000 chunks with duplicate suppression and bounded recent output. `terminal-pane-fake-hub.ts` drives the real pane controller through a scripted boot-A/boot-B race, stale callbacks, cursor attach/start fallback, replacement reset, and malformed manifest close. `frontends/electron/tests/config-store.ts` covers first-run defaults, environment precedence, migration, strict validation, backup recovery, future schemas, state clamping/persistence, stale temporary-file cleanup, unusable missing-primary backups, and injected backup-write failures. `./dev check` runs all of these without Electron.
 
 This layer should verify state transitions such as:
 
@@ -95,6 +95,8 @@ The test-only renderer API currently exposes:
 
 ```js
 window.neoncodeTest.getState()
+window.neoncodeTest.executeCommand(commandId, args?)
+window.neoncodeTest.listCommands()
 window.neoncodeTest.sendText(paneId, text)
 window.neoncodeTest.pasteText(paneId, text)
 window.neoncodeTest.killPane(paneId)
@@ -102,7 +104,7 @@ window.neoncodeTest.killPane(paneId)
 
 Production code should use the same underlying methods; the test API should not duplicate behavior.
 
-Most Electron tests should not require the app window to be foreground. Keep a small number of Playwright keyboard tests against xterm's focused textarea for actual key mapping, but do not use them to validate hub/session lifecycle.
+Most Electron tests should not require the app window to be foreground. Keep a small number of Playwright keyboard tests against xterm's focused textarea for actual key mapping. The hidden Electron suite minimally checks F6/Shift+F6 pane focus and Alt+1/2 workspace focus against authoritative renderer state, active DOM/ARIA state, and the focused xterm; it does not use those keys to validate hub/session lifecycle.
 
 ### 4. Windows OS integration smoke
 
@@ -150,5 +152,6 @@ Then assert `result-token`. Other options are base64-decoding a random token in 
 - [x] Verify configured pane titles and process cwd, real xterm Ctrl+D/Ctrl+Z/navigation/function-key byte paths, selection/clipboard copy, first-use shortcut/DOM paste-race deduplication in both panes, interactive tmux/Neovim workflows, SGR mouse press/release reports, tmux split selection and wheel-activated copy mode, Neovim click positioning and wheel scrolling, Unicode and 20,000-line output with a completion bound and no sequence gap, hub-authoritative session metadata, retained status-7 workspace attention/acknowledgement across relaunch, dynamic two-/three-pane workspace switching with idle/running/detached/available sidebar status transitions, detach/reattach continuity, active-workspace restoration, detach/kill close policies across visited workspaces, forced-socket reconnect with PTY-state continuity, single-instance storage ownership, atomic window/workspace-state restoration, malformed-config backup recovery, and visible unrecoverable-config errors.
 - [x] Add mock-WebSocket/fake-clock coverage for authentication/welcome timeouts and malformed checkpoint manifests.
 - [x] Add a scripted fake-hub pane test for restart races, stale callback rejection, cursor fallback, and replacement reset.
+- [x] Add pure registry/keybinding/focus tests and narrow hidden-Electron checks for the initial keyboard-first defaults.
 - [ ] Extend scripted fake-hub coverage to backpressure and malformed output payloads.
 - [ ] Add a narrow PowerShell window-launch/desktop compatibility smoke when installer/DPI/multi-monitor work begins.

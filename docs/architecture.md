@@ -36,6 +36,8 @@ Current role:
 - renders 1–8 panes for the active configured workspace and opens one WebSocket per pane/session;
 - switches named workspaces by detaching the old panes and attaching/starting the selected panes;
 - restores the active workspace from app-owned state;
+- routes workspace and pane-focus actions through a typed central command registry with enumerable palette-ready metadata;
+- owns the active pane in a DOM-free focus model, remembers one pane per workspace, and restores xterm focus after workspace changes;
 - summarizes hub-owned WSL launch metadata and aggregate pane lifecycle in the workspace sidebar, falling back to configured locations for sessions not yet created;
 - displays and explicitly acknowledges retained exit attention without conflating it with a replacement session's running state;
 - attaches known sessions and starts missing sessions;
@@ -127,6 +129,9 @@ frontends/electron/preload.ts       narrow context-isolated desktop bridge
 frontends/electron/renderer.ts      typed browser-bundle bootstrap entrypoint
 frontends/electron/renderer/        strict TypeScript renderer modules:
   app.ts                            typed app/bootstrap and pane grid orchestration
+  command-registry.ts               stable command IDs, handlers, and enumerable metadata
+  keybinding-router.ts              pure exact-match default shortcut resolver
+  pane-focus-model.ts               DOM-free ordered pane focus/memory model
   hub-client.ts                     typed WebSocket protocol client and validators
   session-model.ts                  typed pane/session state and bounded output view
   terminal-pane.ts                  typed xterm.js pane, input, resize, and output handling
@@ -142,6 +147,14 @@ scripts/electron-test.ps1           Windows wrapper for Playwright tests
 ```
 
 The Electron frontend uses strict TypeScript throughout without a runtime TypeScript loader. Separate Node, DOM renderer, and test compiler projects all disable `allowJs`; generated CommonJS and the esbuild browser bundle live only under ignored `dist/`. Electron and every test execute generated artifacts rather than source files.
+
+## Renderer command and focus boundary
+
+Current cockpit commands have stable IDs: `workspace.open`, `workspace.next`, `workspace.previous`, `pane.focus`, `pane.next`, and `pane.previous`. Sidebar clicks, pane pointer/focus changes, keyboard shortcuts, and the typed test API all invoke the same registry handlers. Registry metadata supplies titles, categories, and contexts for a future command palette.
+
+One document capture-phase `keydown` listener delegates to a DOM-free exact-match resolver. The only defaults are `Alt+Digit1..9` for the first nine configured workspaces, `F6` for the next pane, and `Shift+F6` for the previous pane. Already-prevented, Ctrl+Alt/AltGraph, extra-modifier, and unclaimed events are untouched. Claimed repeats are consumed without dispatching again. xterm's custom handler remains responsible for terminal copy/paste and special-key behavior.
+
+The focus model owns ordered panes, wrapping, active workspace/pane identity, per-workspace pane memory, and deterministic first-pane fallback after removal. The DOM mirrors that state through active data/ARIA attributes and CSS; it does not infer focus ownership. `workspace.activePaneId` is part of structured renderer state.
 
 ## Electron security boundary
 
@@ -206,6 +219,7 @@ Currently validated:
 - paste normalization without global clipboard state;
 - resize propagation matching `stty size` without foreground-window automation;
 - Ctrl+C/D/Z and navigation/function keys;
+- exact command shortcut routing, active-pane wrap/focus, and Alt+Digit workspace selection;
 - selection/copy and paste deduplication;
 - interactive tmux and Neovim workflows;
 - SGR mouse reporting plus tmux split/copy-mode and Neovim cursor/viewport mouse behavior;

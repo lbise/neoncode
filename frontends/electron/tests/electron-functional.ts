@@ -251,6 +251,38 @@ async function pressTerminalKey(page: Page, paneId: string, key: string): Promis
   await page.keyboard.press(key);
 }
 
+async function waitForActivePane(page: Page, workspaceId: string, paneId: string): Promise<void> {
+  await page.waitForFunction(
+    ({ expectedWorkspaceId, expectedPaneId }) => {
+      const state = window.neoncodeTest.getState();
+      const activeSurface = document.activeElement?.closest('.terminal-pane') as HTMLElement | null;
+      return state.workspace.activeWorkspaceId === expectedWorkspaceId
+        && state.workspace.activePaneId === expectedPaneId
+        && state.panes.length > 0
+        && state.panes.every((pane) => pane.started)
+        && activeSurface?.dataset.paneId === expectedPaneId;
+    },
+    { expectedWorkspaceId: workspaceId, expectedPaneId: paneId },
+    { timeout },
+  );
+  const surface = page.getByTestId(`terminal-pane-${paneId}`);
+  assert(await surface.getAttribute('data-active') === 'true', `${paneId} did not expose active pane data`);
+  assert(await surface.getAttribute('aria-current') === 'true', `${paneId} did not expose active pane ARIA state`);
+}
+
+async function verifyCockpitKeyboardNavigation(page: Page): Promise<void> {
+  await waitForActivePane(page, 'default', 'shell');
+  await page.keyboard.press('F6');
+  await waitForActivePane(page, 'default', 'tasks');
+  await page.keyboard.press('Shift+F6');
+  await waitForActivePane(page, 'default', 'shell');
+
+  await page.keyboard.press('Alt+Digit2');
+  await waitForActivePane(page, 'review', 'review-shell');
+  await page.keyboard.press('Alt+Digit1');
+  await waitForActivePane(page, 'default', 'shell');
+}
+
 async function terminalPoint(
   page: Page,
   paneId: string,
@@ -517,7 +549,10 @@ async function assertWorkspaceStatus(
 }
 
 async function switchWorkspace(page: Page, workspaceId: string): Promise<void> {
-  await page.evaluate((targetWorkspaceId) => window.neoncodeTest.switchWorkspace(targetWorkspaceId), workspaceId);
+  await page.evaluate(
+    (targetWorkspaceId) => window.neoncodeTest.executeCommand('workspace.open', { workspaceId: targetWorkspaceId }),
+    workspaceId,
+  );
   await page.waitForFunction(
     (targetWorkspaceId) => {
       const state = window.neoncodeTest.getState();
@@ -707,6 +742,18 @@ async function runFirstLaunchChecks(
     }
   }
   await assertPaneLifecycles(instance, 'started');
+  const commandIds = await page.evaluate(() => window.neoncodeTest.listCommands().map((command) => command.id));
+  assert(
+    JSON.stringify(commandIds) === JSON.stringify([
+      'workspace.open',
+      'workspace.next',
+      'workspace.previous',
+      'pane.focus',
+      'pane.next',
+      'pane.previous',
+    ]),
+    `unexpected command registry metadata: ${commandIds.join(',')}`,
+  );
   assert(
     await page.getByTestId('pane-title-shell').textContent() === 'Configured Shell',
     'configured shell title was not rendered',
@@ -715,6 +762,7 @@ async function runFirstLaunchChecks(
     await page.getByTestId('pane-title-tasks').textContent() === 'Configured Tasks',
     'configured tasks title was not rendered',
   );
+  await verifyCockpitKeyboardNavigation(page);
 
   await verifyExecutedCommand(page, 'shell', 'shell-command', runToken);
   await verifyExecutedCommand(page, 'tasks', 'tasks-command', runToken);

@@ -227,6 +227,16 @@ main {
   border: 1px solid #27272a;
 }
 
+.terminal-pane[data-active="true"] {
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 1px #22d3ee;
+}
+
+.terminal-pane[data-active="true"] .pane-title {
+  color: #ecfeff;
+  background: #164e63;
+}
+
 .pane-title {
   box-sizing: border-box;
   height: 24px;
