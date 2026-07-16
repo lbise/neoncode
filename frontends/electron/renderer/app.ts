@@ -36,7 +36,7 @@ interface WorkspaceSessionState {
 
 interface WorkspaceLocation {
   label: string;
-  source: 'config' | 'hub' | 'mixed';
+  source: 'config' | 'hub' | 'mixed' | 'runtime';
 }
 
 interface WorkspaceAggregate {
@@ -255,6 +255,8 @@ export class NeonCodeApp {
   readonly terminalGrid: HTMLElement;
   readonly sessionModel: SessionModel;
   sessionDiscoveryClient: HubClient | undefined;
+  metadataRefreshTimer: ReturnType<typeof setInterval> | undefined;
+  metadataRefreshPending = false;
   discoveredSessionIds = new Set<string>();
   hubSessionsById = new Map<string, NormalizedSessionSummary>();
   readonly visitedSessionIds = new Set<string>();
@@ -338,8 +340,15 @@ export class NeonCodeApp {
 
   workspaceLocation(workspace: WorkspaceDescriptor): WorkspaceLocation {
     let hubMetadataCount = 0;
+    let runtimeMetadataCount = 0;
     const paths = new Set(workspace.panes.map((pane) => {
       const hubSession = this.hubSessionsById.get(pane.sessionId);
+      if (hubSession?.runtimeCwdComplete && hubSession.runtimeCwd?.path) {
+        runtimeMetadataCount += 1;
+        return hubSession.runtimeCwd.state === 'deleted'
+          ? `${hubSession.runtimeCwd.path} (deleted)`
+          : hubSession.runtimeCwd.path;
+      }
       if (hubSession?.metadataComplete) {
         hubMetadataCount += 1;
         return hubSession.cwd || 'default cwd';
@@ -347,9 +356,13 @@ export class NeonCodeApp {
       return pane.launchProfile.cwd || 'default cwd';
     }));
     const location = paths.size === 1 ? paths.values().next().value ?? 'default cwd' : `${paths.size} paths`;
-    const source = hubMetadataCount === workspace.panes.length
-      ? 'hub'
-      : hubMetadataCount > 0 ? 'mixed' : 'config';
+    const source = runtimeMetadataCount === workspace.panes.length
+      ? 'runtime'
+      : runtimeMetadataCount > 0
+        ? 'mixed'
+        : hubMetadataCount === workspace.panes.length
+          ? 'hub'
+          : hubMetadataCount > 0 ? 'mixed' : 'config';
     return { label: `WSL · ${location}`, source };
   }
 
@@ -441,6 +454,8 @@ export class NeonCodeApp {
         sessionId: descriptor.sessionId,
         command: descriptor.launchProfile.command,
         cwd: descriptor.launchProfile.cwd,
+        runtimeCwd: existing?.runtimeCwd ?? null,
+        runtimeCwdComplete: existing?.runtimeCwdComplete ?? false,
         persistent: true,
         attachmentCount: 1,
         metadataComplete: true,
@@ -474,6 +489,8 @@ export class NeonCodeApp {
       sessionId: descriptor.sessionId,
       command: existing?.command || descriptor.launchProfile.command,
       cwd: existing ? existing.cwd : descriptor.launchProfile.cwd,
+      runtimeCwd: existing?.runtimeCwd ?? null,
+      runtimeCwdComplete: existing?.runtimeCwdComplete ?? false,
       persistent: existing?.persistent ?? true,
       attachmentCount: 0,
       metadataComplete: true,
@@ -609,6 +626,39 @@ export class NeonCodeApp {
     ) ?? this.config.workspaces[0];
     if (!initialWorkspace) throw new Error('No configured workspace');
     await this.switchWorkspace(initialWorkspace.id, { initial: true });
+    this.startMetadataRefresh();
+  }
+
+  startMetadataRefresh(): void {
+    if (this.metadataRefreshTimer !== undefined) return;
+    this.metadataRefreshTimer = setInterval(() => {
+      if (this.closed || this.metadataRefreshPending) return;
+      this.metadataRefreshPending = true;
+      void this.discoverSessions()
+        .then((sessions) => {
+          if (this.closed || sessions.length === 0) return;
+          this.discoveredSessionIds = new Set(
+            sessions.filter((session) => session.state === 'running').map((session) => session.sessionId),
+          );
+          this.hubSessionsById = new Map(sessions.map((session) => [session.sessionId, session]));
+          for (const session of sessions) {
+            const current = this.workspaceSessionStates.get(session.sessionId);
+            if (!current) continue;
+            const pane = this.config.workspaces
+              .flatMap((workspace) => workspace.panes)
+              .find((candidate) => candidate.sessionId === session.sessionId);
+            const attention: WorkspaceAttention | null = session.latestExit
+              ? { ...session.latestExit, sessionId: session.sessionId, title: pane?.title || session.sessionId }
+              : null;
+            this.workspaceSessionStates.set(session.sessionId, { ...current, attention });
+          }
+          this.updateWorkspaceStatuses();
+          this.renderWorkspaceSelector();
+        })
+        .finally(() => {
+          this.metadataRefreshPending = false;
+        });
+    }, 2500);
   }
 
   discoverSessions(): Promise<NormalizedSessionSummary[]> {
@@ -913,11 +963,17 @@ export class NeonCodeApp {
     });
   }
 
+  stopMetadataRefresh(): void {
+    if (this.metadataRefreshTimer !== undefined) clearInterval(this.metadataRefreshTimer);
+    this.metadataRefreshTimer = undefined;
+    this.sessionDiscoveryClient?.close();
+  }
+
   prepareToClose(): Promise<void> {
     if (this.closePromise) return this.closePromise;
 
     this.closed = true;
-    this.sessionDiscoveryClient?.close();
+    this.stopMetadataRefresh();
     this.closePromise = (async () => {
       await this.switchPromise;
       if (this.config.persistencePolicy === 'kill') {
@@ -933,7 +989,7 @@ export class NeonCodeApp {
 
   close(): void {
     this.closed = true;
-    this.sessionDiscoveryClient?.close();
+    this.stopMetadataRefresh();
     for (const pane of this.panes) pane.dispose();
   }
 }

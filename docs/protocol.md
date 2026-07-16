@@ -200,7 +200,7 @@ The client verifies this server proof, then waits for `welcome` before sending s
   "type": "welcome",
   "protocol_version": 1,
   "boot_id": "<64-hex-character hub boot identity>",
-  "capabilities": ["session_metadata", "session_exit_attention", "session_replay_checkpoint"]
+  "capabilities": ["session_metadata", "session_exit_attention", "session_replay_checkpoint", "session_runtime_cwd"]
 }
 ```
 
@@ -227,6 +227,11 @@ The client verifies this server proof, then waits for `welcome` before sending s
       "instance_id": "<32-hex session incarnation>",
       "command": "bash",
       "cwd": "/home/me/src/project",
+      "runtime_cwd": {
+        "path": "/home/me/src/project/subdirectory",
+        "state": "current",
+        "stale": false
+      },
       "persistent": true,
       "attachment_count": 0,
       "state": "running",
@@ -241,13 +246,14 @@ Summary fields:
 - `session_id`: stable configured session ID.
 - `instance_id`: opaque identity for one process incarnation; changes when the same session ID starts a replacement.
 - `command`: effective executable launched by the hub. Arguments are deliberately omitted because they can contain sensitive values.
-- `cwd`: configured launch cwd, or `null` for the hub/default inherited cwd. It is not the shell's current working directory after launch.
+- `cwd`: configured launch cwd, or `null` for the hub/default inherited cwd.
+- `runtime_cwd`: authenticated hub observation of the PTY foreground job's Linux/WSL cwd. `state` is `current`, `deleted`, or `unavailable`; `path` is null only when unavailable. `stale` means the last successful observation is retained after a transient failure or exit. This independent additive field may be absent on legacy hubs.
 - `persistent`: whether the session survives its creating connection disappearing.
 - `attachment_count`: number of authenticated WebSocket connections currently forwarding this session. `start` counts as one attachment; `detach` and socket disconnect decrement it.
 - `state`: `running` for an active PTY or `exited` for a retained exit record.
 - `latest_exit`: `null` or the latest bounded attention record `{ "attention_id": "<32-hex>", "status": 7, "reason": "process_exit" }`. A running replacement may retain an older non-null exit until acknowledgement.
 
-The four launch/attachment fields and two lifecycle fields are emitted as atomic additive bundles within protocol v1; `instance_id` is an independent additive field. Updated clients accept legacy ID-only summaries and treat their metadata as unavailable, but reject partially populated bundles or malformed incarnation IDs.
+The four launch/attachment fields and two lifecycle fields are emitted as atomic additive bundles within protocol v1; `instance_id` and `runtime_cwd` are independent additive fields. Updated clients accept legacy ID-only summaries and treat absent metadata as unavailable, but reject partially populated bundles, malformed incarnation IDs, or invalid runtime cwd state/path combinations.
 
 ### Session attached
 

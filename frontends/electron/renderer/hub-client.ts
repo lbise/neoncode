@@ -3,6 +3,7 @@ import type {
   NormalizedSessionSummary,
   ReplayCheckpoint,
   RetainedExitSummary,
+  RuntimeCwd,
   SessionSummaryState,
 } from '../shared/types';
 
@@ -105,6 +106,21 @@ async function verifyAuthenticationHmac(
   );
 }
 
+function normalizeRuntimeCwd(value: unknown, sessionId: string): RuntimeCwd {
+  if (!isRecord(value)) {
+    throw new Error(`session_list runtime_cwd is invalid for ${sessionId}`);
+  }
+  const { path, state, stale } = value;
+  if ((path !== null && (typeof path !== 'string' || encoder.encode(path).length > 4096))
+      || (state !== 'current' && state !== 'deleted' && state !== 'unavailable')
+      || typeof stale !== 'boolean'
+      || ((state === 'current' || state === 'deleted') && typeof path !== 'string')
+      || (state === 'unavailable' && path !== null)) {
+    throw new Error(`session_list runtime_cwd is invalid for ${sessionId}`);
+  }
+  return { path, state, stale } as RuntimeCwd;
+}
+
 function normalizeExitSummary(exit: unknown, sessionId: string): RetainedExitSummary {
   if (!isRecord(exit)) {
     throw new Error(`session_list latest_exit is invalid for ${sessionId}`);
@@ -144,6 +160,11 @@ export function normalizeSessionSummaries(sessions: unknown): NormalizedSessionS
     }
     seen.add(sessionId);
 
+    const runtimeCwdComplete = Object.hasOwn(summary, 'runtime_cwd');
+    const runtimeCwd = runtimeCwdComplete
+      ? normalizeRuntimeCwd(summary.runtime_cwd, sessionId)
+      : null;
+
     const metadataKeys = ['command', 'cwd', 'persistent', 'attachment_count'];
     const metadataFields = metadataKeys.filter((key) => Object.hasOwn(summary, key)).length;
     if (metadataFields !== 0 && metadataFields !== metadataKeys.length) {
@@ -154,6 +175,8 @@ export function normalizeSessionSummaries(sessions: unknown): NormalizedSessionS
         sessionId,
         command: null,
         cwd: null,
+        runtimeCwd,
+        runtimeCwdComplete,
         persistent: null,
         attachmentCount: null,
         metadataComplete: false,
@@ -214,6 +237,8 @@ export function normalizeSessionSummaries(sessions: unknown): NormalizedSessionS
       sessionId,
       command: summary.command,
       cwd: summary.cwd,
+      runtimeCwd,
+      runtimeCwdComplete,
       persistent: summary.persistent,
       attachmentCount: summary.attachment_count as number,
       metadataComplete: true,

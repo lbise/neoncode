@@ -40,7 +40,7 @@ Current coverage:
 - missing/incorrect capability challenge responses are rejected without sending the token;
 - authenticated connections receive a versioned, per-boot hub welcome;
 - persistent sessions retain PTY state across unexpected WebSocket disconnect and remain explicitly killable;
-- session summaries preserve effective command/configured cwd/persistence and track attachment counts across two clients, detach, and disconnect;
+- session summaries preserve effective command/configured cwd/persistence, observe shell and foreground-child runtime cwd through bounded `/proc` traversal, and track attachment counts across two clients, detach, and disconnect;
 - natural exits expose typed reasons, retain bounded attention across ID reuse, acknowledge independently of replacements, and explicit kills create no attention;
 - invalid/overlong session IDs, invalid sizes, oversized decoded input, and oversized transport messages are rejected;
 - non-loopback bind addresses and excess WebSocket permits are rejected by unit tests;

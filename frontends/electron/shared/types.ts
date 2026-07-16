@@ -33,10 +33,20 @@ export interface RetainedExitSummary {
   reason: ExitReason;
 }
 
+export type RuntimeCwdState = 'current' | 'deleted' | 'unavailable';
+
+export interface RuntimeCwd {
+  path: string | null;
+  state: RuntimeCwdState;
+  stale: boolean;
+}
+
 export interface NormalizedSessionSummary {
   sessionId: string;
   command: string | null;
   cwd: string | null;
+  runtimeCwd: RuntimeCwd | null;
+  runtimeCwdComplete: boolean;
   persistent: boolean | null;
   attachmentCount: number | null;
   metadataComplete: boolean;
@@ -231,7 +241,7 @@ export type WorkspaceSummaryState =
 export interface WorkspaceSummary {
   id: string;
   location: string;
-  locationSource: 'config' | 'hub' | 'mixed';
+  locationSource: 'config' | 'hub' | 'mixed' | 'runtime';
   state: WorkspaceSummaryState;
   label: string;
   detail: string;

@@ -786,6 +786,32 @@ async fn session_metadata_tracks_persistence_and_attachments() {
     assert_eq!(initial[0]["cwd"], "/tmp");
     assert_eq!(initial[0]["persistent"], false);
     assert_eq!(initial[0]["attachment_count"], 1);
+    assert_eq!(initial[0]["runtime_cwd"]["path"], "/tmp");
+    assert_eq!(initial[0]["runtime_cwd"]["state"], "current");
+    assert_eq!(initial[0]["runtime_cwd"]["stale"], false);
+
+    send_input(&mut owner, session_id, "cd /; printf 'runtime-root\\n'\n").await;
+    wait_for_output(&mut owner, session_id, "runtime-root").await;
+    assert_eq!(
+        list_session_summaries(&mut owner).await[0]["runtime_cwd"]["path"],
+        "/"
+    );
+    send_input(
+        &mut owner,
+        session_id,
+        "cd /tmp; sh -c 'cd /; printf \"runtime-%s\\n\" foreground; sleep 1'; printf 'runtime-%s\\n' back\n",
+    )
+    .await;
+    wait_for_output(&mut owner, session_id, "runtime-foreground").await;
+    assert_eq!(
+        list_session_summaries(&mut owner).await[0]["runtime_cwd"]["path"],
+        "/"
+    );
+    wait_for_output(&mut owner, session_id, "runtime-back").await;
+    assert_eq!(
+        list_session_summaries(&mut owner).await[0]["runtime_cwd"]["path"],
+        "/tmp"
+    );
 
     send_json(
         &mut owner,

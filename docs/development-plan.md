@@ -296,9 +296,9 @@ Still needed:
 - [x] Add a workspace selector sidebar with pane counts and active state.
 - [x] Show configured WSL launch-location summaries and aggregate session state in the sidebar.
 - [ ] Add richer runtime workspace metadata:
-  - live shell cwd;
-  - git branch/dirty state;
-  - retained latest notification/error.
+  - [x] live shell/foreground-job cwd;
+  - [ ] git branch/dirty state;
+  - [ ] retained latest notification/error.
 
 ### Milestone: workspace status sidebar
 
@@ -311,6 +311,18 @@ Status: complete and ready for manual preview.
 - [x] Verify idle/running/detached/available transitions across switch and relaunch in real Electron tests.
 
 Manual preview: run two configured workspaces, switch between them, and observe the sidebar move from `running` to `detached`; close and reopen to see inactive hub sessions reported as `available` before reattachment.
+
+### Milestone: live runtime cwd
+
+Status: implementation complete; Windows Electron rerun blocked by Defender quarantine.
+
+- [x] Capture the PTY root process and inspect the current foreground process group.
+- [x] Walk at most 256 same-session descendants/64 KiB of child lists when the group leader is not the active tool.
+- [x] Report current, deleted, unavailable, and stale runtime cwd states without parsing terminal output or altering shell prompts.
+- [x] Preserve the final observation with retained exit metadata.
+- [x] Strictly normalize the independent protocol-v1 field in TypeScript while accepting legacy absence.
+- [x] Poll metadata with one bounded discovery request at a time and prefer runtime paths in workspace locations.
+- [x] Cover shell `cd`, foreground-child cwd, fallback, parser edge cases, and malformed client metadata.
 
 ### 5. Hub protocol evolution
 

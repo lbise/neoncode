@@ -110,6 +110,21 @@ pub enum ExitReason {
     Killed,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeCwdState {
+    Current,
+    Deleted,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RuntimeCwd {
+    pub path: Option<String>,
+    pub state: RuntimeCwdState,
+    pub stale: bool,
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
@@ -130,6 +145,7 @@ pub struct SessionSummary {
     pub instance_id: String,
     pub command: String,
     pub cwd: Option<String>,
+    pub runtime_cwd: RuntimeCwd,
     pub persistent: bool,
     pub attachment_count: u32,
     pub state: SessionState,

@@ -9,7 +9,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::debug;
 
 use crate::{
-    protocol::{ExitSummary, SessionState, SessionSummary},
+    protocol::{ExitSummary, RuntimeCwd, SessionState, SessionSummary},
     session::{ReplayCursor, Session, SessionSubscription, default_shell},
 };
 
@@ -147,6 +147,7 @@ impl SessionRegistry {
                 instance_id: entry.session.instance_id().to_string(),
                 command: entry.command.clone(),
                 cwd: entry.cwd.clone(),
+                runtime_cwd: entry.session.runtime_cwd(),
                 persistent: entry.persistent,
                 attachment_count: u32::try_from(entry.attachments.len()).unwrap_or(u32::MAX),
                 state: SessionState::Running,
@@ -166,6 +167,7 @@ impl SessionRegistry {
                     instance_id: record.instance_id.clone(),
                     command: record.command.clone(),
                     cwd: record.cwd.clone(),
+                    runtime_cwd: record.runtime_cwd.clone(),
                     persistent: record.persistent,
                     attachment_count: 0,
                     state: SessionState::Exited,
@@ -407,6 +409,7 @@ impl SessionRegistry {
                     instance_id: entry.session.instance_id().to_string(),
                     command: entry.command,
                     cwd: entry.cwd,
+                    runtime_cwd: entry.session.runtime_cwd(),
                     persistent: entry.persistent,
                     outcome,
                 },
@@ -510,6 +513,7 @@ struct RetainedExitRecord {
     instance_id: String,
     command: String,
     cwd: Option<String>,
+    runtime_cwd: RuntimeCwd,
     persistent: bool,
     outcome: ExitSummary,
 }
@@ -551,7 +555,7 @@ impl RetainedExitState {
 mod tests {
     use std::collections::HashMap;
 
-    use crate::protocol::{ExitReason, ExitSummary};
+    use crate::protocol::{ExitReason, ExitSummary, RuntimeCwd, RuntimeCwdState};
 
     use super::{
         AppState, MAX_RETAINED_EXITS, MAX_WEBSOCKET_CONNECTIONS, RetainedExitRecord,
@@ -570,6 +574,11 @@ mod tests {
                     instance_id: format!("{index:032x}"),
                     command: "sh".to_string(),
                     cwd: None,
+                    runtime_cwd: RuntimeCwd {
+                        path: None,
+                        state: RuntimeCwdState::Unavailable,
+                        stale: true,
+                    },
                     persistent: true,
                     outcome: ExitSummary {
                         attention_id: format!("{index:032x}"),
@@ -587,6 +596,11 @@ mod tests {
                 instance_id: "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee".to_string(),
                 command: "bash".to_string(),
                 cwd: Some("/tmp".to_string()),
+                runtime_cwd: RuntimeCwd {
+                    path: Some("/tmp".to_string()),
+                    state: RuntimeCwdState::Current,
+                    stale: true,
+                },
                 persistent: true,
                 outcome: ExitSummary {
                     attention_id: "ffffffffffffffffffffffffffffffff".to_string(),
@@ -612,6 +626,11 @@ mod tests {
                         instance_id: format!("{index:032x}"),
                         command: "sh".to_string(),
                         cwd: None,
+                        runtime_cwd: RuntimeCwd {
+                            path: None,
+                            state: RuntimeCwdState::Unavailable,
+                            stale: true,
+                        },
                         persistent: true,
                         outcome: ExitSummary {
                             attention_id: format!("{index:032x}"),

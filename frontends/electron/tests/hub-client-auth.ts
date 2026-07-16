@@ -280,6 +280,8 @@ function validatesSessionSummaries(): void {
     sessionId: 'shell',
     command: 'bash',
     cwd: '/tmp',
+    runtimeCwd: null,
+    runtimeCwdComplete: false,
     persistent: true,
     attachmentCount: 2,
     metadataComplete: true,
@@ -294,6 +296,8 @@ function validatesSessionSummaries(): void {
     sessionId: 'legacy',
     command: null,
     cwd: null,
+    runtimeCwd: null,
+    runtimeCwdComplete: false,
     persistent: null,
     attachmentCount: null,
     metadataComplete: false,
@@ -303,6 +307,28 @@ function validatesSessionSummaries(): void {
     instanceId: null,
     instanceComplete: false,
   }]);
+  const runtime = normalizeSessionSummaries([{
+    session_id: 'runtime',
+    command: 'bash',
+    cwd: '/configured',
+    runtime_cwd: { path: '/live', state: 'current', stale: false },
+    persistent: true,
+    attachment_count: 0,
+  }]);
+  assert.deepEqual(runtime[0]?.runtimeCwd, { path: '/live', state: 'current', stale: false });
+  assert.equal(runtime[0]?.runtimeCwdComplete, true);
+  assert.throws(
+    () => normalizeSessionSummaries([{
+      session_id: 'bad-runtime',
+      command: 'bash',
+      cwd: null,
+      runtime_cwd: { path: null, state: 'current', stale: false },
+      persistent: true,
+      attachment_count: 0,
+    }]),
+    /runtime_cwd is invalid/,
+  );
+
   assert.throws(
     () => normalizeSessionSummaries([{ session_id: 'duplicate' }, { session_id: 'duplicate' }]),
     /duplicate session_id/,

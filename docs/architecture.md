@@ -90,7 +90,7 @@ Detailed docs:
 
 Current protocol is authenticated JSON over WebSocket with base64 terminal bytes. An authenticated `welcome` supplies protocol version 1 and a per-process hub `boot_id` before session operations begin.
 
-`session_list` includes additive hub-owned effective-command, configured-cwd, persistence, attachment-count, incarnation, lifecycle, and retained latest-exit metadata while remaining protocol v1 compatible with ID-only clients. `welcome.capabilities` advertises these additive features. Attach supports incarnation-aware output cursors and returns an atomic bounded-replay checkpoint manifest.
+`session_list` includes additive hub-owned effective-command, configured-cwd, observed runtime-cwd, persistence, attachment-count, incarnation, lifecycle, and retained latest-exit metadata while remaining protocol v1 compatible with ID-only clients. `welcome.capabilities` advertises these additive features. Runtime cwd comes from bounded `/proc` inspection of the PTY foreground process group/same-session descendants rather than terminal parsing or shell injection. Attach supports incarnation-aware output cursors and returns an atomic bounded-replay checkpoint manifest.
 
 Important current messages:
 

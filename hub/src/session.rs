@@ -16,7 +16,7 @@ use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize, native_pty_s
 use tokio::sync::broadcast;
 use tracing::{debug, info, warn};
 
-use crate::protocol::{ExitReason, ExitSummary};
+use crate::protocol::{ExitReason, ExitSummary, RuntimeCwd, RuntimeCwdState};
 
 const SESSION_EVENT_BUFFER: usize = 256;
 const SESSION_REPLAY_BUFFER_BYTES: usize = 2 * 1024 * 1024;
@@ -79,6 +79,8 @@ pub struct Session {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     master: Arc<Mutex<Box<dyn MasterPty + Send>>>,
     child_killer: Mutex<Box<dyn ChildKiller + Send + Sync>>,
+    root_pid: Option<u32>,
+    last_runtime_cwd: Mutex<Option<RuntimeCwd>>,
     running: Arc<AtomicBool>,
     kill_requested: Arc<AtomicBool>,
     outcome: Arc<Mutex<Option<ExitSummary>>>,
@@ -131,6 +133,7 @@ impl Session {
             .slave
             .spawn_command(cmd)
             .with_context(|| format!("failed to spawn command: {command}"))?;
+        let root_pid = child.process_id();
         let child_killer = child.clone_killer();
         drop(pair.slave);
 
@@ -262,6 +265,8 @@ impl Session {
                 writer: Arc::new(Mutex::new(writer)),
                 master: Arc::new(Mutex::new(pair.master)),
                 child_killer: Mutex::new(child_killer),
+                root_pid,
+                last_runtime_cwd: Mutex::new(None),
                 running,
                 kill_requested,
                 outcome,
@@ -301,6 +306,74 @@ impl Session {
 
     pub fn instance_id(&self) -> &str {
         &self.instance_id
+    }
+
+    pub fn runtime_cwd(&self) -> RuntimeCwd {
+        let observed = self.observe_runtime_cwd();
+        if observed.state != RuntimeCwdState::Unavailable {
+            if let Ok(mut last) = self.last_runtime_cwd.lock() {
+                *last = Some(observed.clone());
+            }
+            return observed;
+        }
+        self.last_runtime_cwd
+            .lock()
+            .ok()
+            .and_then(|last| last.clone())
+            .map(|mut last| {
+                last.stale = true;
+                last
+            })
+            .unwrap_or(observed)
+    }
+
+    #[cfg(unix)]
+    fn observe_runtime_cwd(&self) -> RuntimeCwd {
+        let root_pid = self.root_pid;
+        let root_session = root_pid.and_then(proc_session_id);
+        let foreground_group = self
+            .master
+            .lock()
+            .ok()
+            .and_then(|master| master.process_group_leader())
+            .and_then(|pid| u32::try_from(pid).ok());
+        let descendants = match (root_pid, root_session, foreground_group) {
+            (Some(root_pid), Some(root_session), Some(foreground_group)) => {
+                foreground_descendants(root_pid, root_session, foreground_group)
+            }
+            _ => Vec::new(),
+        };
+        let foreground_leader = foreground_group
+            .filter(|pid| root_session.is_some() && proc_session_id(*pid) == root_session);
+        for pid in descendants
+            .into_iter()
+            .rev()
+            .chain(foreground_leader)
+            .chain(root_pid)
+        {
+            if let Ok(path) = std::fs::read_link(format!("/proc/{pid}/cwd")) {
+                let Some(mut path) = path.to_str().map(str::to_string) else {
+                    continue;
+                };
+                let state = if path.ends_with(" (deleted)") {
+                    path.truncate(path.len() - " (deleted)".len());
+                    RuntimeCwdState::Deleted
+                } else {
+                    RuntimeCwdState::Current
+                };
+                return RuntimeCwd {
+                    path: Some(path),
+                    state,
+                    stale: false,
+                };
+            }
+        }
+        unavailable_runtime_cwd()
+    }
+
+    #[cfg(not(unix))]
+    fn observe_runtime_cwd(&self) -> RuntimeCwd {
+        unavailable_runtime_cwd()
     }
 
     pub fn is_running(&self) -> bool {
@@ -357,6 +430,81 @@ impl Session {
             Err(_) => warn!(session_id = %self.id, "child mutex poisoned while killing session"),
         }
     }
+}
+
+fn unavailable_runtime_cwd() -> RuntimeCwd {
+    RuntimeCwd {
+        path: None,
+        state: RuntimeCwdState::Unavailable,
+        stale: false,
+    }
+}
+
+#[cfg(unix)]
+fn proc_session_id(pid: u32) -> Option<u32> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    parse_proc_fields(&stat).map(|fields| fields.1)
+}
+
+#[cfg(unix)]
+fn foreground_descendants(root_pid: u32, root_session: u32, foreground_group: u32) -> Vec<u32> {
+    const MAX_DESCENDANTS: usize = 256;
+    const MAX_CHILD_LIST_BYTES: usize = 64 * 1024;
+    let mut queue = VecDeque::from([root_pid]);
+    let mut candidates = Vec::new();
+    let mut child_list_bytes = 0;
+    while let Some(pid) = queue.pop_front() {
+        if queue.len() + candidates.len() >= MAX_DESCENDANTS {
+            break;
+        }
+        let Ok(children) = std::fs::read_to_string(format!("/proc/{pid}/task/{pid}/children"))
+        else {
+            continue;
+        };
+        child_list_bytes += children.len();
+        if child_list_bytes > MAX_CHILD_LIST_BYTES {
+            break;
+        }
+        for child in children
+            .split_whitespace()
+            .filter_map(|value| value.parse().ok())
+        {
+            if queue.len() + candidates.len() >= MAX_DESCENDANTS {
+                break;
+            }
+            let Some((process_group, session)) =
+                std::fs::read_to_string(format!("/proc/{child}/stat"))
+                    .ok()
+                    .and_then(|stat| parse_proc_fields(&stat))
+            else {
+                continue;
+            };
+            if session != root_session {
+                continue;
+            }
+            queue.push_back(child);
+            if process_group == foreground_group {
+                candidates.push(child);
+            }
+        }
+    }
+    candidates
+}
+
+#[cfg(unix)]
+fn parse_proc_fields(stat: &str) -> Option<(u32, u32)> {
+    let command_end = stat.rfind(") ")?;
+    let mut fields = stat.get(command_end + 2..)?.split_whitespace();
+    fields.next()?;
+    fields.next()?;
+    let process_group = fields.next()?.parse().ok()?;
+    let session = fields.next()?.parse().ok()?;
+    Some((process_group, session))
+}
+
+#[cfg(all(unix, test))]
+fn parse_proc_session_id(stat: &str) -> Option<u32> {
+    parse_proc_fields(stat).map(|fields| fields.1)
 }
 
 fn select_replay(
@@ -479,9 +627,18 @@ mod tests {
     use tokio::sync::broadcast;
 
     use super::{
-        ReplayCursor, SESSION_REPLAY_BUFFER_ENTRIES, SessionEventState, publish_output,
-        remove_control_environment, select_replay,
+        ReplayCursor, SESSION_REPLAY_BUFFER_ENTRIES, SessionEventState, parse_proc_session_id,
+        publish_output, remove_control_environment, select_replay,
     };
+
+    #[test]
+    fn proc_stat_parser_handles_spaces_and_parentheses_in_command() {
+        assert_eq!(
+            parse_proc_session_id("123 (command with ) spaces) S 10 123 77 0 0 0 0 0"),
+            Some(77)
+        );
+        assert_eq!(parse_proc_session_id("malformed"), None);
+    }
 
     #[test]
     fn capability_token_is_removed_from_child_environment() {

@@ -30,7 +30,7 @@ Current capabilities:
 - resize PTY;
 - kill PTY session;
 - maintain sessions in a shared in-process session registry;
-- list active sessions with effective command, configured cwd, persistence, attachment count, and retained latest-exit attention;
+- list active sessions with effective command, configured cwd, observed foreground-job cwd, persistence, attachment count, and retained latest-exit attention;
 - attach a WebSocket with bounded recent terminal-output replay followed by live events;
 - detach a WebSocket from a session;
 - require the Electron `file://` origin and a per-user capability challenge-response on WebSockets;
@@ -234,7 +234,7 @@ Default size:
 
 ### List
 
-Frontend sends `list_sessions` to get active session IDs and hub-owned metadata from the in-process registry: effective command, configured launch cwd, persistence, current attachment count, running/exited state, and retained latest exit. Arguments are not exposed because they may contain sensitive values. Configured cwd is launch metadata, not the shell's later live cwd. Naturally exited PTYs are removed, but their latest exit metadata remains discoverable until acknowledged. IDs can be reused immediately; a running replacement retains the prior attention until explicit acknowledgement.
+Frontend sends `list_sessions` to get active session IDs and hub-owned metadata from the in-process registry: effective command, configured launch cwd, observed runtime cwd, persistence, current attachment count, running/exited state, and retained latest exit. Arguments are not exposed because they may contain sensitive values. Runtime cwd is observed from the PTY foreground process group plus a bounded same-session descendant walk under `/proc`; terminal output and shell prompts are not parsed or modified. Transient observation failures retain the last known path as stale, and exited attention retains its final observation. The frontend polls summaries at a bounded interval. Naturally exited PTYs are removed, but their latest exit metadata remains discoverable until acknowledged. IDs can be reused immediately; a running replacement retains the prior attention until explicit acknowledgement.
 
 ### Attach
 
