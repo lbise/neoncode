@@ -20,7 +20,7 @@ Electron 43.1.0
 Playwright 1.61.1
 ```
 
-Electron 43 uses an explicit `install-electron` executable rather than a package lifecycle script. The publish helper runs that exact installer after `npm ci`, then bundles the browser-world renderer with `esbuild-wasm`.
+Electron 43 uses its official local `install-electron` executable rather than a package lifecycle script. `./dev electron-bootstrap` is the only normal workflow that runs `npm ci` and that installer. It records a stable runtime marker containing the package-lock hash, Electron version/platform/architecture, and executable SHA-256. Ordinary publish builds in WSL and copies generated application artifacts while preserving the verified Windows runtime.
 
 Renderer security defaults:
 
@@ -48,10 +48,12 @@ From repo root:
 Explicit commands:
 
 ```bash
-./dev publish
+./dev electron-bootstrap      # only initially or after dependency/runtime changes
+./dev electron-runtime-status # verify marker/hash/signature and probe execution
+./dev publish                 # build/copy artifacts; never reinstalls Electron
 ./dev electron
-./dev electron-stop  # force-stop only the published NeonCode Electron runtime
-./dev reset-token    # rotate token, then restart hub and app
+./dev electron-stop           # force-stop only the published NeonCode Electron runtime
+./dev reset-token             # rotate token, then restart hub and app
 ```
 
 ## Source layout

@@ -54,8 +54,8 @@ Run from WSL repo root unless noted.
 ```bash
 ./dev hub       # run Rust hub on 127.0.0.1:44777
 ./dev app       # publish/start Electron app, two xterm panes
-./dev publish   # publish Electron app only
-./dev check     # JS syntax + Rust fmt/check/test/clippy
+./dev publish   # build/copy app artifacts; preserve stable Electron runtime
+./dev check     # strict TypeScript + Rust fmt/check/test/clippy
 ./dev reset-token # rotate local hub capability; restart hub/app afterward
 ```
 
@@ -80,10 +80,12 @@ Typical manual loop:
 ## Electron app commands
 
 ```bash
-./dev electron-publish  # publish Electron app
-./dev electron          # start published Electron app
-./dev electron-stop     # force-stop only NeonCode's published Electron processes
-./dev electron-install  # npm install in source app directory
+./dev electron-bootstrap      # explicitly install/verify stable Windows runtime
+./dev electron-runtime-status # report marker/hash/signature/execution status
+./dev electron-publish        # build/copy artifacts without reinstalling runtime
+./dev electron                # start published Electron app
+./dev electron-stop           # force-stop only NeonCode's published Electron processes
+./dev electron-install        # alias for electron-bootstrap
 ./dev electron-audit    # audit locked Electron dependencies
 ./dev electron-test     # hidden-window Playwright functional tests
 ```

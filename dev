@@ -13,7 +13,7 @@ Usage:
 
 Daily commands:
   ./dev app          Publish/start Electron + xterm.js app
-  ./dev publish      Publish Electron app to %USERPROFILE%\neoncode-electron
+  ./dev publish      Build in WSL and copy app artifacts without reinstalling Electron
   ./dev hub          Run the Rust NeonCode hub
   ./dev check        Run strict TypeScript + Rust tests/fmt/check/clippy
   ./dev soak [secs]  Repeat real PTY metadata/reconnect tests (default: 300)
@@ -22,8 +22,10 @@ Electron app commands:
   ./dev electron-publish              Publish Electron app
   ./dev electron                      Start already-published Electron app
   ./dev electron-stop                 Force-stop only published NeonCode Electron processes
-  ./dev electron-install  Install Electron npm dependencies in source app
-  ./dev electron-audit    Audit the locked Electron app dependencies
+  ./dev electron-bootstrap     Explicitly install/verify the stable Windows Electron runtime
+  ./dev electron-runtime-status Show runtime hash/marker/signature and probe execution
+  ./dev electron-install       Alias for electron-bootstrap
+  ./dev electron-audit         Audit the locked Electron app dependencies
   ./dev electron-test     Run hidden-window Playwright functional tests
 
 Utility commands:
@@ -107,11 +109,13 @@ ps_file() {
 }
 
 publish_electron_app() {
+  npm --prefix frontends/electron run build
   ps_file 'scripts\electron-app.ps1' -Command publish "$@"
 }
 
 run_electron_app() {
   ensure_hub_token
+  ps_file 'scripts\electron-app.ps1' -Command status
   ps_file 'scripts\electron-app.ps1' -Command start "$@"
 }
 
@@ -142,8 +146,12 @@ case "$command" in
     ps_file 'scripts\electron-app.ps1' -Command stop
     ;;
 
-  electron-install)
-    ps_file 'scripts\electron-app.ps1' -Command install
+  electron-bootstrap|electron-install)
+    ps_file 'scripts\electron-app.ps1' -Command bootstrap
+    ;;
+
+  electron-runtime-status)
+    ps_file 'scripts\electron-app.ps1' -Command status
     ;;
 
   electron-audit)
@@ -190,6 +198,7 @@ case "$command" in
 
   electron-test)
     ensure_hub_token
+    ps_file 'scripts\electron-app.ps1' -Command status
     ps_file 'scripts\electron-test.ps1' "$@"
     ;;
 

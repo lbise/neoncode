@@ -428,11 +428,11 @@ Status: planned and release-blocking. The current development runtime executes E
 
 Development workflow:
 
-- [ ] Separate dependency/runtime bootstrap from ordinary app publish so `npm ci` does not recreate `electron.exe` on every iteration.
-- [ ] Add a stable verified-runtime marker keyed by package-lock hash, Electron version/platform/architecture, and executable SHA-256.
-- [ ] Make normal publish rebuild/copy app artifacts only; require an explicit bootstrap command when runtime dependencies change.
-- [ ] Add a read-only runtime diagnostic command for version, hash, Authenticode status, executable availability, and actionable Defender failure reporting.
-- [ ] Keep WSL/Rust/TypeScript/fake-hub checks authoritative for daily work when a managed Windows endpoint blocks the GUI runtime.
+- [x] Separate dependency/runtime bootstrap from ordinary app publish so `npm ci` does not recreate `electron.exe` on every iteration.
+- [x] Add a stable verified-runtime marker keyed by package-lock hash, Electron version/platform/architecture, and executable SHA-256.
+- [x] Make normal publish rebuild/copy app artifacts only; require an explicit bootstrap command when runtime dependencies change.
+- [x] Add a read-only runtime diagnostic command for version, hash, Authenticode status, executable availability, and actionable Defender failure reporting.
+- [x] Keep WSL/Rust/TypeScript/fake-hub checks authoritative for daily work when a managed Windows endpoint blocks the GUI runtime.
 - [ ] Establish a Defender-enabled Windows VM/CI release gate independent of a developer's managed workstation.
 
 Production distribution:

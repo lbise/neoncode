@@ -173,7 +173,14 @@ This boundary protects against browser cross-origin access, accidental LAN expos
 
 ## Validation commands
 
-Baseline:
+Bootstrap the stable Windows runtime once, or whenever the dependency lock changes:
+
+```bash
+./dev electron-bootstrap
+./dev electron-runtime-status
+```
+
+Ordinary baseline iterations do not reinstall executable dependencies:
 
 ```bash
 ./dev check
