@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Windows development/runtime trust workflow required
+Stage: Keyboard-first workspace cockpit UX
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: stable verified dev runtime, then signed production packaging and richer live metadata
+Next focus: command/keybinding architecture and focus model, then dynamic tabs/splits and GUI polish
 ```
 
 The Windows tech stack is now:
@@ -349,6 +349,44 @@ Status: protocol, retention, polling UI, and acknowledgement complete; CLI publi
 - [x] Prioritize retained exit attention, then notifications, in workspace summaries and Dismiss behavior.
 - [x] Cover replacement generations, stale acknowledgement, matching clear, and malformed metadata.
 
+### Immediate product priority: keyboard-first workspace cockpit
+
+Status: planned. The session/protocol foundation is sufficient to shift the main development focus from backend hardening to daily interactive product value.
+
+Interaction and command foundation:
+
+- [ ] Define stable command IDs and a central command registry instead of adding ad hoc `keydown` handlers.
+- [ ] Add command contexts (`global`, `workspace`, `tab`, `pane`, `terminal`) and route unhandled keys unchanged to xterm.
+- [ ] Track one authoritative active workspace/tab/pane focus target and restore focus after switch, split, close, and relaunch.
+- [ ] Define terminal-safe default shortcuts, conflict rules, discoverable labels, and future user override schema.
+- [ ] Add deterministic keybinding tests plus hidden-Electron checks proving claimed shortcuts execute once and unclaimed terminal keys remain unchanged.
+- [ ] Make every cockpit action available through the command registry even when it has no default shortcut.
+
+Frontend-owned layout model:
+
+- [ ] Define terminology and identity: workspace = project/context, tab = top-level layout, pane = session surface, panel = auxiliary UI.
+- [ ] Add a pure typed tab/split tree with stable IDs, split direction/ratio, active pane, and deterministic create/close/focus/move/resize operations.
+- [ ] Migrate each existing flat configured workspace grid into one initial tab without changing hub session IDs.
+- [ ] Persist workspace tab/layout state separately from backend session identity and migrate the desktop state schema atomically.
+- [ ] Create/close/rename/reorder tabs and split/close/focus panes from commands before adding mouse-only controls.
+- [ ] Add dynamic terminal creation from a validated launch profile, with bounded workspace/pane limits and explicit detach/kill behavior.
+- [ ] Restore layouts across close/reopen, hub reconnect, missing sessions, and replacement session incarnations.
+
+GUI and keyboard-first presentation:
+
+- [ ] Add a compact tab strip, pane headers, active-pane focus ring, empty states, and accessible status/attention indicators.
+- [ ] Add a command palette (`Ctrl+Shift+P`) backed by the same registry, with keyboard search/navigation and no duplicate action implementations.
+- [ ] Add visible shortcut hints/tooltips and a keyboard-shortcuts reference surface.
+- [ ] Add design tokens for spacing, typography, borders, focus, status colors, and density before broad CSS polish.
+- [ ] Add a notifications panel and commands to jump to/dismiss the latest unread item.
+- [ ] Support keyboard-only workspace/tab/pane creation, navigation, splitting, resizing, and closing.
+- [ ] Preserve terminal conventions by testing Ctrl+C/D/Z, readline keys, tmux, and Neovim after every shortcut milestone.
+- [ ] Add Playwright coverage for focus ownership, tab/split restoration, palette operation, and all default shortcuts.
+
+Initial shortcut candidates (subject to conflict tests): `Ctrl+Shift+P` palette, `Ctrl+Shift+T` new tab, `Ctrl+PageUp/PageDown` tab navigation, Windows-Terminal-style `Alt+Shift+D/-/=` splitting, `F6`/`Shift+F6` pane cycling, and `Alt+1..9` workspace selection. Closing and directional-focus bindings must be chosen only after terminal-conflict testing.
+
+Acceptance: starting from the keyboard, a user can switch/open a workspace, create and rename a tab, split and focus panes, start a terminal from a profile, resize/close the layout, inspect attention, and restore the same view after relaunch without disrupting normal terminal key input.
+
 ### 5. Hub protocol evolution
 
 Inspired by wmux/cmux/t3code analysis:
@@ -490,14 +528,12 @@ Release acceptance: a production artifact installs and launches on a clean, full
 - [ ] Hidden tmux convention for durable remote sessions.
 - [ ] Evaluate future `neoncode-remote` daemon.
 
-### Workspace cockpit UI
+### Browser and auxiliary surfaces
 
-- [ ] Tabs/panes/splits.
-- [x] Sidebar workspace list.
-- [ ] Command palette.
-- [ ] Status/attention indicators.
-- [ ] Notifications panel.
+The workspace cockpit, tabs/splits, command palette, status indicators, and notifications panel are promoted to the immediate product priority above.
+
 - [ ] Browser/external surface launch hooks.
+- [ ] Decide whether auxiliary panels share the split tree or use a separate dock model.
 
 ### Agent-aware workflows
 
