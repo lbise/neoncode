@@ -176,6 +176,7 @@ async fn handle_socket(
                 "session_exit_attention".to_string(),
                 "session_replay_checkpoint".to_string(),
                 "session_runtime_cwd".to_string(),
+                "session_runtime_git".to_string(),
             ],
         },
     )

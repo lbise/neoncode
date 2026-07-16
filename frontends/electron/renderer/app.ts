@@ -164,6 +164,10 @@ function isNormalizedSessionSummary(value: unknown): value is NormalizedSessionS
   return typeof value.sessionId === 'string'
     && (value.command === null || typeof value.command === 'string')
     && (value.cwd === null || typeof value.cwd === 'string')
+    && typeof value.runtimeCwdComplete === 'boolean'
+    && (value.runtimeCwd === null || isRecord(value.runtimeCwd))
+    && typeof value.runtimeGitComplete === 'boolean'
+    && (value.runtimeGit === null || isRecord(value.runtimeGit))
     && (value.persistent === null || typeof value.persistent === 'boolean')
     && (value.attachmentCount === null
       || (typeof value.attachmentCount === 'number' && Number.isInteger(value.attachmentCount)))
@@ -366,6 +370,19 @@ export class NeonCodeApp {
     return { label: `WSL · ${location}`, source };
   }
 
+  workspaceGit(workspace: WorkspaceDescriptor): string | null {
+    const repositories = workspace.panes
+      .map((pane) => this.hubSessionsById.get(pane.sessionId)?.runtimeGit)
+      .filter((git) => git?.state === 'repository');
+    if (repositories.length === 0) return null;
+    const identities = new Set(repositories.map((git) => git?.detached ? 'detached' : git?.branch ?? 'unknown'));
+    const dirty = repositories.some((git) => git?.dirty);
+    const identity = identities.size === 1
+      ? identities.values().next().value ?? 'unknown'
+      : `${identities.size} branches`;
+    return `Git · ${identity}${dirty ? ' *' : ''}`;
+  }
+
   workspaceSummary(workspace: WorkspaceDescriptor): WorkspaceAggregate {
     const states = workspace.panes.map((pane) => (
       this.workspaceSessionStates.get(pane.sessionId)
@@ -424,6 +441,7 @@ export class NeonCodeApp {
         id: workspace.id,
         location: location.label,
         locationSource: location.source,
+        git: this.workspaceGit(workspace),
         ...this.workspaceSummary(workspace),
       };
     });
@@ -435,12 +453,15 @@ export class NeonCodeApp {
       const button = entry?.querySelector<HTMLButtonElement>('.workspace-button');
       const status = entry?.querySelector<HTMLElement>('.workspace-status');
       const location = entry?.querySelector<HTMLElement>('.workspace-location');
+      const git = entry?.querySelector<HTMLElement>('.workspace-git');
       const acknowledge = entry?.querySelector<HTMLButtonElement>('.workspace-attention-button');
-      if (!button || !status || !location || !acknowledge) continue;
+      if (!button || !status || !location || !git || !acknowledge) continue;
       button.dataset.state = summary.state;
       button.title = `${summary.location} — ${summary.detail}`;
       location.textContent = summary.location;
       location.dataset.source = summary.locationSource;
+      git.textContent = summary.git ?? '';
+      git.hidden = summary.git === null;
       status.dataset.state = summary.state;
       status.textContent = summary.label;
       acknowledge.hidden = summary.state !== 'attention';
@@ -456,6 +477,8 @@ export class NeonCodeApp {
         cwd: descriptor.launchProfile.cwd,
         runtimeCwd: existing?.runtimeCwd ?? null,
         runtimeCwdComplete: existing?.runtimeCwdComplete ?? false,
+        runtimeGit: existing?.runtimeGit ?? null,
+        runtimeGitComplete: existing?.runtimeGitComplete ?? false,
         persistent: true,
         attachmentCount: 1,
         metadataComplete: true,
@@ -491,6 +514,8 @@ export class NeonCodeApp {
       cwd: existing ? existing.cwd : descriptor.launchProfile.cwd,
       runtimeCwd: existing?.runtimeCwd ?? null,
       runtimeCwdComplete: existing?.runtimeCwdComplete ?? false,
+      runtimeGit: existing?.runtimeGit ?? null,
+      runtimeGitComplete: existing?.runtimeGitComplete ?? false,
       persistent: existing?.persistent ?? true,
       attachmentCount: 0,
       metadataComplete: true,
@@ -545,6 +570,10 @@ export class NeonCodeApp {
       location.className = 'workspace-location';
       location.textContent = this.workspaceLocation(workspace).label;
       identity.append(name, location);
+      const git = this.document.createElement('span');
+      git.className = 'workspace-git';
+      git.hidden = true;
+      identity.append(git);
       const status = this.document.createElement('span');
       status.className = 'workspace-status';
       status.dataset.testid = `workspace-status-${workspace.id}`;

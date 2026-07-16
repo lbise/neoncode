@@ -41,12 +41,24 @@ export interface RuntimeCwd {
   stale: boolean;
 }
 
+export type RuntimeGitState = 'pending' | 'repository' | 'not_repository' | 'unavailable';
+
+export interface RuntimeGit {
+  state: RuntimeGitState;
+  branch: string | null;
+  detached: boolean;
+  dirty: boolean;
+  stale: boolean;
+}
+
 export interface NormalizedSessionSummary {
   sessionId: string;
   command: string | null;
   cwd: string | null;
   runtimeCwd: RuntimeCwd | null;
   runtimeCwdComplete: boolean;
+  runtimeGit: RuntimeGit | null;
+  runtimeGitComplete: boolean;
   persistent: boolean | null;
   attachmentCount: number | null;
   metadataComplete: boolean;
@@ -242,6 +254,7 @@ export interface WorkspaceSummary {
   id: string;
   location: string;
   locationSource: 'config' | 'hub' | 'mixed' | 'runtime';
+  git: string | null;
   state: WorkspaceSummaryState;
   label: string;
   detail: string;

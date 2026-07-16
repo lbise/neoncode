@@ -125,6 +125,56 @@ pub struct RuntimeCwd {
     pub stale: bool,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeGitState {
+    Pending,
+    Repository,
+    NotRepository,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RuntimeGit {
+    pub state: RuntimeGitState,
+    pub branch: Option<String>,
+    pub detached: bool,
+    pub dirty: bool,
+    pub stale: bool,
+}
+
+impl RuntimeGit {
+    pub fn pending() -> Self {
+        Self {
+            state: RuntimeGitState::Pending,
+            branch: None,
+            detached: false,
+            dirty: false,
+            stale: false,
+        }
+    }
+
+    pub fn not_repository() -> Self {
+        Self {
+            state: RuntimeGitState::NotRepository,
+            branch: None,
+            detached: false,
+            dirty: false,
+            stale: false,
+        }
+    }
+
+    pub fn unavailable(stale: bool) -> Self {
+        Self {
+            state: RuntimeGitState::Unavailable,
+            branch: None,
+            detached: false,
+            dirty: false,
+            stale,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SessionState {
@@ -146,6 +196,7 @@ pub struct SessionSummary {
     pub command: String,
     pub cwd: Option<String>,
     pub runtime_cwd: RuntimeCwd,
+    pub runtime_git: RuntimeGit,
     pub persistent: bool,
     pub attachment_count: u32,
     pub state: SessionState,

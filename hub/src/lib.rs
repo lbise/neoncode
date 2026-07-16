@@ -4,6 +4,7 @@ use anyhow::{Result, bail};
 use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
 use tower_http::trace::TraceLayer;
 
+mod git;
 mod protocol;
 mod session;
 mod state;

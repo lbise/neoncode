@@ -4,6 +4,7 @@ import type {
   ReplayCheckpoint,
   RetainedExitSummary,
   RuntimeCwd,
+  RuntimeGit,
   SessionSummaryState,
 } from '../shared/types';
 
@@ -121,6 +122,20 @@ function normalizeRuntimeCwd(value: unknown, sessionId: string): RuntimeCwd {
   return { path, state, stale } as RuntimeCwd;
 }
 
+function normalizeRuntimeGit(value: unknown, sessionId: string): RuntimeGit {
+  if (!isRecord(value)) throw new Error(`session_list runtime_git is invalid for ${sessionId}`);
+  const { state, branch, detached, dirty, stale } = value;
+  if ((state !== 'pending' && state !== 'repository' && state !== 'not_repository' && state !== 'unavailable')
+      || (branch !== null && (typeof branch !== 'string' || encoder.encode(branch).length > 1024))
+      || typeof detached !== 'boolean' || typeof dirty !== 'boolean' || typeof stale !== 'boolean'
+      || (detached && branch !== null)
+      || (state === 'repository' && !detached && typeof branch !== 'string')
+      || (state !== 'repository' && (branch !== null || detached || dirty))) {
+    throw new Error(`session_list runtime_git is invalid for ${sessionId}`);
+  }
+  return { state, branch, detached, dirty, stale } as RuntimeGit;
+}
+
 function normalizeExitSummary(exit: unknown, sessionId: string): RetainedExitSummary {
   if (!isRecord(exit)) {
     throw new Error(`session_list latest_exit is invalid for ${sessionId}`);
@@ -164,6 +179,10 @@ export function normalizeSessionSummaries(sessions: unknown): NormalizedSessionS
     const runtimeCwd = runtimeCwdComplete
       ? normalizeRuntimeCwd(summary.runtime_cwd, sessionId)
       : null;
+    const runtimeGitComplete = Object.hasOwn(summary, 'runtime_git');
+    const runtimeGit = runtimeGitComplete
+      ? normalizeRuntimeGit(summary.runtime_git, sessionId)
+      : null;
 
     const metadataKeys = ['command', 'cwd', 'persistent', 'attachment_count'];
     const metadataFields = metadataKeys.filter((key) => Object.hasOwn(summary, key)).length;
@@ -177,6 +196,8 @@ export function normalizeSessionSummaries(sessions: unknown): NormalizedSessionS
         cwd: null,
         runtimeCwd,
         runtimeCwdComplete,
+        runtimeGit,
+        runtimeGitComplete,
         persistent: null,
         attachmentCount: null,
         metadataComplete: false,
@@ -239,6 +260,8 @@ export function normalizeSessionSummaries(sessions: unknown): NormalizedSessionS
       cwd: summary.cwd,
       runtimeCwd,
       runtimeCwdComplete,
+      runtimeGit,
+      runtimeGitComplete,
       persistent: summary.persistent,
       attachmentCount: summary.attachment_count as number,
       metadataComplete: true,

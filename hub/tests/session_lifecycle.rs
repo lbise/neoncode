@@ -1,4 +1,8 @@
-use std::time::Duration;
+use std::{
+    fs,
+    process::Command,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use futures_util::{SinkExt, StreamExt};
@@ -254,6 +258,31 @@ async fn list_session_summaries(socket: &mut TestSocket) -> Vec<Value> {
         .as_array()
         .expect("sessions array")
         .clone()
+}
+
+async fn wait_for_runtime_git(
+    socket: &mut TestSocket,
+    branch: Option<&str>,
+    detached: bool,
+    dirty: bool,
+) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let summaries = list_session_summaries(socket).await;
+        let metadata = &summaries[0]["runtime_git"];
+        if metadata["state"] == "repository"
+            && metadata["branch"].as_str() == branch
+            && metadata["detached"] == detached
+            && metadata["dirty"] == dirty
+        {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "runtime git did not converge: {metadata}"
+        );
+        sleep(Duration::from_millis(100)).await;
+    }
 }
 
 async fn list_session_ids(socket: &mut TestSocket) -> Vec<String> {
@@ -878,6 +907,65 @@ async fn session_metadata_tracks_persistence_and_attachments() {
     )
     .await;
     wait_for_session_type(&mut owner, "killed", session_id).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn runtime_git_tracks_branch_dirty_and_detached_state() {
+    let suffix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let repository = std::env::temp_dir().join(format!("neoncode-git-metadata-{suffix}"));
+    fs::create_dir_all(&repository).unwrap();
+    let git = |args: &[&str]| {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&repository)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .output()
+            .expect("run git fixture command");
+        assert!(
+            output.status.success(),
+            "git fixture failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    git(&["init", "-b", "main"]);
+    git(&["config", "user.name", "NeonCode Test"]);
+    git(&["config", "user.email", "neoncode@example.invalid"]);
+    fs::write(repository.join("tracked.txt"), "clean\n").unwrap();
+    git(&["add", "tracked.txt"]);
+    git(&["commit", "-m", "fixture"]);
+
+    let hub = TestHub::start().await;
+    let session_id = "runtime-git";
+    let mut socket = hub.connect().await;
+    send_json(
+        &mut socket,
+        json!({
+            "type": "start", "session_id": session_id, "command": "sh",
+            "cwd": repository.to_str().unwrap(), "persistent": true, "rows": 24, "cols": 80
+        }),
+    )
+    .await;
+    wait_for_session_type(&mut socket, "started", session_id).await;
+
+    wait_for_runtime_git(&mut socket, Some("main"), false, false).await;
+    fs::write(repository.join("untracked.txt"), "dirty\n").unwrap();
+    wait_for_runtime_git(&mut socket, Some("main"), false, true).await;
+    git(&["add", "untracked.txt"]);
+    git(&["commit", "-m", "dirty fixture"]);
+    git(&["checkout", "--detach"]);
+    wait_for_runtime_git(&mut socket, None, true, false).await;
+
+    send_input(&mut socket, session_id, "exit 0\n").await;
+    wait_for_session_type(&mut socket, "exit", session_id).await;
+    let retained = list_session_summaries(&mut socket).await;
+    assert_eq!(retained[0]["state"], "exited");
+    assert_eq!(retained[0]["runtime_git"]["state"], "repository");
+    assert_eq!(retained[0]["runtime_git"]["stale"], true);
+    let _ = fs::remove_dir_all(repository);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

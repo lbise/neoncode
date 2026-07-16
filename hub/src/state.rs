@@ -9,7 +9,8 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::debug;
 
 use crate::{
-    protocol::{ExitSummary, RuntimeCwd, SessionState, SessionSummary},
+    git::GitMetadataCache,
+    protocol::{ExitSummary, RuntimeCwd, RuntimeGit, SessionState, SessionSummary},
     session::{ReplayCursor, Session, SessionSubscription, default_shell},
 };
 
@@ -80,6 +81,7 @@ pub fn validate_capability_token(token: &str) -> Result<()> {
 pub struct SessionRegistry {
     sessions: Mutex<HashMap<String, SessionEntry>>,
     retained_exits: Mutex<RetainedExitState>,
+    git_metadata: GitMetadataCache,
 }
 
 impl SessionRegistry {
@@ -142,19 +144,27 @@ impl SessionRegistry {
             .map_err(|_| anyhow!("retained exit mutex poisoned"))?;
         let mut summaries = sessions
             .iter()
-            .map(|(session_id, entry)| SessionSummary {
-                session_id: session_id.clone(),
-                instance_id: entry.session.instance_id().to_string(),
-                command: entry.command.clone(),
-                cwd: entry.cwd.clone(),
-                runtime_cwd: entry.session.runtime_cwd(),
-                persistent: entry.persistent,
-                attachment_count: u32::try_from(entry.attachments.len()).unwrap_or(u32::MAX),
-                state: SessionState::Running,
-                latest_exit: retained
-                    .records
-                    .get(session_id)
-                    .map(|record| record.outcome.clone()),
+            .map(|(session_id, entry)| {
+                let runtime_cwd = entry.session.runtime_cwd();
+                let runtime_git = self.git_metadata.observe(
+                    entry.session.instance_id(),
+                    runtime_cwd.path.as_deref().filter(|_| !runtime_cwd.stale),
+                );
+                SessionSummary {
+                    session_id: session_id.clone(),
+                    instance_id: entry.session.instance_id().to_string(),
+                    command: entry.command.clone(),
+                    cwd: entry.cwd.clone(),
+                    runtime_cwd,
+                    runtime_git,
+                    persistent: entry.persistent,
+                    attachment_count: u32::try_from(entry.attachments.len()).unwrap_or(u32::MAX),
+                    state: SessionState::Running,
+                    latest_exit: retained
+                        .records
+                        .get(session_id)
+                        .map(|record| record.outcome.clone()),
+                }
             })
             .collect::<Vec<_>>();
         summaries.extend(
@@ -168,6 +178,7 @@ impl SessionRegistry {
                     command: record.command.clone(),
                     cwd: record.cwd.clone(),
                     runtime_cwd: record.runtime_cwd.clone(),
+                    runtime_git: record.runtime_git.clone(),
                     persistent: record.persistent,
                     attachment_count: 0,
                     state: SessionState::Exited,
@@ -410,6 +421,7 @@ impl SessionRegistry {
                     command: entry.command,
                     cwd: entry.cwd,
                     runtime_cwd: entry.session.runtime_cwd(),
+                    runtime_git: self.git_metadata.take(entry.session.instance_id()),
                     persistent: entry.persistent,
                     outcome,
                 },
@@ -514,6 +526,7 @@ struct RetainedExitRecord {
     command: String,
     cwd: Option<String>,
     runtime_cwd: RuntimeCwd,
+    runtime_git: RuntimeGit,
     persistent: bool,
     outcome: ExitSummary,
 }
@@ -555,7 +568,7 @@ impl RetainedExitState {
 mod tests {
     use std::collections::HashMap;
 
-    use crate::protocol::{ExitReason, ExitSummary, RuntimeCwd, RuntimeCwdState};
+    use crate::protocol::{ExitReason, ExitSummary, RuntimeCwd, RuntimeCwdState, RuntimeGit};
 
     use super::{
         AppState, MAX_RETAINED_EXITS, MAX_WEBSOCKET_CONNECTIONS, RetainedExitRecord,
@@ -579,6 +592,7 @@ mod tests {
                         state: RuntimeCwdState::Unavailable,
                         stale: true,
                     },
+                    runtime_git: RuntimeGit::unavailable(true),
                     persistent: true,
                     outcome: ExitSummary {
                         attention_id: format!("{index:032x}"),
@@ -601,6 +615,7 @@ mod tests {
                     state: RuntimeCwdState::Current,
                     stale: true,
                 },
+                runtime_git: RuntimeGit::unavailable(true),
                 persistent: true,
                 outcome: ExitSummary {
                     attention_id: "ffffffffffffffffffffffffffffffff".to_string(),
@@ -631,6 +646,7 @@ mod tests {
                             state: RuntimeCwdState::Unavailable,
                             stale: true,
                         },
+                        runtime_git: RuntimeGit::unavailable(true),
                         persistent: true,
                         outcome: ExitSummary {
                             attention_id: format!("{index:032x}"),

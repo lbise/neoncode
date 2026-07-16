@@ -282,6 +282,8 @@ function validatesSessionSummaries(): void {
     cwd: '/tmp',
     runtimeCwd: null,
     runtimeCwdComplete: false,
+    runtimeGit: null,
+    runtimeGitComplete: false,
     persistent: true,
     attachmentCount: 2,
     metadataComplete: true,
@@ -298,6 +300,8 @@ function validatesSessionSummaries(): void {
     cwd: null,
     runtimeCwd: null,
     runtimeCwdComplete: false,
+    runtimeGit: null,
+    runtimeGitComplete: false,
     persistent: null,
     attachmentCount: null,
     metadataComplete: false,
@@ -312,11 +316,27 @@ function validatesSessionSummaries(): void {
     command: 'bash',
     cwd: '/configured',
     runtime_cwd: { path: '/live', state: 'current', stale: false },
+    runtime_git: { state: 'repository', branch: 'main', detached: false, dirty: true, stale: false },
     persistent: true,
     attachment_count: 0,
   }]);
   assert.deepEqual(runtime[0]?.runtimeCwd, { path: '/live', state: 'current', stale: false });
   assert.equal(runtime[0]?.runtimeCwdComplete, true);
+  assert.deepEqual(runtime[0]?.runtimeGit, {
+    state: 'repository', branch: 'main', detached: false, dirty: true, stale: false,
+  });
+  assert.equal(runtime[0]?.runtimeGitComplete, true);
+  assert.throws(
+    () => normalizeSessionSummaries([{
+      session_id: 'bad-git',
+      command: 'bash',
+      cwd: null,
+      runtime_git: { state: 'repository', branch: 'main', detached: true, dirty: false, stale: false },
+      persistent: true,
+      attachment_count: 0,
+    }]),
+    /runtime_git is invalid/,
+  );
   assert.throws(
     () => normalizeSessionSummaries([{
       session_id: 'bad-runtime',

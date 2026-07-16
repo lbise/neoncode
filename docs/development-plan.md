@@ -297,7 +297,7 @@ Still needed:
 - [x] Show configured WSL launch-location summaries and aggregate session state in the sidebar.
 - [ ] Add richer runtime workspace metadata:
   - [x] live shell/foreground-job cwd;
-  - [ ] git branch/dirty state;
+  - [x] git branch/dirty state;
   - [ ] retained latest notification/error.
 
 ### Milestone: workspace status sidebar
@@ -323,6 +323,19 @@ Status: implementation complete; Windows Electron rerun blocked by Defender quar
 - [x] Strictly normalize the independent protocol-v1 field in TypeScript while accepting legacy absence.
 - [x] Poll metadata with one bounded discovery request at a time and prefer runtime paths in workspace locations.
 - [x] Cover shell `cd`, foreground-child cwd, fallback, parser edge cases, and malformed client metadata.
+
+### Milestone: live Git workspace state
+
+Status: implementation complete; Windows Electron preview remains unavailable on the managed Defender-blocked runtime.
+
+- [x] Probe runtime cwd directly without a shell or inherited Git/authentication overrides.
+- [x] Bound probes to two fixed workers, 64 queued jobs, two-second refresh/timeout, and 64 KiB stdout/stderr limits.
+- [x] Cache by session incarnation/cwd generation and reject stale worker results.
+- [x] Report pending, repository, non-repository, unavailable, detached, dirty, and stale states.
+- [x] Preserve the last good same-cwd result across transient failures and retain final metadata after exit.
+- [x] Strictly normalize the independent additive protocol-v1 field while accepting legacy absence.
+- [x] Aggregate branch/dirty state in workspace sidebar/test state.
+- [x] Cover clean, untracked/dirty, committed, detached, malformed, and real temporary-repository behavior.
 
 ### 5. Hub protocol evolution
 
