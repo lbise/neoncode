@@ -403,7 +403,7 @@ export interface NeoncodeDesktopApi {
   readClipboardText(): Promise<string>;
   writeClipboardText(text: string): Promise<void>;
   setActiveWorkspace(workspaceId: string): Promise<string>;
-  saveWorkspaceLayout(workspaceId: string, layout: WorkspaceLayoutState): Promise<WorkspaceLayoutState>;
+  saveWorkspaceLayout(workspaceId: string, layout: WorkspaceLayoutState): Promise<void>;
   onPrepareClose(callback: PrepareCloseCallback): void;
 }
 

@@ -202,9 +202,6 @@ ipcMain.handle('neoncode:save-workspace-layout', (_event, workspaceId: unknown, 
   });
   desktopState = savedState;
   log('state.workspace-layout', { workspaceId });
-  const savedLayout = savedState.workspaceLayouts[workspaceId];
-  if (!savedLayout) throw new Error('saved workspace layout is missing');
-  return savedLayout;
 });
 
 ipcMain.handle('neoncode:write-clipboard-text', (_event, text: unknown) => {
