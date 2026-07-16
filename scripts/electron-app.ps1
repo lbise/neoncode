@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("bootstrap", "install", "publish", "start", "status", "stop")]
+    [ValidateSet("bootstrap", "install", "probe", "publish", "start", "status", "stop")]
     [string]$Command = "start",
     [string]$OutputPath = "$env:USERPROFILE\neoncode-electron",
     [int]$TerminalCount = 2,
@@ -166,7 +166,8 @@ function Assert-RuntimeReady {
 function Show-RuntimeStatus {
     param(
         [Parameter(Mandatory=$true)][string]$SourceDirectory,
-        [Parameter(Mandatory=$true)][string]$PublishedDirectory
+        [Parameter(Mandatory=$true)][string]$PublishedDirectory,
+        [switch]$ProbeExecution
     )
     $status = Get-RuntimeStatus -SourceDirectory $SourceDirectory -PublishedDirectory $PublishedDirectory
     Write-Host "Electron runtime status"
@@ -182,6 +183,10 @@ function Show-RuntimeStatus {
         Write-Host "  Authenticode:     $($signature.Status)"
     }
     if (-not $status.MarkerMatches) { exit 3 }
+    if (-not $ProbeExecution) {
+        Write-Host "  Execution probe:  not run (use './dev electron-runtime-probe')"
+        return
+    }
     try {
         $versionOutput = & $status.ElectronPath --version 2>&1
         if ($null -eq $LASTEXITCODE) {
@@ -193,9 +198,11 @@ function Show-RuntimeStatus {
         Write-Host "  Execution probe:  BLOCKED"
         Write-Host "  Detail:           $($_.Exception.Message)"
         Write-Host ""
-        Write-Host "The runtime hash is verified, but Windows refused execution. On a managed"
-        Write-Host "endpoint, collect this output and request an IT/Microsoft Defender hash"
-        Write-Host "allow-indicator or false-positive review. Do not disable Defender."
+        Write-Host "The runtime hash is verified, but direct execution from this PowerShell"
+        Write-Host "context failed. WSL-launched PowerShell may be high integrity while the"
+        Write-Host "visible app intentionally launches through medium-integrity Explorer. This"
+        Write-Host "does not prove Defender quarantined the file; inspect security event logs"
+        Write-Host "before requesting an allow-indicator. Do not disable Defender."
         exit 4
     }
 }
@@ -237,6 +244,10 @@ switch ($Command) {
 
     "status" {
         Show-RuntimeStatus -SourceDirectory $sourceDir -PublishedDirectory $publishedDir
+    }
+
+    "probe" {
+        Show-RuntimeStatus -SourceDirectory $sourceDir -PublishedDirectory $publishedDir -ProbeExecution
     }
 
     "start" {

@@ -49,7 +49,8 @@ Explicit commands:
 
 ```bash
 ./dev electron-bootstrap      # only initially or after dependency/runtime changes
-./dev electron-runtime-status # verify marker/hash/signature and probe execution
+./dev electron-runtime-status # verify marker/hash/signature without execution
+./dev electron-runtime-probe  # optional direct high-integrity execution diagnostic
 ./dev publish                 # build/copy artifacts; never reinstalls Electron
 ./dev electron
 ./dev electron-stop           # force-stop only the published NeonCode Electron runtime

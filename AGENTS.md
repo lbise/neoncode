@@ -82,7 +82,8 @@ Typical manual loop:
 
 ```bash
 ./dev electron-bootstrap      # explicitly install/verify stable Windows runtime
-./dev electron-runtime-status # report marker/hash/signature/execution status
+./dev electron-runtime-status # report marker/hash/signature without execution
+./dev electron-runtime-probe  # optional direct high-integrity execution diagnostic
 ./dev electron-publish        # build/copy artifacts without reinstalling runtime
 ./dev electron                # start published Electron app
 ./dev electron-stop           # force-stop only NeonCode's published Electron processes

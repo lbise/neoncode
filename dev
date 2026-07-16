@@ -24,7 +24,8 @@ Electron app commands:
   ./dev electron                      Start already-published Electron app
   ./dev electron-stop                 Force-stop only published NeonCode Electron processes
   ./dev electron-bootstrap     Explicitly install/verify the stable Windows Electron runtime
-  ./dev electron-runtime-status Show runtime hash/marker/signature and probe execution
+  ./dev electron-runtime-status Show runtime hash/marker/signature without execution
+  ./dev electron-runtime-probe  Optional direct high-integrity execution diagnostic
   ./dev electron-install       Alias for electron-bootstrap
   ./dev electron-audit         Audit the locked Electron app dependencies
   ./dev electron-test     Run hidden-window Playwright functional tests
@@ -153,6 +154,10 @@ case "$command" in
 
   electron-runtime-status)
     ps_file 'scripts\electron-app.ps1' -Command status
+    ;;
+
+  electron-runtime-probe)
+    ps_file 'scripts\electron-app.ps1' -Command probe
     ;;
 
   electron-audit)
