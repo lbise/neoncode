@@ -2,6 +2,33 @@ import type { FitAddon } from '@xterm/addon-fit';
 import type { Terminal } from '@xterm/xterm';
 
 import type { WorkspaceLayoutState } from './layout-model';
+import type {
+  CommandExecutionArguments,
+  CommandMetadata,
+  CommandOperationResult,
+} from './command-catalog';
+
+export type {
+  CommandArgumentMap,
+  CommandArguments,
+  CommandAvailability,
+  CommandCategory,
+  CommandContext,
+  CommandDescription,
+  CommandDisabledReason,
+  CommandDispatchResult,
+  CommandExecutionArguments,
+  CommandId,
+  CommandInvocation,
+  CommandMetadata,
+  CommandOperationResult,
+  CommandOwningLayer,
+  CommandResult,
+  CommandResultMap,
+  PaneFocusCommandArgs,
+  WorkspaceDismissAttentionCommandArgs,
+  WorkspaceOpenCommandArgs,
+} from './command-catalog';
 
 export type ActivationMode = 'attach' | 'start';
 export type PersistencePolicy = 'detach' | 'kill';
@@ -324,47 +351,6 @@ export interface PublicPaneState {
   replayResetEvents: number;
 }
 
-export type CommandId =
-  | 'workspace.open'
-  | 'workspace.next'
-  | 'workspace.previous'
-  | 'pane.focus'
-  | 'pane.next'
-  | 'pane.previous';
-
-export type CommandContext = 'workspace' | 'pane';
-
-export interface CommandMetadata {
-  id: CommandId;
-  title: string;
-  category: 'Workspace' | 'Pane';
-  context: CommandContext;
-}
-
-export interface WorkspaceOpenCommandArgs {
-  workspaceId: string;
-}
-
-export interface PaneFocusCommandArgs {
-  paneId: string;
-}
-
-export type CommandInvocation =
-  | { id: 'workspace.open'; args: WorkspaceOpenCommandArgs }
-  | { id: 'workspace.next' }
-  | { id: 'workspace.previous' }
-  | { id: 'pane.focus'; args: PaneFocusCommandArgs }
-  | { id: 'pane.next' }
-  | { id: 'pane.previous' };
-
-export type CommandExecutionArguments =
-  | [commandId: 'workspace.open', args: WorkspaceOpenCommandArgs]
-  | [commandId: 'workspace.next']
-  | [commandId: 'workspace.previous']
-  | [commandId: 'pane.focus', args: PaneFocusCommandArgs]
-  | [commandId: 'pane.next']
-  | [commandId: 'pane.previous'];
-
 export interface RendererPublicState {
   configuration: PublicConfiguration;
   panes: PublicPaneState[];
@@ -384,7 +370,7 @@ export interface RendererPublicState {
 
 export interface RendererTestApi {
   getState(): RendererPublicState;
-  executeCommand(...command: CommandExecutionArguments): Promise<void>;
+  executeCommand(...command: CommandExecutionArguments): Promise<CommandOperationResult>;
   listCommands(): CommandMetadata[];
   sendText(paneId: string, text: string): void;
   pasteText(paneId: string, text: string): void;

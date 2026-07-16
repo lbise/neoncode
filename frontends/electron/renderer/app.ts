@@ -1,7 +1,4 @@
 import type {
-  CommandExecutionArguments,
-  CommandInvocation,
-  CommandMetadata,
   ExitSummary,
   LaunchProfile,
   NormalizedSessionSummary,
@@ -14,6 +11,16 @@ import type {
   WorkspaceSummary,
   WorkspaceSummaryState,
 } from '../shared/types';
+import {
+  getCommandMetadata,
+  type CommandDisabledReason,
+  type CommandDispatchResult,
+  type CommandExecutionArguments,
+  type CommandInvocation,
+  type CommandMetadata,
+  type CommandOperationResult,
+} from '../shared/command-catalog';
+import { CommandPalette, type PaletteCommandEntry } from './command-palette';
 import { CommandRegistry } from './command-registry';
 import { HubClient, type UnknownMessage } from './hub-client';
 import { KeybindingRouter, createDefaultKeybindings } from './keybinding-router';
@@ -284,7 +291,12 @@ export class NeonCodeApp {
   readonly focusModel: PaneFocusModel;
   readonly commandRegistry: CommandRegistry;
   readonly keybindingRouter: KeybindingRouter;
+  readonly commandPalette: CommandPalette;
   readonly onDocumentKeyDown = (event: KeyboardEvent): void => {
+    if (this.commandPalette.isOpen) {
+      this.commandPalette.handleKeyDown(event);
+      return;
+    }
     const resolution = this.keybindingRouter.resolve({
       code: event.code,
       altKey: event.altKey,
@@ -327,16 +339,41 @@ export class NeonCodeApp {
       paneIds: workspace.panes.map((pane) => pane.paneId),
     })));
     this.commandRegistry = new CommandRegistry({
+      'palette.open': () => this.commandPalette.open(),
+      'palette.close': () => this.commandPalette.close(),
       'workspace.open': ({ workspaceId }) => this.switchWorkspace(workspaceId),
       'workspace.next': () => this.switchRelativeWorkspace(1),
       'workspace.previous': () => this.switchRelativeWorkspace(-1),
+      'workspace.dismissAttention': ({ workspaceId }) => this.acknowledgeWorkspaceAttention(workspaceId),
       'pane.focus': ({ paneId }) => this.focusPane(paneId),
       'pane.next': () => this.focusNextPane(),
       'pane.previous': () => this.focusPreviousPane(),
+    }, {
+      'palette.open': () => this.closed
+        ? 'Application is closing'
+        : this.commandPalette.isOpen ? 'Command palette is already open' : null,
+      'palette.close': () => this.commandPalette.isOpen ? null : 'Command palette is not open',
+      'workspace.open': ({ workspaceId }) => this.workspaceCommandDisabledReason(workspaceId),
+      'workspace.next': () => this.relativeWorkspaceCommandDisabledReason(),
+      'workspace.previous': () => this.relativeWorkspaceCommandDisabledReason(),
+      'workspace.dismissAttention': ({ workspaceId }) => this.dismissAttentionDisabledReason(workspaceId),
+      'pane.focus': ({ paneId }) => this.paneCommandDisabledReason(paneId),
+      'pane.next': () => this.relativePaneCommandDisabledReason(),
+      'pane.previous': () => this.relativePaneCommandDisabledReason(),
     });
     this.keybindingRouter = new KeybindingRouter(
       createDefaultKeybindings(this.config.workspaces.map((workspace) => workspace.id)),
     );
+    this.commandPalette = new CommandPalette({
+      documentRef: this.document,
+      registry: this.commandRegistry,
+      getEntries: () => this.createPaletteEntries(),
+      dispatch: (invocation) => this.dispatchCommand(invocation),
+      restoreActivePaneFocus: () => this.applyActivePaneFocus(),
+    });
+    requiredElement(this.document, 'commands-button').addEventListener('click', () => {
+      void this.dispatchCommand({ id: 'palette.open' });
+    });
     this.document.addEventListener('keydown', this.onDocumentKeyDown, true);
     this.sessionModel.setConfiguration({
       valid: this.config.configurationValid,
@@ -377,7 +414,7 @@ export class NeonCodeApp {
     return this.focusModel.activeWorkspaceId;
   }
 
-  executeCommand(...command: CommandExecutionArguments): Promise<void> {
+  executeCommand(...command: CommandExecutionArguments): Promise<CommandOperationResult> {
     return this.commandRegistry.execute(...command);
   }
 
@@ -385,11 +422,110 @@ export class NeonCodeApp {
     return this.commandRegistry.list();
   }
 
-  dispatchCommand(command: CommandInvocation): void {
-    void this.commandRegistry.executeInvocation(command).catch((error) => {
+  async dispatchCommand(command: CommandInvocation): Promise<CommandDispatchResult> {
+    try {
+      return await this.commandRegistry.executeInvocation(command);
+    } catch (error) {
+      const message = errorMessage(error);
       console.error('command_failed', command.id, error);
-      this.setStatus(`Command failed: ${errorMessage(error)}`);
-    });
+      this.setStatus(`Command failed: ${message}`);
+      return { status: 'failed', message };
+    }
+  }
+
+  workspaceCommandDisabledReason(workspaceId: string): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    if (!this.config.workspaces.some((workspace) => workspace.id === workspaceId)) {
+      return 'Workspace is unavailable';
+    }
+    if (this.switching) return 'Workspace switch is in progress';
+    return null;
+  }
+
+  relativeWorkspaceCommandDisabledReason(): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    if (this.config.workspaces.length === 0) return 'No configured workspace is available';
+    if (this.config.workspaces.length === 1) return 'No other workspace is available';
+    if (this.switching) return 'Workspace switch is in progress';
+    return null;
+  }
+
+  dismissAttentionDisabledReason(workspaceId: string): CommandDisabledReason | null {
+    const workspaceReason = this.workspaceCommandDisabledReason(workspaceId);
+    if (workspaceReason !== null) return workspaceReason;
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === workspaceId);
+    const hasAttention = workspace?.panes.some(
+      (pane) => this.workspaceSessionStates.get(pane.sessionId)?.attention !== null,
+    ) ?? false;
+    return hasAttention ? null : 'Workspace has no attention to dismiss';
+  }
+
+  paneCommandDisabledReason(paneId: string): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    const activeWorkspace = this.config.workspaces.find(
+      (workspace) => workspace.id === this.activeWorkspaceId,
+    );
+    if (!activeWorkspace || !activeWorkspace.panes.some((pane) => pane.paneId === paneId)) {
+      return 'Pane is unavailable';
+    }
+    return null;
+  }
+
+  relativePaneCommandDisabledReason(): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    const activeWorkspace = this.config.workspaces.find(
+      (workspace) => workspace.id === this.activeWorkspaceId,
+    );
+    if (!activeWorkspace || activeWorkspace.panes.length === 0) {
+      return 'No active pane is available';
+    }
+    return activeWorkspace.panes.length === 1 ? 'No other pane is available' : null;
+  }
+
+  createPaletteEntries(): PaletteCommandEntry[] {
+    const entries: PaletteCommandEntry[] = [];
+    const add = (invocation: CommandInvocation, title: string, additionalSearchTerms: string[] = []): void => {
+      const metadata = getCommandMetadata(invocation.id);
+      entries.push({
+        invocation,
+        title,
+        category: metadata.category,
+        searchTerms: [...metadata.searchTerms, ...additionalSearchTerms],
+        shortcut: this.keybindingRouter.shortcutFor(invocation),
+      });
+    };
+
+    add({ id: 'palette.open' }, getCommandMetadata('palette.open').title);
+    add({ id: 'palette.close' }, getCommandMetadata('palette.close').title);
+    add({ id: 'workspace.next' }, getCommandMetadata('workspace.next').title);
+    add({ id: 'workspace.previous' }, getCommandMetadata('workspace.previous').title);
+    for (const workspace of this.config.workspaces) {
+      add(
+        { id: 'workspace.open', args: { workspaceId: workspace.id } },
+        `Open Workspace: ${workspace.name}`,
+        [workspace.id, workspace.name],
+      );
+    }
+    const activeWorkspace = this.config.workspaces.find(
+      (workspace) => workspace.id === this.activeWorkspaceId,
+    );
+    for (const pane of activeWorkspace?.panes ?? []) {
+      add(
+        { id: 'pane.focus', args: { paneId: pane.paneId } },
+        `Focus Pane: ${pane.title}`,
+        [pane.paneId, pane.title, activeWorkspace?.name ?? ''],
+      );
+    }
+    add({ id: 'pane.next' }, getCommandMetadata('pane.next').title);
+    add({ id: 'pane.previous' }, getCommandMetadata('pane.previous').title);
+    for (const workspace of this.config.workspaces) {
+      add(
+        { id: 'workspace.dismissAttention', args: { workspaceId: workspace.id } },
+        `Dismiss Attention: ${workspace.name}`,
+        [workspace.id, workspace.name, 'notification', 'exit'],
+      );
+    }
+    return entries;
   }
 
   switchRelativeWorkspace(direction: 1 | -1): Promise<void> {
@@ -708,19 +844,17 @@ export class NeonCodeApp {
       acknowledge.className = 'workspace-attention-button';
       acknowledge.dataset.testid = `workspace-acknowledge-${workspace.id}`;
       acknowledge.textContent = 'Dismiss';
-      acknowledge.setAttribute('aria-label', `Dismiss exit attention for ${workspace.name}`);
-      acknowledge.title = `Dismiss exit attention for ${workspace.name}`;
+      acknowledge.setAttribute('aria-label', `Dismiss attention for ${workspace.name}`);
+      acknowledge.title = `Dismiss attention for ${workspace.name}`;
       acknowledge.hidden = true;
       acknowledge.addEventListener('click', () => {
         acknowledge.disabled = true;
-        this.acknowledgeWorkspaceAttention(workspace.id)
-          .catch((error) => {
-            console.error('workspace_attention_acknowledge_failed', error);
-            this.setStatus(`Could not dismiss workspace attention: ${errorMessage(error)}`);
-          })
-          .finally(() => {
-            acknowledge.disabled = false;
-          });
+        void this.dispatchCommand({
+          id: 'workspace.dismissAttention',
+          args: { workspaceId: workspace.id },
+        }).finally(() => {
+          acknowledge.disabled = false;
+        });
       });
       entry.append(button, acknowledge);
       this.workspaceList.append(entry);

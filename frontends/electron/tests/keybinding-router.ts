@@ -27,10 +27,17 @@ const router = new KeybindingRouter(bindings);
 
 assert.deepEqual(
   bindings.map((binding) => binding.code),
-  ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'F6', 'F6'],
+  ['KeyP', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'F6', 'F6'],
   'default bindings contained an unexpected shortcut',
 );
 
+assert.deepEqual(
+  router.resolve(key({ code: 'KeyP', ctrlKey: true, shiftKey: true })),
+  { claimed: true, execute: true, command: { id: 'palette.open' } },
+);
+assert.equal(router.shortcutFor({ id: 'palette.open' }), 'Ctrl+Shift+P');
+assert.equal(router.shortcutFor({ id: 'workspace.open', args: { workspaceId: 'two' } }), 'Alt+2');
+assert.equal(router.shortcutFor({ id: 'pane.focus', args: { paneId: 'tasks' } }), null);
 assert.deepEqual(
   router.resolve(key({ code: 'Digit2', altKey: true })),
   {
@@ -60,6 +67,8 @@ for (const input of [
   key({ code: 'Digit2', altKey: true, altGraphKey: true }),
   key({ code: 'Digit0', altKey: true }),
   key({ code: 'Digit2', metaKey: true, altKey: true }),
+  key({ code: 'KeyP', ctrlKey: true, shiftKey: true, altKey: true }),
+  key({ code: 'KeyP', ctrlKey: true }),
 ]) {
   assert.deepEqual(router.resolve(input), { claimed: false });
 }

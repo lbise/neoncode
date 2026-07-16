@@ -284,6 +284,59 @@ async function verifyCockpitKeyboardNavigation(page: Page): Promise<void> {
   await waitForActivePane(page, 'default', 'shell');
 }
 
+async function verifyCommandPalette(page: Page): Promise<void> {
+  const commandsButton = page.getByTestId('commands-button');
+  const overlay = page.getByTestId('command-palette-overlay');
+  const input = page.getByTestId('command-palette-input');
+  assert(await commandsButton.isVisible(), 'visible Commands button was not rendered');
+
+  const dismissMetadata = await page.evaluate(() => (
+    window.neoncodeTest.listCommands().find((command) => command.id === 'workspace.dismissAttention')
+  ));
+  assert(dismissMetadata?.title === 'Dismiss Workspace Attention', 'Dismiss command title was not catalog-backed');
+  assert(dismissMetadata.category === 'Workspace', 'Dismiss command category was incorrect');
+  assert(dismissMetadata.context === 'workspace', 'Dismiss command context was incorrect');
+  assert(dismissMetadata.owningLayer === 'renderer', 'Dismiss command owning layer was incorrect');
+  assert(dismissMetadata.externalInvocation === true, 'Dismiss command external eligibility was incorrect');
+  assert(dismissMetadata.searchTerms.includes('notification'), 'Dismiss command search metadata was incomplete');
+
+  await commandsButton.click();
+  assert(await overlay.isVisible(), 'Commands button did not open the command palette');
+  assert(await input.evaluate((element) => element === document.activeElement), 'palette search did not receive initial focus');
+  await page.keyboard.press('Escape');
+  assert(await overlay.isHidden(), 'Escape did not close the button-opened palette');
+
+  await page.getByTestId('terminal-shell').locator('.xterm-helper-textarea').focus();
+  await waitForActivePane(page, 'default', 'shell');
+  await page.keyboard.press('Control+Shift+P');
+  assert(await overlay.isVisible(), 'Ctrl+Shift+P did not open the command palette');
+  assert(await input.evaluate((element) => element === document.activeElement), 'shortcut-opened palette did not focus search');
+  await page.keyboard.type('Focus Pane');
+  await page.keyboard.press('ArrowDown');
+  const selectedTitle = await page.locator('.command-palette-option[aria-selected="true"] .command-palette-option-title').textContent();
+  assert(selectedTitle === 'Focus Pane: Configured Tasks', `palette arrow selection chose ${selectedTitle}`);
+  await page.keyboard.press('Enter');
+  await waitForActivePane(page, 'default', 'tasks');
+  assert(await overlay.isHidden(), 'executed palette command did not close the palette');
+
+  await page.keyboard.press('Control+Shift+P');
+  assert(await input.evaluate((element) => element === document.activeElement), 'reopened palette did not focus search');
+  await page.keyboard.press('Escape');
+  await waitForActivePane(page, 'default', 'tasks');
+  assert(await overlay.isHidden(), 'Escape did not close the keyboard-opened palette');
+
+  const beforeInputEvents = requirePane(await getState(page), 'tasks').inputEvents;
+  await pressTerminalKey(page, 'tasks', 'Control+l');
+  await page.waitForFunction(
+    ({ paneId, previousInputEvents }) => {
+      const pane = window.neoncodeTest.getState().panes.find((candidate) => candidate.paneId === paneId);
+      return pane?.inputEvents === previousInputEvents + 1;
+    },
+    { paneId: 'tasks', previousInputEvents: beforeInputEvents },
+    { timeout },
+  );
+}
+
 async function terminalPoint(
   page: Page,
   paneId: string,
@@ -746,9 +799,12 @@ async function runFirstLaunchChecks(
   const commandIds = await page.evaluate(() => window.neoncodeTest.listCommands().map((command) => command.id));
   assert(
     JSON.stringify(commandIds) === JSON.stringify([
+      'palette.open',
+      'palette.close',
       'workspace.open',
       'workspace.next',
       'workspace.previous',
+      'workspace.dismissAttention',
       'pane.focus',
       'pane.next',
       'pane.previous',
@@ -764,6 +820,7 @@ async function runFirstLaunchChecks(
     'configured tasks title was not rendered',
   );
   await verifyCockpitKeyboardNavigation(page);
+  await verifyCommandPalette(page);
 
   await verifyExecutedCommand(page, 'shell', 'shell-command', runToken);
   await verifyExecutedCommand(page, 'tasks', 'tasks-command', runToken);

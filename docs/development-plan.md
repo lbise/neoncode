@@ -351,42 +351,55 @@ Status: protocol, retention, polling UI, and acknowledgement complete; CLI publi
 
 ### Immediate product priority: keyboard-first workspace cockpit
 
-Status: command/keybinding/focus plus pure tab/split model and persisted-state groundwork complete. Runtime renderer adoption and GUI remain next.
+Status: phases 1–2 now deliver the typed command boundary and keyboard-complete palette for existing operations. Schema 5 settings/keybindings, visible runtime tabs/splits, and authenticated external app control remain later phases.
 
-Interaction and command foundation:
+#### Phase 1: shared typed command contract, results, and context
 
-- [x] Define stable command IDs and a central command registry instead of adding ad hoc `keydown` handlers.
-- [x] Add enumerable command contexts/labels and route unhandled keys unchanged to xterm.
-- [x] Track one authoritative active workspace/pane focus target, remember it per workspace, and restore xterm focus after switches.
-- [x] Define the initial terminal-safe exact defaults and reject modifier/AltGraph conflicts.
-- [ ] Add a validated future user keybinding override schema.
-- [x] Add deterministic registry/keybinding/focus tests plus hidden-Electron checks for F6/Shift+F6 and Alt+1/2.
-- [x] Make all current workspace and pane-focus cockpit actions available through the command registry even without a default shortcut.
+- [x] Define stable command IDs in `shared/command-catalog.ts`, independently of renderer handler implementations.
+- [x] Map each ID to strict argument and result types, category, context, search terms, owning layer, and future external-invocation eligibility.
+- [x] Strictly validate runtime invocations, including exact argument shapes and bounded workspace/pane identifiers.
+- [x] Keep implementation and enablement in the renderer registry; expose typed disabled reasons and return bounded disabled/completed operation results.
+- [x] Normalize unexpected registry handler failures at app dispatch without treating expected disabled operations as errors.
+- [x] Route sidebar workspace, pane focus, and workspace Dismiss attention actions through the same registry.
+- [x] Preserve the authoritative active workspace/pane focus model and pass unclaimed terminal keys unchanged to xterm.
 
-Frontend-owned layout model:
+#### Phase 2: keyboard-complete command palette for current operations
+
+- [x] Add a visible Commands button and default `Ctrl+Shift+P` binding.
+- [x] Search catalog operations plus concrete configured workspace/current-pane targets, with categories, current shortcut labels, and disabled reasons.
+- [x] Support initial search focus, wrapping arrow navigation, one-shot Enter execution, Escape close, and trapped accessible Tab movement.
+- [x] Restore the previously focused terminal control after keyboard close, with active-pane fallback when the old surface no longer exists.
+- [x] Ensure overlay handling precedes terminal routing only while open; preserve ordinary terminal key input while closed.
+- [x] Add strict catalog/registry/filter/navigation tests and hidden-Electron checks for the button, shortcut, keyboard selection, Escape focus restoration, Dismiss metadata, and terminal pass-through.
+
+#### Phase 3: configuration schema 5 keybindings and settings
+
+- [ ] Add schema 5 with strict migration from schema 4 and validated per-command keybinding overrides, including explicit unbinding.
+- [ ] Reject duplicate, AltGraph/Ctrl+Alt, reserved, malformed, and terminal-conflicting overrides at the trusted main-process configuration boundary.
+- [ ] Persist settings atomically with backup/recovery behavior matching existing config/state storage.
+- [ ] Add an accessible settings UI for viewing/editing keybindings and other supported preferences without direct JSON edits or restart-only application.
+- [ ] Make palette shortcut labels and conflict diagnostics update from effective defaults plus overrides.
+
+#### Phase 4: visible tabs/splits and dynamic pane definitions
 
 - [x] Define terminology and identity: workspace = project/context, tab = top-level layout, pane = session surface, panel = auxiliary UI.
-- [x] Add a pure typed tab/split tree with stable caller-supplied IDs, split direction/ratio, active pane, immutable deterministic create/close/focus/move/resize operations, and strict limits.
-- [x] Add deterministic schema 4 configured-grid seeding into one initial tab without changing session keys; runtime renderer adoption remains unchecked.
-- [x] Persist validated workspace tab/layout state separately from backend session identity in atomically migrated desktop state schema 3, with an unused typed save IPC.
-- [ ] Create/close/rename/reorder tabs and split/close/focus panes from commands before adding mouse-only controls.
-- [ ] Add dynamic terminal creation from a validated launch profile, with bounded workspace/pane limits and explicit detach/kill behavior.
-- [ ] Restore layouts across close/reopen, hub reconnect, missing sessions, and replacement session incarnations.
+- [x] Add the pure typed tab/split tree, deterministic schema 4 grid seeding, validated state schema 3 persistence, and typed save IPC groundwork.
+- [ ] Replace configured-grid-only rendering with visible tab strips and split-tree DOM, including headers, focus rings, empty states, and accessible state.
+- [ ] Create/close/rename/reorder tabs and split/close/focus/resize panes through catalog commands before adding mouse-only controls.
+- [ ] Persist dynamic pane definitions that reference validated launch profiles without coupling pane identity to hub session identity.
+- [ ] Restore tabs/splits and dynamic terminal surfaces across relaunch, reconnect, missing sessions, and replacement session incarnations.
 
-GUI and keyboard-first presentation:
+#### Phase 5: authenticated local app-control transport for CLI
 
-- [ ] Add a compact tab strip, pane headers, active-pane focus ring, empty states, and accessible status/attention indicators.
-- [ ] Add a command palette (`Ctrl+Shift+P`) backed by the same registry, with keyboard search/navigation and no duplicate action implementations.
-- [ ] Add visible shortcut hints/tooltips and a keyboard-shortcuts reference surface.
-- [ ] Add design tokens for spacing, typography, borders, focus, status colors, and density before broad CSS polish.
-- [ ] Add a notifications panel and commands to jump to/dismiss the latest unread item.
-- [ ] Support keyboard-only workspace/tab/pane creation, navigation, splitting, resizing, and closing.
-- [ ] Preserve terminal conventions by testing Ctrl+C/D/Z, readline keys, tmux, and Neovim after every shortcut milestone.
-- [ ] Add Playwright coverage for focus ownership, tab/split restoration, palette operation, and all default shortcuts.
+- [ ] Add a dedicated local app-control endpoint owned by the desktop application, not by the PTY hub protocol.
+- [ ] Authenticate the local transport with a non-relayable or OS-protected mechanism and strict request/result validation.
+- [ ] Expose only catalog commands marked externally eligible, with concrete workspace/pane arguments, bounded results, and explicit version/capability negotiation.
+- [ ] Extend `neoncode` CLI workspace list/open and app-control commands over that transport.
+- [ ] Keep `neoncode-hub` layout-agnostic: it continues to own PTY/session lifecycle while Electron owns workspaces, tabs, splits, palette, and presentation.
 
-Initial shortcut candidates (subject to conflict tests): `Ctrl+Shift+P` palette, `Ctrl+Shift+T` new tab, `Ctrl+PageUp/PageDown` tab navigation, Windows-Terminal-style `Alt+Shift+D/-/=` splitting, `F6`/`Shift+F6` pane cycling, and `Alt+1..9` workspace selection. Closing and directional-focus bindings must be chosen only after terminal-conflict testing.
+Future shortcut candidates (subject to conflict tests): `Ctrl+Shift+T` new tab, `Ctrl+PageUp/PageDown` tab navigation, Windows-Terminal-style `Alt+Shift+D/-/=` splitting, directional pane focus, and close operations. `F6`/`Shift+F6`, `Alt+1..9`, and `Ctrl+Shift+P` are the current defaults.
 
-Acceptance: starting from the keyboard, a user can switch/open a workspace, create and rename a tab, split and focus panes, start a terminal from a profile, resize/close the layout, inspect attention, and restore the same view after relaunch without disrupting normal terminal key input.
+Acceptance for the full cockpit milestone: starting from the keyboard, a user can switch/open a workspace, create and rename a tab, split and focus panes, start a terminal from a profile, resize/close the layout, inspect attention, and restore the same view after relaunch without disrupting normal terminal input.
 
 ### 5. Hub protocol evolution
 

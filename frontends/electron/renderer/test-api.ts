@@ -1,5 +1,6 @@
 import type {
   CommandExecutionArguments,
+  CommandOperationResult,
   RendererPublicState,
   RendererTestApi,
 } from '../shared/types';
@@ -22,8 +23,8 @@ export function installRendererTestApi(app: NeonCodeApp): RendererTestApi {
       return cloneJson(app.sessionModel.publicState);
     },
 
-    async executeCommand(...command: CommandExecutionArguments): Promise<void> {
-      await app.executeCommand(...command);
+    async executeCommand(...command: CommandExecutionArguments): Promise<CommandOperationResult> {
+      return app.executeCommand(...command);
     },
 
     listCommands() {
@@ -49,7 +50,7 @@ export function installRendererTestApi(app: NeonCodeApp): RendererTestApi {
     },
 
     async acknowledgeWorkspaceAttention(workspaceId: string): Promise<void> {
-      await app.acknowledgeWorkspaceAttention(workspaceId);
+      await app.executeCommand('workspace.dismissAttention', { workspaceId });
     },
 
     disconnectPaneSocket(paneId: string): void {
