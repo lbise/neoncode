@@ -95,7 +95,6 @@ async function run(): Promise<void> {
     path: '/tmp/created',
     defaultLaunchProfile: 'default-shell',
     sessionId: 'created-shell',
-    paneId: 'created-pane',
     title: 'Shell',
   });
   await registry.execute('workspace.rename', { workspaceId: 'created', name: 'Renamed' });

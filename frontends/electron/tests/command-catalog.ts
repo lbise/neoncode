@@ -17,8 +17,7 @@ const validInvocations: CommandInvocation[] = [
     id: 'workspace.create',
     args: {
       workspaceId: 'created', name: 'Created', path: '/tmp/created',
-      defaultLaunchProfile: 'default-shell', sessionId: 'created-shell',
-      paneId: 'created-pane', title: 'Shell',
+      defaultLaunchProfile: 'default-shell', sessionId: 'created-shell', title: 'Shell',
     },
   },
   { id: 'workspace.rename', args: { workspaceId: 'review', name: 'Code Review' } },
@@ -69,7 +68,7 @@ for (const invalid of [
   { id: 'workspace.create' },
   { id: 'workspace.create', args: {
     workspaceId: 'new', name: 'New', path: 'bad\npath', defaultLaunchProfile: 'default-shell',
-    sessionId: 'new-shell', paneId: 'new-pane', title: 'Shell',
+    sessionId: 'new-shell', title: 'Shell',
   } },
   { id: 'workspace.rename', args: { workspaceId: 'review', name: '' } },
   { id: 'workspace.delete', args: { workspaceId: 'review', disposition: 'later' } },

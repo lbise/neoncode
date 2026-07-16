@@ -126,7 +126,7 @@ export class WorkspaceDialog {
     this.previousFocus = active instanceof HTMLElement ? active : null;
     this.mode = mode;
     this.target = target;
-    this.saving = false;
+    this.setBusy(false);
     this.errorElement.hidden = true;
     this.errorElement.textContent = '';
     this.statusElement.textContent = '';
@@ -250,7 +250,6 @@ export class WorkspaceDialog {
         path,
         defaultLaunchProfile,
         sessionId,
-        paneId: sessionId,
         title: 'Shell',
       });
     } else if (this.mode === 'rename') {

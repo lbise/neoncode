@@ -506,7 +506,10 @@ async function verifyTmuxMouseBehavior(page: Page, paneId: string, token: string
 
   const leftPoint = await terminalPoint(page, paneId, { xFraction: 0.25, yFraction: 0.35 });
   await page.mouse.move(leftPoint.x, leftPoint.y);
-  await page.mouse.wheel(0, -600);
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await page.mouse.wheel(0, -240);
+    await page.waitForTimeout(200);
+  }
   await page.waitForTimeout(1000);
   await sendText(page, paneId, 'q');
   await page.waitForTimeout(100);
@@ -1382,10 +1385,11 @@ async function runWorkspaceCatalogCheck(runToken: string): Promise<void> {
     await instance.page.getByTestId('command-palette-input').fill('Rename Current Workspace');
     await instance.page.keyboard.press('Enter');
     await dialog.waitFor({ state: 'visible', timeout });
+    const renameName = instance.page.getByTestId('workspace-name');
+    await renameName.focus();
     await instance.page.keyboard.press('Control+a');
     await instance.page.keyboard.type('Renamed Workspace');
-    await instance.page.keyboard.press('Tab');
-    await instance.page.keyboard.press('Tab');
+    await instance.page.getByTestId('workspace-dialog-submit').focus();
     await instance.page.keyboard.press('Enter');
     await dialog.waitFor({ state: 'hidden', timeout });
     assert(
@@ -1417,12 +1421,11 @@ async function runWorkspaceCatalogCheck(runToken: string): Promise<void> {
     await instance.page.keyboard.press('Control+Shift+P');
     await instance.page.getByTestId('command-palette-input').fill('Delete Current Workspace');
     await instance.page.keyboard.press('Enter');
-    await dialog.waitFor({ state: 'visible', timeout });
-    await instance.page.keyboard.press('Tab');
-    await instance.page.keyboard.press('Tab');
-    await instance.page.keyboard.press('Tab');
+    const relaunchedDialog = instance.page.getByTestId('workspace-dialog-overlay');
+    await relaunchedDialog.waitFor({ state: 'visible', timeout });
+    await instance.page.getByTestId('workspace-dialog-submit').focus();
     await instance.page.keyboard.press('Enter');
-    await dialog.waitFor({ state: 'hidden', timeout });
+    await relaunchedDialog.waitFor({ state: 'hidden', timeout });
     await instance.page.waitForFunction((workspaceId) => {
       const workspaces: unknown = window.neoncodeTest.getState().configuration.workspaces;
       return Array.isArray(workspaces)
@@ -1443,7 +1446,6 @@ async function runWorkspaceCatalogCheck(runToken: string): Promise<void> {
         path: '/tmp',
         defaultLaunchProfile: 'default-shell',
         sessionId,
-        paneId: sessionId,
         title: 'Shell',
       })
     ), { workspaceId: createdWorkspaceId, sessionId: createdSessionId });

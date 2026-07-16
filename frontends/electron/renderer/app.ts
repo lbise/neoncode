@@ -425,7 +425,7 @@ export class NeonCodeApp {
       'palette.close': () => this.commandPalette.isOpen ? null : 'Command palette is not open',
       'settings.open': () => this.closed
         ? 'Application is closing'
-        : this.workspaceDialog.isOpen || this.commandPalette.isOpen
+        : this.workspaceDialog.isOpen
           ? 'Another overlay is open'
           : this.settingsView.isOpen ? 'Settings are already open' : null,
       'settings.close': () => this.settingsView.isOpen ? null : 'Settings are not open',
@@ -562,7 +562,7 @@ export class NeonCodeApp {
   workspaceDialogDisabledReason(mode: 'create' | 'rename' | 'delete'): CommandDisabledReason | null {
     if (this.closed) return 'Application is closing';
     if (this.catalogSaving || this.switching) return 'Workspace catalog update is in progress';
-    if (this.commandPalette.isOpen || this.settingsView.isOpen || this.workspaceDialog.isOpen) {
+    if (this.settingsView.isOpen || this.workspaceDialog.isOpen) {
       return 'Another overlay is open';
     }
     if (mode === 'create') {
@@ -590,9 +590,6 @@ export class NeonCodeApp {
     if (this.config.workspaces.some((workspace) => (
       workspace.panes.some((pane) => pane.sessionKey === args.sessionId)
     ))) return 'Session is already configured';
-    if (this.config.workspaces.some((workspace) => (
-      workspace.panes.some((pane) => pane.paneId === args.paneId)
-    ))) return 'Pane is already configured';
     if (!Object.hasOwn(this.config.launchProfiles, args.defaultLaunchProfile)) {
       return 'Launch profile is unavailable';
     }
@@ -836,10 +833,10 @@ export class NeonCodeApp {
         panes: [{
           index: 0,
           workspaceId: args.workspaceId,
-          paneId: args.paneId,
+          paneId: args.sessionId,
           sessionKey: args.sessionId,
           title: args.title,
-          terminalElementId: `terminal-${args.workspaceId}-${args.paneId}`,
+          terminalElementId: `terminal-${args.workspaceId}-${args.sessionId}`,
           sessionId: createSessionId(this.config.sessionPrefix, args.sessionId),
           launchProfileId: args.defaultLaunchProfile,
           launchProfile: {

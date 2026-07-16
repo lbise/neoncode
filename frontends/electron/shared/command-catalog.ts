@@ -29,7 +29,6 @@ export interface WorkspaceCreateCommandArgs {
   path: string | null;
   defaultLaunchProfile: string;
   sessionId: string;
-  paneId: string;
   title: string;
 }
 
@@ -385,14 +384,13 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
     case 'workspace.create': {
       if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
           || !hasExactKeys(value.args, [
-            'workspaceId', 'name', 'path', 'defaultLaunchProfile', 'sessionId', 'paneId', 'title',
+            'workspaceId', 'name', 'path', 'defaultLaunchProfile', 'sessionId', 'title',
           ])
           || !isBoundedIdentifier(value.args.workspaceId)
           || !isBoundedLabel(value.args.name)
           || !isWorkspacePath(value.args.path)
           || !isBoundedIdentifier(value.args.defaultLaunchProfile)
           || !isBoundedIdentifier(value.args.sessionId)
-          || !isBoundedIdentifier(value.args.paneId)
           || !isBoundedLabel(value.args.title)) {
         throw new Error('Invalid workspace.create command arguments');
       }
@@ -404,7 +402,6 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
           path: value.args.path,
           defaultLaunchProfile: value.args.defaultLaunchProfile,
           sessionId: value.args.sessionId,
-          paneId: value.args.paneId,
           title: value.args.title,
         },
       };
