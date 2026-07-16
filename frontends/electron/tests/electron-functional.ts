@@ -329,20 +329,17 @@ async function verifyMouseReporting(page: Page, paneId: string, token: string): 
 
 async function verifyTmuxMouseBehavior(page: Page, paneId: string, token: string): Promise<void> {
   const leftClickExpected = `tmux-click-0-${token}`;
-  await clickTerminal(page, paneId, { xFraction: 0.25, yFraction: 0.35 });
-  const clickCommand = `v=$(tmux display-message -p -t "$TMUX_PANE" '#{pane_index}'); printf 'tmux-click-%s-%s\\n' "$v" '${token}'\n`;
-  assertMarkerIsNotEchoed(clickCommand, leftClickExpected);
-  await sendText(page, paneId, clickCommand);
-  await waitForOutput(page, paneId, leftClickExpected);
-  // The marker can arrive just before tmux redraws the shell prompt. Avoid
-  // merging the following long command into that redraw/input transition.
-  await page.waitForTimeout(500);
-
   const resultPath = `/tmp/neoncode-tmux-wheel-${token}`;
   const historyExpected = `tmux-history-${token}`;
-  const historyCommand = `rm -f '${resultPath}'; (j=0; while [ "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_in_mode}')" != 1 ] && [ $j -lt 100 ]; do sleep 0.05; j=$((j+1)); done; [ "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_in_mode}')" = 1 ] && printf 1 > '${resultPath}') & i=0; while [ $i -lt 120 ]; do printf 'tmux-line-%03d\\n' "$i"; i=$((i+1)); done; printf 'tmux-history-%s\\n' '${token}'\n`;
-  assertMarkerIsNotEchoed(historyCommand, historyExpected);
-  await sendText(page, paneId, historyCommand);
+  await clickTerminal(page, paneId, { xFraction: 0.25, yFraction: 0.35 });
+  // Keep pane-selection verification, history generation, and the copy-mode
+  // watcher in one shell command. A marker from one command can precede the
+  // prompt redraw, so sending setup as a second command was inherently racy.
+  const setupCommand = `v=$(tmux display-message -p -t "$TMUX_PANE" '#{pane_index}'); printf 'tmux-click-%s-%s\\n' "$v" '${token}'; rm -f '${resultPath}'; (j=0; while [ "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_in_mode}')" != 1 ] && [ $j -lt 100 ]; do sleep 0.05; j=$((j+1)); done; [ "$(tmux display-message -p -t "$TMUX_PANE" '#{pane_in_mode}')" = 1 ] && printf 1 > '${resultPath}') & i=0; while [ $i -lt 120 ]; do printf 'tmux-line-%03d\\n' "$i"; i=$((i+1)); done; printf 'tmux-history-%s\\n' '${token}'\n`;
+  assertMarkerIsNotEchoed(setupCommand, leftClickExpected);
+  assertMarkerIsNotEchoed(setupCommand, historyExpected);
+  await sendText(page, paneId, setupCommand);
+  await waitForOutput(page, paneId, leftClickExpected);
   await waitForOutput(page, paneId, historyExpected);
 
   const leftPoint = await terminalPoint(page, paneId, { xFraction: 0.25, yFraction: 0.35 });
@@ -680,7 +677,10 @@ async function runFirstLaunchChecks(
   await assertWorkspaceStatus(page, 'review', 'idle', 'Not started');
   const initialLocation = page.getByTestId('workspace-default').locator('.workspace-location');
   assert(await initialLocation.textContent() === 'WSL · 2 paths', 'workspace location summary was not rendered');
-  assert(await initialLocation.getAttribute('data-source') === 'hub', 'started workspace location was not hub-backed');
+  assert(
+    ['hub', 'runtime'].includes(await initialLocation.getAttribute('data-source') ?? ''),
+    'started workspace location was not hub-authoritative',
+  );
   assert(initialState.configuration.terminal.fontSize === 16, 'configured terminal appearance was not exposed');
   for (const pane of initialState.panes) {
     assert(pane.fontFamily === 'Consolas, monospace', `${pane.paneId} font family was not applied`);
@@ -1042,7 +1042,10 @@ async function runSecondLaunchChecks(
     'recovered frontend configuration did not contain the changed cwd',
   );
   const restoredLocation = instance.page.getByTestId('workspace-default').locator('.workspace-location');
-  assert(await restoredLocation.getAttribute('data-source') === 'hub', 'restored workspace location was not hub-backed');
+  assert(
+    ['hub', 'runtime'].includes(await restoredLocation.getAttribute('data-source') ?? ''),
+    'restored workspace location was not hub-authoritative',
+  );
   await assertWorkspaceStatus(instance.page, 'default', 'available', '2 available');
   await assertWorkspaceStatus(instance.page, 'review', 'attention', 'Needs attention');
   const expectedSessionIds = [

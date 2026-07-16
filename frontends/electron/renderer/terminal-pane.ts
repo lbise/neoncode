@@ -386,14 +386,9 @@ export class TerminalPane {
     });
 
     this.container.addEventListener('paste', (event) => {
-      if (this.pasteShortcutActive) {
-        console.log(`terminal_input_suppressed ${this.index} duplicate_dom_paste`);
-        event.preventDefault();
-        return;
-      }
       const text = event.clipboardData?.getData('text/plain');
       if (text) {
-        this.pasteText(text, 'dom_paste');
+        if (!this.shouldSuppressDuplicatePaste(text)) this.pasteText(text, 'dom_paste');
       } else {
         this.pasteClipboardText('dom_paste');
       }
@@ -465,7 +460,8 @@ export class TerminalPane {
   async pasteClipboardText(reason = 'clipboard'): Promise<boolean> {
     try {
       const text = await desktopBridge().readClipboardText();
-      return this.disposed ? false : this.pasteText(text, reason);
+      if (this.disposed || this.shouldSuppressDuplicatePaste(text)) return false;
+      return this.pasteText(text, reason);
     } catch (error) {
       if (!this.disposed) {
         this.setLifecycle('error', `Clipboard read failed: ${errorMessage(error)}`);
