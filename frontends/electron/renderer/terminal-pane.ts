@@ -247,9 +247,6 @@ export class TerminalPane {
     });
     this.setLifecycle('connecting');
 
-    terminal.writeln('\x1b[36mNeonCode\x1b[0m');
-    terminal.writeln(`Connecting ${this.sessionId} to ${this.endpoint}`);
-
     this.configureInputHandlers();
     this.resizeObserver = new ResizeObserver(() => this.scheduleFitAndResize());
     this.resizeObserver.observe(this.container);
@@ -571,7 +568,7 @@ export class TerminalPane {
   handleInvalidHubMessage(error: unknown): void {
     const message = errorMessage(error);
     this.setLifecycle('error', message);
-    this.state.terminal.writeln(`\r\n\x1b[31mInvalid hub JSON: ${message}\x1b[0m`);
+    this.setStatus(`Hub protocol error: ${message}`);
   }
 
   handleHubMessage(message: UnknownMessage): void {
@@ -593,7 +590,7 @@ export class TerminalPane {
         && this.state.sessionInstanceId !== instanceId;
       if (instanceChanged) {
         this.state.terminal.reset();
-        this.state.terminal.writeln('\x1b[33mReplacement session started; terminal replay reset\x1b[0m');
+        this.setStatus('Replacement terminal session started; replay reset');
         this.sessionModel.applyReplayCheckpoint(this.state, {
           instanceId,
           firstAvailableSeq: 1,
@@ -611,14 +608,12 @@ export class TerminalPane {
         if (checkpoint) {
           if (checkpoint.resetRequired) {
             this.state.terminal.reset();
-            this.state.terminal.writeln('\x1b[33mSession incarnation changed; terminal replay reset\x1b[0m');
+            this.setStatus('Terminal session incarnation changed; replay reset');
           }
           this.sessionModel.applyReplayCheckpoint(this.state, checkpoint);
           if (checkpoint.replayTruncated
               || (checkpoint.resetRequired && checkpoint.firstAvailableSeq > 1)) {
-            this.state.terminal.writeln(
-              `\x1b[33mReplay truncated before output sequence ${checkpoint.firstAvailableSeq}\x1b[0m`,
-            );
+            this.setStatus(`Terminal replay truncated before output sequence ${checkpoint.firstAvailableSeq}`);
           }
         }
       } catch (error) {
@@ -651,7 +646,7 @@ export class TerminalPane {
       if (this.statusElement) {
         this.statusElement.textContent = outcome.reason === 'killed' ? 'Killed' : `Exited (${status})`;
       }
-      this.state.terminal.writeln(`\r\n\x1b[33mHub session exited (${status}, ${reason})\x1b[0m`);
+      this.setStatus(`Terminal exited (${status}, ${reason})`);
       this.resolvePendingClose();
     } else if (message.type === 'error'
         && (!message.session_id || message.session_id === this.sessionId)) {
@@ -669,7 +664,6 @@ export class TerminalPane {
     this.reconnectPolicy.reset();
     this.sessionModel.clearReconnect(this.state);
     console.log(`hub_${lifecycle} ${this.index}`);
-    this.state.terminal.writeln(`\r\n\x1b[32mHub session ${lifecycle}\x1b[0m`);
     this.scheduleFitAndResize();
   }
 
@@ -679,7 +673,6 @@ export class TerminalPane {
       return;
     }
     this.setLifecycle('error', message);
-    this.state.terminal.writeln(`\r\n\x1b[31mHub error: ${message}\x1b[0m`);
     this.setStatus(`Hub error: ${message}`);
     if (this.pendingClose) this.finishClose('error', message);
   }
@@ -704,7 +697,6 @@ export class TerminalPane {
     if (this.closed || ['detached', 'killed'].includes(this.state.lifecycle)) return;
 
     console.log(`hub_closed ${this.index}`);
-    this.state.terminal.writeln('\r\n\x1b[33mDisconnected from neoncode-hub; reconnecting\x1b[0m');
     this.scheduleReconnect();
   }
 
@@ -727,8 +719,7 @@ export class TerminalPane {
     if (this.closed) return;
     console.log(`hub_error ${this.index}`);
     this.setLifecycle('error', 'WebSocket error');
-    this.state.terminal.writeln('\r\n\x1b[31mWebSocket error. Is ./dev hub running?\x1b[0m');
-    this.setStatus('WebSocket error');
+    this.setStatus('WebSocket error. Is the NeonCode hub running?');
   }
 }
 

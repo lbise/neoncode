@@ -171,6 +171,7 @@ pane.state = sessionModel.createPaneState({
 });
 pane.setLifecycle('connecting');
 pane.connect();
+assert.deepEqual(terminal.writes, [], 'internal connection text leaked into terminal scrollback');
 
 const bootA = '11'.repeat(32);
 const bootB = '22'.repeat(32);
@@ -222,8 +223,8 @@ assert.equal(pane.state.sessionInstanceId, instanceB);
 assert.equal(pane.state.lastOutputSeq, 0);
 assert.equal(sessionModel.publicState.panes[0]?.replayResetEvents, 1);
 assert(
-  terminal.writes.some((write) => typeof write === 'string' && write.includes('Replacement session started')),
-  'replacement-session replay reset notice was not written',
+  !terminal.writes.some((write) => typeof write === 'string' && (write as string).includes('Replacement session started')),
+  'internal replacement-session notice leaked into terminal scrollback',
 );
 
 clientA.message({ type: 'started', session_id: pane.sessionId, instance_id: 'cc'.repeat(16) });

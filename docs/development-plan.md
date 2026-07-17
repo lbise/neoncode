@@ -28,8 +28,8 @@ Source: `docs/issues.md` from initial alpha dogfooding. This backlog supersedes 
 
 Goal: switching tabs, resizing splits, and normal layout operations must never make the terminal appear to re-run commands or replay internal status text.
 
-- [ ] Remove internal hub/session status writes from the xterm buffer. Connection/start/attach/replay diagnostics belong in app chrome/logs/test state, not inside the user's terminal scrollback.
-- [ ] Stop showing internal session IDs, hub endpoint URLs, and `electron-xterm-shell-session-*` style implementation details in the user-facing terminal/UI.
+- [x] Remove internal hub/session status writes from the xterm buffer. Connection/start/attach/replay diagnostics belong in app chrome/logs/test state, not inside the user's terminal scrollback.
+- [x] Stop showing internal session IDs, hub endpoint URLs, and `electron-xterm-shell-session-*` style implementation details in the user-facing terminal startup path.
 - [ ] Rework tab switching so existing tab terminal surfaces are preserved or parked instead of disposed/detached/recreated on every switch. A tab that still exists should retain its xterm instance, scrollback, WebSocket/PTY attachment where practical, and visual state.
 - [ ] Ensure resize operations update split ratios and fit existing xterm instances in place; they must not trigger PTY restart, shell command replay, or visible attach/start banners.
 - [ ] Add regression tests that put unique shell state/output in multiple tabs, switch/resize repeatedly, and prove no duplicate command execution, no duplicate internal status output, and no session incarnation change.
