@@ -112,6 +112,9 @@ ps_file() {
   if [[ -n "${NEONCODE_HUB_TOKEN:-}" && ":$bridge_env:" != *":NEONCODE_HUB_TOKEN:"* ]]; then
     bridge_env="${bridge_env:+$bridge_env:}NEONCODE_HUB_TOKEN"
   fi
+  if [[ -n "${NEONCODE_WSL_NODE_BIN:-}" && ":$bridge_env:" != *":NEONCODE_WSL_NODE_BIN:"* ]]; then
+    bridge_env="${bridge_env:+$bridge_env:}NEONCODE_WSL_NODE_BIN"
+  fi
   WSLENV="$bridge_env" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$script" "$@"
 }
 
@@ -221,11 +224,11 @@ case "$command" in
     ;;
 
   release-alpha)
-    ps_file 'scripts\release-windows.ps1' -WslRepoPath "$ROOT_DIR" "$@"
+    NEONCODE_WSL_NODE_BIN="$(command -v node || true)" ps_file 'scripts\release-windows.ps1' -WslRepoPath "$ROOT_DIR" "$@"
     ;;
 
   package-alpha)
-    ps_file 'scripts\release-windows.ps1' -WslRepoPath "$ROOT_DIR" -SkipRustBuild -SkipElectronBuild "$@"
+    NEONCODE_WSL_NODE_BIN="$(command -v node || true)" ps_file 'scripts\release-windows.ps1' -WslRepoPath "$ROOT_DIR" -SkipRustBuild -SkipElectronBuild "$@"
     ;;
 
   verify-release)

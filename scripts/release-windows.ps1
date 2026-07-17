@@ -29,6 +29,24 @@ function Assert-WslRepoPath {
     throw "WslRepoPath is required. From WSL use './dev release-alpha', which passes the current repo path."
 }
 
+function Get-WslReleaseCommandPrefix {
+    @'
+set -e
+if [ -n "${NEONCODE_WSL_NODE_BIN:-}" ]; then
+  export PATH="$(dirname "$NEONCODE_WSL_NODE_BIN"):$PATH"
+fi
+if [ -s "$HOME/.nvm/nvm.sh" ]; then
+  . "$HOME/.nvm/nvm.sh"
+  nvm use --silent 24 >/dev/null 2>&1 || nvm use --silent default >/dev/null 2>&1 || true
+fi
+node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+if [ -z "$node_major" ] || [ "$node_major" -lt 18 ]; then
+  echo "NeonCode release build requires Node.js 18+ in WSL; found $(node -v 2>/dev/null || echo missing). Install/use Node 24 with nvm, then rerun ./dev release-alpha." >&2
+  exit 127
+fi
+'@
+}
+
 function Invoke-WslCommand {
     param(
         [Parameter(Mandatory=$true)][string]$RepoPath,
@@ -40,12 +58,15 @@ function Invoke-WslCommand {
         if ($Capture) { return "" }
         return
     }
+    $fullCommand = (Get-WslReleaseCommandPrefix) + "`n" + $Command
+    $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($fullCommand))
+    $launcher = "printf '%s' '$encodedCommand' | base64 -d | bash"
     if ($Capture) {
-        $output = & wsl.exe --cd $RepoPath --exec bash -lc $Command
+        $output = & wsl.exe --cd $RepoPath --exec bash -lc $launcher
         if ($LASTEXITCODE -ne 0) { throw "WSL command failed with exit code $LASTEXITCODE`: $Command" }
         return ($output -join "`n").Trim()
     }
-    & wsl.exe --cd $RepoPath --exec bash -lc $Command
+    & wsl.exe --cd $RepoPath --exec bash -lc $launcher
     if ($LASTEXITCODE -ne 0) { throw "WSL command failed with exit code $LASTEXITCODE`: $Command" }
 }
 
@@ -239,6 +260,9 @@ Write-ReleaseInfo -RepoPath $wslPath -Version $version -GitSha $gitSha
 
 if (-not $SkipPackage) {
     Invoke-WslCommand -RepoPath $wslPath -Command "NEONCODE_BUILD_GIT_SHA=$gitSha npm --prefix frontends/electron run package:alpha"
+} else {
+    Write-Host "Packaging skipped; signing, manifest generation, and artifact verification are skipped."
+    if (-not $DryRun) { exit 0 }
 }
 
 if ($DryRun) {

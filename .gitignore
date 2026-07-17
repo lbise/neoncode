@@ -18,6 +18,8 @@ Thumbs.db
 # Node/Electron
 node_modules/
 /frontends/electron/dist/
+/frontends/electron/resources/hub/
+/release/
 
 # Local agent/session artifacts
 session.jsonl
