@@ -5,7 +5,7 @@
 ```text
 Stage: Alpha release workflow groundwork complete
 Supported Windows app: Electron + xterm.js + app-managed neoncode-hub
-Next focus: signed clean-VM release gates, then authenticated local app-control transport
+Next focus: dogfood UX simplification and terminal continuity, then signed clean-VM release gates / app-control transport
 ```
 
 The Windows tech stack is now:
@@ -19,6 +19,61 @@ Playwright + PowerShell smoke validation
 ```
 
 Previous Windows Terminal/WPF embedding POCs are obsolete and are not a product path.
+
+## Dogfood feedback action plan
+
+Source: `docs/issues.md` from initial alpha dogfooding. This backlog supersedes polish work that would preserve the current chrome-heavy cockpit layout.
+
+### Priority 0: terminal continuity / no apparent re-execution
+
+Goal: switching tabs, resizing splits, and normal layout operations must never make the terminal appear to re-run commands or replay internal status text.
+
+- [ ] Remove internal hub/session status writes from the xterm buffer. Connection/start/attach/replay diagnostics belong in app chrome/logs/test state, not inside the user's terminal scrollback.
+- [ ] Stop showing internal session IDs, hub endpoint URLs, and `electron-xterm-shell-session-*` style implementation details in the user-facing terminal/UI.
+- [ ] Rework tab switching so existing tab terminal surfaces are preserved or parked instead of disposed/detached/recreated on every switch. A tab that still exists should retain its xterm instance, scrollback, WebSocket/PTY attachment where practical, and visual state.
+- [ ] Ensure resize operations update split ratios and fit existing xterm instances in place; they must not trigger PTY restart, shell command replay, or visible attach/start banners.
+- [ ] Add regression tests that put unique shell state/output in multiple tabs, switch/resize repeatedly, and prove no duplicate command execution, no duplicate internal status output, and no session incarnation change.
+
+### Priority 1: simplify lifecycle semantics
+
+Goal: users open tabs and close tabs. Closing kills the terminal/session. Detach remains an internal app-shutdown/reconnect mechanism only where needed.
+
+- [ ] Remove user-facing detach choices from pane/tab close dialogs, pane header menus, palette entries, settings keybinding targets, and docs.
+- [ ] Make close-tab and close-pane kill by default with no disposition prompt.
+- [ ] Add a setting `confirmBeforeClosingTerminal` / `confirmBeforeClosingTab`, disabled by default, to optionally prompt before destructive close.
+- [ ] Keep app/window close persistence policy internally useful, but do not expose session-prefix or backend detach mechanics in the primary UI.
+- [ ] Update command catalog so future CLI/app-control semantics are explicit: `tab.close`/`pane.close` kill, while any internal detach command is non-user-facing or development-only.
+
+### Priority 2: minimal cockpit redesign
+
+Goal: reclaim vertical space and make the UI feel like a terminal-first workspace, not a status dashboard.
+
+Design direction: Hallmark minimal/system redesign. Preserve keyboard-first behavior and all command-registry routing, but remove redundant chrome. Use restraint: one sidebar background, one terminal background, text color, bright pink accent, and at most two secondary accent colors.
+
+- [ ] Move Settings access into the window/title bar as a compact cog icon.
+- [ ] Replace the Commands button with a title-bar command/search field that opens the command palette.
+- [ ] Remove the extra app header copy: `Workspace/Session cockpit`, standalone Commands/Settings buttons, and `Connected to ...` endpoint text.
+- [ ] Move tabs under their workspace in the sidebar; remove the horizontal tab strip above terminals and remove the `+ Tab` button from that area.
+- [ ] Simplify workspace rows to show the workspace name and a compact tab count only; remove WSL path, Git, and lifecycle status text from the default collapsed row.
+- [ ] Add a left-click workspace action menu for rename workspace, delete workspace, create tab, and related actions.
+- [ ] Remove terminal pane borders/header bars/status pills/split-close-more button rows. Terminal content should occupy the space; sidebar tab entries should carry the tab name and close `×`.
+- [ ] Keep all actions accessible from keyboard and command palette after removing visible buttons.
+- [ ] Replace the current cyan accent with a bright pink NeonCode accent and verify contrast/focus states.
+
+### Priority 3: settings as workspace + simple themes
+
+- [ ] Replace modal Settings with a special app-owned Settings workspace/tab surface so settings behaves like normal workspace content instead of blocking the terminal.
+- [ ] Add simple theme settings: sidebar background, terminal/app background, text color, primary bright-pink accent, and up to two secondary accents.
+- [ ] Apply the theme through named CSS custom properties; avoid ad hoc colors.
+- [ ] Style xterm scrollbars to match the application background/theme.
+- [ ] Keep advanced/internal settings hidden by default; hub endpoint and session prefix should not be normal user-editable fields.
+
+### Priority 4: dynamic configuration and keybinding targets
+
+- [ ] Dynamically reload `config.json` after external edits with validation, backup/recovery behavior, and visible diagnostics. Avoid disrupting active terminals unless topology changes require a controlled reconciliation.
+- [ ] Add stable index-based commands/keybindings for workspace slots `0..9` even when the target workspace does not exist yet.
+- [ ] Add stable index-based pane focus commands/keybindings for pane slots even when a pane does not currently exist; missing targets should be disabled, not invalid configuration.
+- [ ] Keep generated per-ID bindings for explicit targets where useful, but make index slots the default user-facing binding model.
 
 ## Recently completed
 
