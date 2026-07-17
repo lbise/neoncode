@@ -119,6 +119,22 @@ function Assert-AuthenticodeSignatures {
     }
 }
 
+function New-DefenderScanTarget {
+    param([Parameter(Mandatory=$true)][string]$Directory)
+    $resolved = (Resolve-Path -LiteralPath $Directory).ProviderPath
+    if ($resolved -notmatch '^\\\\') {
+        return [ordered]@{ Path = $resolved; Temporary = $false }
+    }
+
+    $temporaryRoot = Join-Path $env:TEMP "NeonCode\release-defender-scan"
+    New-Item -ItemType Directory -Force -Path $temporaryRoot | Out-Null
+    $temporaryDirectory = Join-Path $temporaryRoot ([Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $temporaryDirectory | Out-Null
+    Write-Host "Release directory is a UNC path; copying artifacts to Windows-local Defender scan target: $temporaryDirectory"
+    Copy-Item -LiteralPath (Join-Path $resolved '*') -Destination $temporaryDirectory -Recurse -Force
+    return [ordered]@{ Path = $temporaryDirectory; Temporary = $true }
+}
+
 function Invoke-DefenderScan {
     param([Parameter(Mandatory=$true)][string]$Directory)
     if ($SkipDefender) {
@@ -129,24 +145,40 @@ function Invoke-DefenderScan {
         Write-Host "DRY RUN: would run Microsoft Defender scan for $Directory"
         return
     }
-    $startMpScan = Get-Command Start-MpScan -ErrorAction SilentlyContinue
-    if ($startMpScan) {
-        Write-Host "Running Microsoft Defender custom scan with Start-MpScan."
-        Start-MpScan -ScanPath $Directory -ScanType CustomScan
-        return
+
+    $scanTarget = New-DefenderScanTarget -Directory $Directory
+    try {
+        $startMpScan = Get-Command Start-MpScan -ErrorAction SilentlyContinue
+        if ($startMpScan) {
+            try {
+                Write-Host "Running Microsoft Defender custom scan with Start-MpScan: $($scanTarget.Path)"
+                Start-MpScan -ScanPath $scanTarget.Path -ScanType CustomScan
+                return
+            } catch {
+                Write-Warning "Start-MpScan failed: $($_.Exception.Message). Falling back to MpCmdRun.exe when available."
+            }
+        }
+
+        $programFilesX86 = [Environment]::GetFolderPath('ProgramFilesX86')
+        $mpCmdRunCandidates = @(
+            Join-Path $env:ProgramFiles "Windows Defender\MpCmdRun.exe",
+            $(if ($programFilesX86) { Join-Path $programFilesX86 "Windows Defender\MpCmdRun.exe" } else { $null }),
+            Join-Path $env:ProgramData "Microsoft\Windows Defender\Platform\*\MpCmdRun.exe"
+        ) | Where-Object { $_ } | ForEach-Object { Get-ChildItem -Path $_ -ErrorAction SilentlyContinue } |
+            Sort-Object FullName -Descending
+        $mpCmdRun = $mpCmdRunCandidates | Select-Object -First 1
+        if ($mpCmdRun) {
+            Write-Host "Running Microsoft Defender custom scan with MpCmdRun.exe: $($scanTarget.Path)"
+            & $mpCmdRun.FullName -Scan -ScanType 3 -File $scanTarget.Path
+            if ($LASTEXITCODE -ne 0) { throw "Microsoft Defender scan failed with exit code $LASTEXITCODE." }
+            return
+        }
+        Write-Warning "Microsoft Defender scan tooling is not available on this host. No exclusions were requested or applied."
+    } finally {
+        if ($scanTarget.Temporary) {
+            Remove-Item -LiteralPath $scanTarget.Path -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
-    $mpCmdRunCandidates = @(
-        Join-Path $env:ProgramFiles "Windows Defender\MpCmdRun.exe",
-        Join-Path ${env:ProgramFiles(x86)} "Windows Defender\MpCmdRun.exe"
-    ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-    $mpCmdRun = $mpCmdRunCandidates | Select-Object -First 1
-    if ($mpCmdRun) {
-        Write-Host "Running Microsoft Defender custom scan with MpCmdRun.exe."
-        & $mpCmdRun -Scan -ScanType 3 -File $Directory
-        if ($LASTEXITCODE -ne 0) { throw "Microsoft Defender scan failed with exit code $LASTEXITCODE." }
-        return
-    }
-    Write-Warning "Microsoft Defender scan tooling is not available on this host. No exclusions were requested or applied."
 }
 
 $releaseDir = Resolve-ReleaseDirectory -Directory $ReleaseDirectory

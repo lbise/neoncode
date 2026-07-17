@@ -108,7 +108,7 @@ function Get-RelativePathFromBase {
 function Get-ReleaseArtifacts {
     param([Parameter(Mandatory=$true)][string]$Directory)
     Get-ChildItem -LiteralPath $Directory -Recurse -File |
-        Where-Object { $_.Name -notin @('SHA256SUMS', 'manifest.json', 'builder-debug.yml') } |
+        Where-Object { $_.Name -notin @('SHA256SUMS', 'manifest.json', 'builder-debug.yml', 'builder-effective-config.yaml') } |
         Sort-Object FullName
 }
 
