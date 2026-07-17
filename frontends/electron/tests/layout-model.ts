@@ -299,7 +299,7 @@ function testAncestorSplitsAndDirectionalResize(): void {
   });
   assert.deepEqual(computeDirectionalResizeDelta(root, 'target-a', 'left'), {
     splitId: 'outer-horizontal', direction: 'horizontal', ratio: 0.6,
-    panePosition: 'second', delta: -0.05, nextRatio: 0.5499999999999999,
+    panePosition: 'second', delta: -0.05, nextRatio: 0.55,
   });
   assert.deepEqual(computeDirectionalResizeDelta(root, 'target-a', 'down'), {
     splitId: 'right-vertical', direction: 'vertical', ratio: 0.5,

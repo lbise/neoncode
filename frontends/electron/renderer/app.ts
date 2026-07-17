@@ -978,10 +978,6 @@ export class NeonCodeApp {
   closePaneDisabledReason(args: PaneCloseCommandArgs): CommandDisabledReason | null {
     const targetReason = this.paneTargetDisabledReason(args);
     if (targetReason !== null) return targetReason;
-    const pane = this.panes.find((candidate) => candidate.paneId === args.paneId);
-    if (pane?.state && ['killed', 'killing', 'exited'].includes(pane.state.lifecycle)) {
-      return 'Pane is already killed';
-    }
     const layout = this.workspaceLayouts.get(args.workspaceId);
     const tab = layout?.tabs.find((candidate) => candidate.tabId === layout.activeTabId);
     return tab && orderedPaneLeaves(tab.root).length > 1
@@ -1415,7 +1411,9 @@ export class NeonCodeApp {
     this.paneOperationBusy = true;
     this.catalogSaving = true;
     try {
-      await this.requestVisiblePaneClose(visiblePane, args.disposition);
+      if (!['killed', 'exited'].includes(visiblePane.state.lifecycle)) {
+        await this.requestVisiblePaneClose(visiblePane, args.disposition);
+      }
       try {
         const snapshot = await this.window.neoncodeDesktop.getWorkspaceCatalog();
         await this.window.neoncodeDesktop.saveWorkspaceCatalog({
@@ -2603,8 +2601,11 @@ export class NeonCodeApp {
       button.dataset.testid = testId;
       button.addEventListener('click', (event) => {
         event.stopPropagation();
-        this.focusPane(descriptor.paneId);
-        void this.dispatchCommand(command);
+        void this.dispatchCommand({ id: 'pane.focus', args: { paneId: descriptor.paneId } })
+          .then((result) => {
+            if (result.status === 'completed') return this.dispatchCommand(command);
+            return result;
+          });
       });
       return button;
     };
