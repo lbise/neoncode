@@ -76,7 +76,6 @@ export function commandInvocationSignature(command: CommandInvocation): string {
     case 'pane.split':
     case 'split.resize':
     case 'pane.close':
-    case 'pane.detach':
     case 'pane.kill':
     case 'pane.restart':
       return `${command.id}:${JSON.stringify(command.args)}`;

@@ -27,7 +27,6 @@ export const COMMAND_IDS = Object.freeze([
   'pane.split',
   'split.resize',
   'pane.close',
-  'pane.detach',
   'pane.kill',
   'pane.restart',
   'pane.splitHorizontal',
@@ -96,9 +95,7 @@ export interface TabMoveCommandArgs extends TabOpenCommandArgs {
   toIndex: number;
 }
 
-export interface TabCloseCommandArgs extends TabOpenCommandArgs {
-  disposition: 'detach' | 'kill';
-}
+export interface TabCloseCommandArgs extends TabOpenCommandArgs {}
 
 export interface PaneFocusCommandArgs {
   paneId: string;
@@ -124,9 +121,7 @@ export interface SplitResizeCommandArgs {
   delta: number;
 }
 
-export interface PaneCloseCommandArgs extends PaneTargetCommandArgs {
-  disposition: 'detach' | 'kill';
-}
+export interface PaneCloseCommandArgs extends PaneTargetCommandArgs {}
 
 export interface CommandArgumentMap {
   'palette.open': undefined;
@@ -157,7 +152,6 @@ export interface CommandArgumentMap {
   'pane.split': PaneSplitCommandArgs;
   'split.resize': SplitResizeCommandArgs;
   'pane.close': PaneCloseCommandArgs;
-  'pane.detach': PaneTargetCommandArgs;
   'pane.kill': PaneTargetCommandArgs;
   'pane.restart': PaneTargetCommandArgs;
   'pane.splitHorizontal': undefined;
@@ -208,7 +202,6 @@ export type CommandDisabledReason =
   | 'Split cannot be resized further'
   | 'Cannot close the last pane in a tab'
   | 'Pane operation is in progress'
-  | 'Pane is already detached'
   | 'Pane is already killed';
 
 export type CommandOperationResult =
@@ -248,7 +241,6 @@ export interface CommandResultMap {
   'pane.split': CommandOperationResult;
   'split.resize': CommandOperationResult;
   'pane.close': CommandOperationResult;
-  'pane.detach': CommandOperationResult;
   'pane.kill': CommandOperationResult;
   'pane.restart': CommandOperationResult;
   'pane.splitHorizontal': CommandOperationResult;
@@ -381,7 +373,7 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     title: 'Delete Current Workspace…',
     category: 'Workspace',
     context: 'workspace',
-    searchTerms: ['remove', 'detach', 'kill'],
+    searchTerms: ['remove', 'close', 'kill'],
     owningLayer: 'renderer',
     externalInvocation: false,
   }),
@@ -462,7 +454,7 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     title: 'Close Tab',
     category: 'Tab',
     context: 'tab',
-    searchTerms: ['remove', 'detach', 'kill'],
+    searchTerms: ['remove', 'close', 'kill'],
     owningLayer: 'renderer',
     externalInvocation: true,
   }),
@@ -507,7 +499,7 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     title: 'Close Current Tab…',
     category: 'Tab',
     context: 'tab',
-    searchTerms: ['remove', 'detach', 'kill'],
+    searchTerms: ['remove', 'close', 'kill'],
     owningLayer: 'renderer',
     externalInvocation: false,
   }),
@@ -543,16 +535,7 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     title: 'Close Pane',
     category: 'Pane',
     context: 'pane',
-    searchTerms: ['terminal', 'remove', 'detach', 'kill'],
-    owningLayer: 'renderer',
-    externalInvocation: true,
-  }),
-  'pane.detach': Object.freeze({
-    id: 'pane.detach',
-    title: 'Detach Pane Session',
-    category: 'Pane',
-    context: 'pane',
-    searchTerms: ['terminal', 'session', 'disconnect', 'keep running'],
+    searchTerms: ['terminal', 'remove', 'close', 'kill'],
     owningLayer: 'renderer',
     externalInvocation: true,
   }),
@@ -633,7 +616,7 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     title: 'Close Current Pane…',
     category: 'Pane',
     context: 'pane',
-    searchTerms: ['terminal', 'remove', 'detach', 'kill'],
+    searchTerms: ['terminal', 'remove', 'close', 'kill'],
     owningLayer: 'renderer',
     externalInvocation: false,
   }),
@@ -850,16 +833,14 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
     }
     case 'tab.close': {
       if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
-          || !hasExactKeys(value.args, ['workspaceId', 'tabId', 'disposition'])
+          || !hasExactKeys(value.args, ['workspaceId', 'tabId'])
           || !isBoundedIdentifier(value.args.workspaceId)
-          || !isBoundedIdentifier(value.args.tabId)
-          || (value.args.disposition !== 'detach' && value.args.disposition !== 'kill')) {
+          || !isBoundedIdentifier(value.args.tabId)) {
         throw new Error('Invalid tab.close command arguments');
       }
       return { id: value.id, args: {
         workspaceId: value.args.workspaceId,
         tabId: value.args.tabId,
-        disposition: value.args.disposition,
       } };
     }
     case 'pane.focus': {
@@ -913,19 +894,16 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
     }
     case 'pane.close': {
       if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
-          || !hasExactKeys(value.args, ['workspaceId', 'paneId', 'disposition'])
+          || !hasExactKeys(value.args, ['workspaceId', 'paneId'])
           || !isBoundedIdentifier(value.args.workspaceId)
-          || !isBoundedIdentifier(value.args.paneId)
-          || (value.args.disposition !== 'detach' && value.args.disposition !== 'kill')) {
+          || !isBoundedIdentifier(value.args.paneId)) {
         throw new Error('Invalid pane.close command arguments');
       }
       return { id: value.id, args: {
         workspaceId: value.args.workspaceId,
         paneId: value.args.paneId,
-        disposition: value.args.disposition,
       } };
     }
-    case 'pane.detach':
     case 'pane.kill':
     case 'pane.restart': {
       if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)

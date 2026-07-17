@@ -33,7 +33,6 @@ export class TabDialog {
   readonly description: HTMLElement;
   readonly nameField: HTMLElement;
   readonly nameInput: HTMLInputElement;
-  readonly dispositionField: HTMLFieldSetElement;
   readonly error: HTMLElement;
   readonly status: HTMLElement;
   readonly submitButton: HTMLButtonElement;
@@ -58,7 +57,6 @@ export class TabDialog {
     this.description = requiredElement(documentRef, 'tab-dialog-description');
     this.nameField = requiredElement(documentRef, 'tab-title-field');
     this.nameInput = requiredElement<HTMLInputElement>(documentRef, 'tab-title');
-    this.dispositionField = requiredElement<HTMLFieldSetElement>(documentRef, 'tab-disposition-field');
     this.error = requiredElement(documentRef, 'tab-dialog-error');
     this.status = requiredElement(documentRef, 'tab-dialog-status');
     this.submitButton = requiredElement<HTMLButtonElement>(documentRef, 'tab-dialog-submit');
@@ -92,19 +90,16 @@ export class TabDialog {
     this.status.textContent = '';
     this.pending = false;
     this.nameField.hidden = mode !== 'rename';
-    this.dispositionField.hidden = mode !== 'close';
     this.title.textContent = mode === 'rename' ? 'Rename tab' : 'Close tab';
     this.description.textContent = mode === 'rename'
       ? `Change the title of ${target.title}.`
-      : `Close ${target.title}. At least one tab will remain.`;
+      : `Close ${target.title} and kill its terminal session. At least one tab will remain.`;
     this.submitButton.textContent = mode === 'rename' ? 'Rename' : 'Close tab';
     this.nameInput.value = target.title;
-    const detach = this.dialog.querySelector<HTMLInputElement>('input[name="tab-disposition"][value="detach"]');
-    if (detach) detach.checked = true;
     this.overlay.hidden = false;
     queueMicrotask(() => {
       if (mode === 'rename') this.nameInput.select();
-      else detach?.focus();
+      else this.submitButton.focus({ preventScroll: true });
     });
   }
 
@@ -157,9 +152,6 @@ export class TabDialog {
         : await this.dispatchClose({
           workspaceId: target.workspaceId,
           tabId: target.tabId,
-          disposition: this.dialog.querySelector<HTMLInputElement>(
-            'input[name="tab-disposition"]:checked',
-          )?.value === 'kill' ? 'kill' : 'detach',
         });
       if (result.status === 'completed') {
         this.pending = false;

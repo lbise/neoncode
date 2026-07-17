@@ -75,13 +75,9 @@ export class PaneDialog {
     this.error.hidden = true;
     this.error.textContent = '';
     this.status.textContent = '';
-    this.description.textContent = `Close ${target.title}. Its tab and sibling panes will remain.`;
-    const detach = this.dialog.querySelector<HTMLInputElement>(
-      'input[name="pane-disposition"][value="detach"]',
-    );
-    if (detach) detach.checked = true;
+    this.description.textContent = `Close ${target.title} and kill its terminal session. Its tab and sibling panes will remain.`;
     this.overlay.hidden = false;
-    queueMicrotask(() => detach?.focus());
+    queueMicrotask(() => this.submitButton.focus({ preventScroll: true }));
   }
 
   close(): void {
@@ -127,9 +123,6 @@ export class PaneDialog {
       const result = await this.dispatchClose({
         workspaceId: target.workspaceId,
         paneId: target.paneId,
-        disposition: this.dialog.querySelector<HTMLInputElement>(
-          'input[name="pane-disposition"]:checked',
-        )?.value === 'kill' ? 'kill' : 'detach',
       });
       if (result.status === 'completed') {
         this.pending = false;

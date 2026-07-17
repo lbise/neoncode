@@ -100,13 +100,6 @@
         </div>
         <button id="pane-dialog-close" class="workspace-dialog-secondary" type="button" aria-label="Close pane dialog" data-testid="pane-dialog-close">Close</button>
       </header>
-      <div class="workspace-dialog-content">
-        <fieldset>
-          <legend>Session disposition</legend>
-          <label><input name="pane-disposition" type="radio" value="detach" checked /> Detach session and keep it running</label>
-          <label><input name="pane-disposition" type="radio" value="kill" /> Kill pane session</label>
-        </fieldset>
-      </div>
       <p id="pane-dialog-error" class="workspace-dialog-error" role="alert" data-testid="pane-dialog-error" hidden></p>
       <footer class="workspace-dialog-footer">
         <span id="pane-dialog-status" role="status" data-testid="pane-dialog-status"></span>
@@ -126,11 +119,6 @@
       </header>
       <div class="workspace-dialog-content">
         <label id="tab-title-field">Title<input id="tab-title" data-testid="tab-title" type="text" maxlength="64" required autocomplete="off" /></label>
-        <fieldset id="tab-disposition-field" hidden>
-          <legend>Session disposition</legend>
-          <label><input name="tab-disposition" type="radio" value="detach" checked /> Detach sessions and keep them running</label>
-          <label><input name="tab-disposition" type="radio" value="kill" /> Kill tab sessions</label>
-        </fieldset>
       </div>
       <p id="tab-dialog-error" class="workspace-dialog-error" role="alert" data-testid="tab-dialog-error" hidden></p>
       <footer class="workspace-dialog-footer">

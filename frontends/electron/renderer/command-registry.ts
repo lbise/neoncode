@@ -55,7 +55,6 @@ export interface CommandHandlers {
   'pane.split': (args: PaneSplitCommandArgs) => void | Promise<void>;
   'split.resize': (args: SplitResizeCommandArgs) => void | Promise<void>;
   'pane.close': (args: PaneCloseCommandArgs) => void | Promise<void>;
-  'pane.detach': (args: PaneTargetCommandArgs) => void | Promise<void>;
   'pane.kill': (args: PaneTargetCommandArgs) => void | Promise<void>;
   'pane.restart': (args: PaneTargetCommandArgs) => void | Promise<void>;
   'pane.splitHorizontal': () => void | Promise<void>;
@@ -100,7 +99,6 @@ export interface CommandEnablement {
   'pane.split'?: (args: PaneSplitCommandArgs) => CommandDisabledReason | null;
   'split.resize'?: (args: SplitResizeCommandArgs) => CommandDisabledReason | null;
   'pane.close'?: (args: PaneCloseCommandArgs) => CommandDisabledReason | null;
-  'pane.detach'?: (args: PaneTargetCommandArgs) => CommandDisabledReason | null;
   'pane.kill'?: (args: PaneTargetCommandArgs) => CommandDisabledReason | null;
   'pane.restart'?: (args: PaneTargetCommandArgs) => CommandDisabledReason | null;
   'pane.splitHorizontal'?: () => CommandDisabledReason | null;
@@ -244,9 +242,6 @@ export class CommandRegistry {
       case 'pane.close':
         await this.handlers['pane.close'](invocation.args);
         return completed();
-      case 'pane.detach':
-        await this.handlers['pane.detach'](invocation.args);
-        return completed();
       case 'pane.kill':
         await this.handlers['pane.kill'](invocation.args);
         return completed();
@@ -341,8 +336,6 @@ export class CommandRegistry {
         return this.enablement['split.resize']?.(command.args) ?? null;
       case 'pane.close':
         return this.enablement['pane.close']?.(command.args) ?? null;
-      case 'pane.detach':
-        return this.enablement['pane.detach']?.(command.args) ?? null;
       case 'pane.kill':
         return this.enablement['pane.kill']?.(command.args) ?? null;
       case 'pane.restart':

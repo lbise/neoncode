@@ -29,7 +29,7 @@ async function run(): Promise<void> {
     'tab.open': ({ tabId }) => { calls.push(`tab.open:${tabId}`); },
     'tab.rename': ({ title }) => { calls.push(`tab.rename:${title}`); },
     'tab.move': ({ toIndex }) => { calls.push(`tab.move:${toIndex}`); },
-    'tab.close': ({ disposition }) => { calls.push(`tab.close:${disposition}`); },
+    'tab.close': ({ tabId }) => { calls.push(`tab.close:${tabId}`); },
     'tab.createDefault': () => { calls.push('tab.createDefault'); },
     'tab.next': () => { calls.push('tab.next'); },
     'tab.previous': () => { calls.push('tab.previous'); },
@@ -38,8 +38,7 @@ async function run(): Promise<void> {
     'pane.focus': ({ paneId }) => { calls.push(`pane.focus:${paneId}`); },
     'pane.split': ({ splitId }) => { calls.push(`pane.split:${splitId}`); },
     'split.resize': ({ delta }) => { calls.push(`split.resize:${delta}`); },
-    'pane.close': ({ disposition }) => { calls.push(`pane.close:${disposition}`); },
-    'pane.detach': ({ paneId }) => { calls.push(`pane.detach:${paneId}`); },
+    'pane.close': ({ paneId }) => { calls.push(`pane.close:${paneId}`); },
     'pane.kill': ({ paneId }) => { calls.push(`pane.kill:${paneId}`); },
     'pane.restart': ({ paneId }) => { calls.push(`pane.restart:${paneId}`); },
     'pane.splitHorizontal': () => { calls.push('pane.splitHorizontal'); },
@@ -90,7 +89,6 @@ async function run(): Promise<void> {
       'pane.split',
       'split.resize',
       'pane.close',
-      'pane.detach',
       'pane.kill',
       'pane.restart',
       'pane.splitHorizontal',
@@ -166,9 +164,7 @@ async function run(): Promise<void> {
   await registry.execute('tab.open', { workspaceId: 'review', tabId: 'tab-review' });
   await registry.execute('tab.rename', { workspaceId: 'review', tabId: 'tab-review', title: 'Renamed' });
   await registry.execute('tab.move', { workspaceId: 'review', tabId: 'tab-review', toIndex: 0 });
-  await registry.execute('tab.close', {
-    workspaceId: 'review', tabId: 'tab-review', disposition: 'detach',
-  });
+  await registry.execute('tab.close', { workspaceId: 'review', tabId: 'tab-review' });
   await registry.execute('tab.createDefault');
   await registry.execute('tab.next');
   await registry.execute('tab.previous');
@@ -180,8 +176,7 @@ async function run(): Promise<void> {
     title: 'Agent', launchProfile: 'shell', direction: 'horizontal', position: 'after',
   });
   await registry.execute('split.resize', { workspaceId: 'review', splitId: 'split-agent', delta: 0.05 });
-  await registry.execute('pane.close', { workspaceId: 'review', paneId: 'tasks', disposition: 'detach' });
-  await registry.execute('pane.detach', { workspaceId: 'review', paneId: 'tasks' });
+  await registry.execute('pane.close', { workspaceId: 'review', paneId: 'tasks' });
   await registry.execute('pane.kill', { workspaceId: 'review', paneId: 'tasks' });
   await registry.execute('pane.restart', { workspaceId: 'review', paneId: 'tasks' });
   paneSplitEnabled = true;
@@ -214,7 +209,7 @@ async function run(): Promise<void> {
     'tab.open:tab-review',
     'tab.rename:Renamed',
     'tab.move:0',
-    'tab.close:detach',
+    'tab.close:tab-review',
     'tab.createDefault',
     'tab.next',
     'tab.previous',
@@ -223,8 +218,7 @@ async function run(): Promise<void> {
     'pane.focus:tasks',
     'pane.split:split-agent',
     'split.resize:0.05',
-    'pane.close:detach',
-    'pane.detach:tasks',
+    'pane.close:tasks',
     'pane.kill:tasks',
     'pane.restart:tasks',
     'pane.splitHorizontal',
@@ -272,7 +266,6 @@ async function run(): Promise<void> {
     'pane.split': () => {},
     'split.resize': () => {},
     'pane.close': () => {},
-    'pane.detach': () => {},
     'pane.kill': () => {},
     'pane.restart': () => {},
     'pane.splitHorizontal': () => {},

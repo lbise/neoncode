@@ -511,7 +511,6 @@ export class NeonCodeApp {
       'pane.split': (args) => this.splitPane(args),
       'split.resize': (args) => this.resizeSplit(args),
       'pane.close': (args) => this.closePane(args),
-      'pane.detach': (args) => this.detachPane(args),
       'pane.kill': (args) => this.killPaneSession(args),
       'pane.restart': (args) => this.restartPane(args),
       'pane.splitHorizontal': () => this.splitActivePane('horizontal'),
@@ -562,7 +561,6 @@ export class NeonCodeApp {
       'pane.split': (args) => this.splitPaneDisabledReason(args),
       'split.resize': (args) => this.resizeSplitDisabledReason(args),
       'pane.close': (args) => this.closePaneDisabledReason(args),
-      'pane.detach': (args) => this.lifecyclePaneDisabledReason(args, 'detach'),
       'pane.kill': (args) => this.lifecyclePaneDisabledReason(args, 'kill'),
       'pane.restart': (args) => this.lifecyclePaneDisabledReason(args, 'restart'),
       'pane.splitHorizontal': () => this.splitActivePaneDisabledReason(),
@@ -995,10 +993,6 @@ export class NeonCodeApp {
     if (targetReason !== null) return targetReason;
     const pane = this.panes.find((candidate) => candidate.paneId === args.paneId);
     if (!pane) return 'Pane is unavailable';
-    if (operation === 'detach' && pane.state
-        && ['detached', 'detaching'].includes(pane.state.lifecycle)) {
-      return 'Pane is already detached';
-    }
     if (operation !== 'restart' && pane.state
         && ['killed', 'killing', 'exited'].includes(pane.state.lifecycle)) {
       return 'Pane is already killed';
@@ -1026,7 +1020,7 @@ export class NeonCodeApp {
     const workspaceId = this.activeWorkspaceId;
     const paneId = this.activeLayoutTab()?.focusedPaneId;
     if (!workspaceId || !paneId) return 'No active pane is available';
-    return this.closePaneDisabledReason({ workspaceId, paneId, disposition: 'detach' });
+    return this.closePaneDisabledReason({ workspaceId, paneId });
   }
 
   relativePaneCommandDisabledReason(): CommandDisabledReason | null {
@@ -1174,7 +1168,6 @@ export class NeonCodeApp {
     const activePaneId = this.activeLayoutTab()?.focusedPaneId;
     if (activeWorkspace && activePaneId) {
       const target = { workspaceId: activeWorkspace.id, paneId: activePaneId };
-      add({ id: 'pane.detach', args: target }, getCommandMetadata('pane.detach').title);
       add({ id: 'pane.kill', args: target }, getCommandMetadata('pane.kill').title);
       add({ id: 'pane.restart', args: target }, getCommandMetadata('pane.restart').title);
     }
@@ -1414,7 +1407,7 @@ export class NeonCodeApp {
     this.catalogSaving = true;
     try {
       if (!['killed', 'exited'].includes(visiblePane.state.lifecycle)) {
-        await this.requestVisiblePaneClose(visiblePane, args.disposition);
+        await this.requestVisiblePaneClose(visiblePane, 'kill');
       }
       try {
         const snapshot = await this.window.neoncodeDesktop.getWorkspaceCatalog();
@@ -1440,10 +1433,8 @@ export class NeonCodeApp {
       this.workspaceLayouts.set(workspace.id, removed.state);
       this.workspaceSessionStates.delete(descriptor.sessionId);
       this.visitedSessionIds.delete(descriptor.sessionId);
-      if (args.disposition === 'kill') {
-        this.discoveredSessionIds.delete(descriptor.sessionId);
-        this.hubSessionsById.delete(descriptor.sessionId);
-      }
+      this.discoveredSessionIds.delete(descriptor.sessionId);
+      this.hubSessionsById.delete(descriptor.sessionId);
       const removedTargets = new Set([args.paneId, descriptor.sessionKey]);
       this.config.keybindingOverrides = this.config.keybindingOverrides.filter(({ command }) => (
         command.id !== 'pane.focus' || !removedTargets.has(command.args.paneId)
@@ -1663,14 +1654,13 @@ export class NeonCodeApp {
       });
 
       if (wasVisible) {
-        for (const pane of this.panes) {
-          if (args.disposition === 'kill') await pane.killAndClose();
-          else await pane.detachAndClose();
+        for (const pane of this.panes.filter((candidate) => removedKeys.has(candidate.sessionKey))) {
+          await pane.killAndClose();
           pane.dispose();
         }
-        this.panes = [];
+        this.panes = this.panes.filter((pane) => !removedKeys.has(pane.sessionKey));
         this.terminalGrid.replaceChildren();
-      } else if (args.disposition === 'kill') {
+      } else {
         for (const descriptor of removedDescriptors) await this.killDetachedSession(descriptor.sessionId);
       }
 
@@ -1680,10 +1670,8 @@ export class NeonCodeApp {
       for (const descriptor of removedDescriptors) {
         this.workspaceSessionStates.delete(descriptor.sessionId);
         this.visitedSessionIds.delete(descriptor.sessionId);
-        if (args.disposition === 'kill') {
-          this.discoveredSessionIds.delete(descriptor.sessionId);
-          this.hubSessionsById.delete(descriptor.sessionId);
-        }
+        this.discoveredSessionIds.delete(descriptor.sessionId);
+        this.hubSessionsById.delete(descriptor.sessionId);
       }
       this.workspaceLayouts.set(workspace.id, removed.state);
       const removedPaneIds = new Set(removed.removedLeaves.flatMap((leaf) => [leaf.paneId, leaf.sessionKey]));
@@ -2676,7 +2664,6 @@ export class NeonCodeApp {
     moreMenu.className = 'pane-more-menu';
     const target = { workspaceId: descriptor.workspaceId, paneId: descriptor.paneId };
     moreMenu.append(
-      commandButton('Detach', `pane-detach-${descriptor.paneId}`, { id: 'pane.detach', args: target }),
       commandButton('Kill', `pane-kill-${descriptor.paneId}`, { id: 'pane.kill', args: target }),
       commandButton('Restart', `pane-restart-${descriptor.paneId}`, { id: 'pane.restart', args: target }),
     );

@@ -39,7 +39,7 @@ const validInvocations: CommandInvocation[] = [
   { id: 'tab.open', args: { workspaceId: 'review', tabId: 'tab-review' } },
   { id: 'tab.rename', args: { workspaceId: 'review', tabId: 'tab-review', title: 'Renamed' } },
   { id: 'tab.move', args: { workspaceId: 'review', tabId: 'tab-review', toIndex: 0 } },
-  { id: 'tab.close', args: { workspaceId: 'review', tabId: 'tab-review', disposition: 'detach' } },
+  { id: 'tab.close', args: { workspaceId: 'review', tabId: 'tab-review' } },
   { id: 'tab.createDefault' },
   { id: 'tab.next' },
   { id: 'tab.previous' },
@@ -51,8 +51,7 @@ const validInvocations: CommandInvocation[] = [
     title: 'Agent', launchProfile: 'default-shell', direction: 'horizontal', position: 'after',
   } },
   { id: 'split.resize', args: { workspaceId: 'review', splitId: 'split-agent', delta: -0.05 } },
-  { id: 'pane.close', args: { workspaceId: 'review', paneId: 'tasks', disposition: 'detach' } },
-  { id: 'pane.detach', args: { workspaceId: 'review', paneId: 'tasks' } },
+  { id: 'pane.close', args: { workspaceId: 'review', paneId: 'tasks' } },
   { id: 'pane.kill', args: { workspaceId: 'review', paneId: 'tasks' } },
   { id: 'pane.restart', args: { workspaceId: 'review', paneId: 'tasks' } },
   { id: 'pane.splitHorizontal' },
@@ -141,7 +140,7 @@ for (const invalid of [
   { id: 'split.resize', args: { workspaceId: 'review', splitId: 'split', delta: 0.81 } },
   { id: 'split.resize', args: { workspaceId: 'review', splitId: 'split', delta: Number.NaN } },
   { id: 'pane.close', args: { workspaceId: 'review', paneId: 'tasks', disposition: 'later' } },
-  { id: 'pane.detach', args: { workspaceId: 'review' } },
+  { id: 'pane.kill', args: { workspaceId: 'review' } },
 ]) {
   assert.throws(() => validateCommandInvocation(invalid), /command|arguments|Unknown/u);
 }
