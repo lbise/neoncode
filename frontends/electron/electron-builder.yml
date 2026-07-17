@@ -1,5 +1,4 @@
 appId: dev.neoncode.desktop
-name: neoncode
 productName: NeonCode Alpha
 copyright: Copyright © 2026 NeonCode contributors
 asar: true
@@ -7,7 +6,6 @@ compression: maximum
 directories:
   output: ../../release/windows-alpha
   buildResources: build
-artifactName: "${productName}-${version}-alpha-${arch}.${ext}"
 files:
   - from: dist
     to: dist
@@ -32,7 +30,10 @@ win:
         - x64
   executableName: NeonCode
   verifyUpdateCodeSignature: true
+portable:
+  artifactName: "${productName}-${version}-alpha-portable-${arch}.${ext}"
 nsis:
+  artifactName: "${productName}-${version}-alpha-installer-${arch}.${ext}"
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

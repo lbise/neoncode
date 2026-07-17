@@ -108,7 +108,7 @@ function Get-RelativePathFromBase {
 function Get-ReleaseArtifacts {
     param([Parameter(Mandatory=$true)][string]$Directory)
     Get-ChildItem -LiteralPath $Directory -Recurse -File |
-        Where-Object { $_.Name -notin @('SHA256SUMS', 'manifest.json') } |
+        Where-Object { $_.Name -notin @('SHA256SUMS', 'manifest.json', 'builder-debug.yml') } |
         Sort-Object FullName
 }
 
@@ -268,6 +268,11 @@ if (-not $SkipPackage) {
 if ($DryRun) {
     Write-Host "DRY RUN complete. No artifacts were modified."
     exit 0
+}
+
+$unpackedDirectory = Join-Path $outputDir "win-unpacked"
+if (Test-Path -LiteralPath $unpackedDirectory -PathType Container) {
+    Remove-Item -LiteralPath $unpackedDirectory -Recurse -Force
 }
 
 if (-not (Test-Path -LiteralPath $outputDir -PathType Container)) {

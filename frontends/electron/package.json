@@ -2,6 +2,7 @@
   "name": "neoncode-electron-app",
   "version": "0.1.0",
   "private": true,
+  "author": "NeonCode contributors",
   "description": "NeonCode Electron app rendering neoncode-hub PTYs with xterm.js.",
   "type": "commonjs",
   "main": "dist/main.js",

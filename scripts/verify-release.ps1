@@ -94,7 +94,7 @@ function Assert-Manifest {
 function Get-SignableArtifacts {
     param([Parameter(Mandatory=$true)][string]$Directory)
     Get-ChildItem -LiteralPath $Directory -Recurse -File |
-        Where-Object { $_.Extension -in @('.exe', '.msi', '.msix', '.appx') } |
+        Where-Object { $_.Name -notin @('builder-debug.yml') -and $_.Extension -in @('.exe', '.msi', '.msix', '.appx') } |
         Sort-Object FullName
 }
 
