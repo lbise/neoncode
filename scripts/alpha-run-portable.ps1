@@ -7,7 +7,8 @@ param(
     [switch]$SkipVerify,
     [switch]$SkipDefender,
     [switch]$RequireSigning,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$NoLaunch
 )
 
 Set-StrictMode -Version Latest
@@ -74,6 +75,30 @@ function Invoke-ReleaseVerification {
     if ($LASTEXITCODE -ne 0) { throw "Alpha release verification failed with exit code $LASTEXITCODE." }
 }
 
+function Copy-ArtifactToLocalFile {
+    param(
+        [Parameter(Mandatory=$true)][string]$SourcePath,
+        [Parameter(Mandatory=$true)][string]$DestinationPath
+    )
+    if ($SourcePath -match '^\\\\') {
+        $sourceWsl = (& wsl.exe --exec wslpath -a $SourcePath)
+        if ($LASTEXITCODE -ne 0 -or -not $sourceWsl) { throw "Could not convert source artifact to WSL path: $SourcePath" }
+        $destinationWsl = (& wsl.exe --exec wslpath -a $DestinationPath)
+        if ($LASTEXITCODE -ne 0 -or -not $destinationWsl) { throw "Could not convert destination artifact to WSL path: $DestinationPath" }
+        $sourceWsl = ($sourceWsl -join "`n").Trim()
+        $destinationWsl = ($destinationWsl -join "`n").Trim()
+        $sourceEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($sourceWsl))
+        $destinationEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($destinationWsl))
+        $copyScript = "set -eu`nsrc=`"`$(printf '%s' '$sourceEncoded' | base64 -d)`"`ndst=`"`$(printf '%s' '$destinationEncoded' | base64 -d)`"`ncp `"`$src`" `"`$dst`""
+        $copyScriptEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($copyScript))
+        $launcher = "printf '%s' '$copyScriptEncoded' | base64 -d | bash"
+        & wsl.exe --exec bash -lc $launcher
+        if ($LASTEXITCODE -ne 0) { throw "Could not copy artifact through WSL: $SourcePath" }
+        return
+    }
+    Copy-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force
+}
+
 function Copy-DogfoodArtifact {
     param(
         [Parameter(Mandatory=$true)]$Artifact,
@@ -86,8 +111,8 @@ function Copy-DogfoodArtifact {
     }
     New-Item -ItemType Directory -Force -Path $DestinationDirectory | Out-Null
     $versionedPath = Join-Path $DestinationDirectory $Artifact.Name
-    Copy-Item -LiteralPath $Artifact.FullName -Destination $versionedPath -Force
-    Copy-Item -LiteralPath $Artifact.FullName -Destination $stablePath -Force
+    Copy-ArtifactToLocalFile -SourcePath $Artifact.FullName -DestinationPath $versionedPath
+    Copy-ArtifactToLocalFile -SourcePath $Artifact.FullName -DestinationPath $stablePath
 
     foreach ($path in @($versionedPath, $stablePath)) {
         try {
@@ -128,5 +153,9 @@ if (-not $artifact) {
 
 Invoke-ReleaseVerification -ReleaseDir $releaseDir
 $localExecutable = Copy-DogfoodArtifact -Artifact $artifact -DestinationDirectory $installDir
-Start-WithExplorer -ExecutablePath $localExecutable
+if ($NoLaunch) {
+    Write-Host "Launch skipped by request."
+} else {
+    Start-WithExplorer -ExecutablePath $localExecutable
+}
 Write-Host "NeonCode Alpha dogfood executable: $localExecutable"

@@ -40,6 +40,33 @@ function Get-RelativePathFromBase {
     return [Uri]::UnescapeDataString($baseUri.MakeRelativeUri($targetUri).ToString()).Replace('/', '\')
 }
 
+function New-LocalVerificationTarget {
+    param([Parameter(Mandatory=$true)][string]$Directory)
+    $resolved = (Resolve-Path -LiteralPath $Directory).ProviderPath
+    if ($resolved -notmatch '^\\\\') {
+        return [ordered]@{ Path = $resolved; Temporary = $false }
+    }
+    if ($DryRun) {
+        Write-Host "DRY RUN: would copy WSL/UNC release artifacts to a Windows-local verification directory."
+        return [ordered]@{ Path = $resolved; Temporary = $false }
+    }
+
+    $temporaryRoot = Join-Path $env:TEMP "NeonCode\release-verify"
+    New-Item -ItemType Directory -Force -Path $temporaryRoot | Out-Null
+    $temporaryDirectory = Join-Path $temporaryRoot ([Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $temporaryDirectory | Out-Null
+    $sourceWsl = (& wsl.exe --exec wslpath -a $resolved)
+    if ($LASTEXITCODE -ne 0 -or -not $sourceWsl) { throw "Could not convert release directory to a WSL path: $resolved" }
+    $targetWsl = (& wsl.exe --exec wslpath -a $temporaryDirectory)
+    if ($LASTEXITCODE -ne 0 -or -not $targetWsl) { throw "Could not convert temporary verification directory to a WSL path: $temporaryDirectory" }
+    $sourceWsl = ($sourceWsl -join "`n").Trim()
+    $targetWsl = ($targetWsl -join "`n").Trim()
+    Write-Host "Release directory is a UNC path; copying artifacts to Windows-local verification target: $temporaryDirectory"
+    & wsl.exe --exec sh -c 'set -eu; cp -R "$1"/. "$2"/' sh $sourceWsl $targetWsl
+    if ($LASTEXITCODE -ne 0) { throw "Could not copy release artifacts from WSL to Windows-local verification target." }
+    return [ordered]@{ Path = $temporaryDirectory; Temporary = $true }
+}
+
 function Assert-HashFile {
     param([Parameter(Mandatory=$true)][string]$Directory)
     $sumsPath = Join-Path $Directory "SHA256SUMS"
@@ -181,16 +208,10 @@ function Invoke-DefenderScan {
     }
 }
 
-$releaseDir = Resolve-ReleaseDirectory -Directory $ReleaseDirectory
-$manifest = if ($ManifestPath) {
-    (Resolve-Path -LiteralPath $ManifestPath).ProviderPath
-} else {
-    Join-Path $releaseDir "manifest.json"
-}
+$requestedReleaseDir = Resolve-ReleaseDirectory -Directory $ReleaseDirectory
 
 Write-Host "Verifying NeonCode alpha release artifacts"
-Write-Host "  Release directory: $releaseDir"
-Write-Host "  Manifest:          $manifest"
+Write-Host "  Release directory: $requestedReleaseDir"
 Write-Host "  Signing required:  $([bool]$RequireSigning)"
 
 if ($DryRun) {
@@ -198,8 +219,24 @@ if ($DryRun) {
     exit 0
 }
 
-Assert-HashFile -Directory $releaseDir
-$null = Assert-Manifest -Directory $releaseDir -Path $manifest
-Assert-AuthenticodeSignatures -Directory $releaseDir -Required ([bool]$RequireSigning)
-Invoke-DefenderScan -Directory $releaseDir
-Write-Host "Release verification passed."
+$verificationTarget = New-LocalVerificationTarget -Directory $requestedReleaseDir
+try {
+    $releaseDir = [string]$verificationTarget.Path
+    $manifest = if ($ManifestPath) {
+        (Resolve-Path -LiteralPath $ManifestPath).ProviderPath
+    } else {
+        Join-Path $releaseDir "manifest.json"
+    }
+    Write-Host "  Verification path: $releaseDir"
+    Write-Host "  Manifest:          $manifest"
+
+    Assert-HashFile -Directory $releaseDir
+    $null = Assert-Manifest -Directory $releaseDir -Path $manifest
+    Assert-AuthenticodeSignatures -Directory $releaseDir -Required ([bool]$RequireSigning)
+    Invoke-DefenderScan -Directory $releaseDir
+    Write-Host "Release verification passed."
+} finally {
+    if ($verificationTarget.Temporary) {
+        Remove-Item -LiteralPath $verificationTarget.Path -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
