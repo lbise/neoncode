@@ -914,6 +914,19 @@ async function runFirstLaunchChecks(
       'tab.renameDialog',
       'tab.closeDialog',
       'pane.focus',
+      'pane.split',
+      'split.resize',
+      'pane.close',
+      'pane.detach',
+      'pane.kill',
+      'pane.restart',
+      'pane.splitHorizontal',
+      'pane.splitVertical',
+      'pane.resizeLeft',
+      'pane.resizeRight',
+      'pane.resizeUp',
+      'pane.resizeDown',
+      'pane.closeDialog',
       'pane.next',
       'pane.previous',
     ]),
@@ -1524,13 +1537,13 @@ async function runPersistentTabCheck(runToken: string): Promise<void> {
     await page.keyboard.press('Control+Shift+T');
     await page.waitForFunction(() => (
       document.querySelectorAll('#workspace-tabs [role="tab"]').length === 2
-      && window.neoncodeTest.getState().panes.length === 1
+      && window.neoncodeTest.getState().panes.length === 3
     ));
     const selected = page.locator('#workspace-tabs [role="tab"][aria-selected="true"]');
     const createdTabId = await selected.getAttribute('data-tab-id');
     assert(createdTabId && createdTabId !== seededTabId, 'create shortcut did not activate a new stable tab');
-    assert(await page.locator('.terminal-pane').count() === 1, 'inactive tab retained an xterm attachment');
-    const createdPaneId = (await getState(page)).panes[0]?.paneId;
+    assert(await page.locator('.terminal-pane').count() === 3, 'workspace tabs did not keep mounted terminal surfaces');
+    const createdPaneId = (await getState(page)).workspace.activePaneId;
     assert(createdPaneId, 'created tab did not attach its terminal pane');
     const createdBox = await page.getByTestId(`terminal-pane-${createdPaneId}`).boundingBox();
     assert(
@@ -1554,9 +1567,9 @@ async function runPersistentTabCheck(runToken: string): Promise<void> {
     await page.waitForFunction((expectedTabId) => (
       document.querySelector('#workspace-tabs [role="tab"][aria-selected="true"]')
         ?.getAttribute('data-tab-id') === expectedTabId
-      && window.neoncodeTest.getState().panes.length === 2
+      && window.neoncodeTest.getState().panes.length === 3
     ), seededTabId);
-    const seededPaneIds = (await getState(page)).panes.map((pane) => pane.paneId);
+    const seededPaneIds = ['shell', 'tasks'];
     await page.keyboard.press('F6');
     assert(
       seededPaneIds.includes((await getState(page)).workspace.activePaneId ?? ''),
@@ -1566,7 +1579,7 @@ async function runPersistentTabCheck(runToken: string): Promise<void> {
     await page.waitForFunction((expectedTabId) => (
       document.querySelector('#workspace-tabs [role="tab"][aria-selected="true"]')
         ?.getAttribute('data-tab-id') === expectedTabId
-      && window.neoncodeTest.getState().panes.length === 1
+      && window.neoncodeTest.getState().panes.length === 3
     ), createdTabId);
     await waitForOutput(page, createdPaneId, continuityMarker);
 
@@ -1576,7 +1589,7 @@ async function runPersistentTabCheck(runToken: string): Promise<void> {
     const restored = instance.page.locator('#workspace-tabs [role="tab"][aria-selected="true"]');
     assert(await restored.textContent() === 'Persistent tab', 'renamed active tab was not restored');
     assert(await restored.getAttribute('data-tab-id') === createdTabId, 'restored tab identity changed');
-    assert((await getState(instance.page)).panes.length === 1, 'inactive restored tab attached terminals');
+    assert((await getState(instance.page)).panes.length === 3, 'restored workspace did not keep tab terminals mounted');
 
     const closeResult = await instance.page.evaluate(({ tabId }) => (
       window.neoncodeTest.executeCommand('tab.close', {
@@ -1800,6 +1813,9 @@ async function runPaneLayoutCheck(runToken: string): Promise<void> {
       'pane.close', { workspaceId: 'default', paneId, disposition: 'kill' },
     ), detachedSessionKey);
     assert(cleanupClose.status === 'completed', 'detached pane cleanup kill failed');
+    await instance.page.waitForFunction(() => (
+      window.neoncodeTest.getState().panes.every((pane) => pane.started)
+    ), null, { timeout });
     await killAllPanes(instance);
   } finally {
     await closeInstance(instance).catch(() => {});

@@ -348,6 +348,23 @@ main {
   min-height: 0;
   display: flex;
   overflow: hidden;
+  position: relative;
+}
+
+.tab-layout-layer {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.tab-layout-layer[data-active="true"] {
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .layout-split {

@@ -1387,7 +1387,7 @@ export class NeonCodeApp {
     pane: TerminalPane,
     disposition: 'detach' | 'kill',
   ): Promise<void> {
-    if (disposition === 'kill' && pane.state.lifecycle === 'detached') {
+    if (disposition === 'kill' && (pane.state.lifecycle === 'detached' || !pane.hubClient?.isOpen())) {
       await this.controlSession(pane.sessionId, 'kill');
       pane.finishClose('killed');
     } else if (disposition === 'kill') {
@@ -1607,6 +1607,11 @@ export class NeonCodeApp {
     }
     this.workspaceLayouts.set(args.workspaceId, activateTab(layout, args.tabId));
     void this.persistWorkspaceLayout(args.workspaceId, 'Active tab');
+    if (args.workspaceId === this.activeWorkspaceId) {
+      this.renderWorkspaceTabs(args.workspaceId);
+      this.activateMountedTab(args.workspaceId);
+      return Promise.resolve();
+    }
     return this.switchWorkspace(args.workspaceId, { force: true });
   }
 
@@ -2436,22 +2441,51 @@ export class NeonCodeApp {
       this.terminalGrid.replaceChildren();
       const activeTab = layout.tabs.find((tab) => tab.tabId === layout.activeTabId);
       if (!activeTab) throw new Error(`active tab is unavailable: ${layout.activeTabId}`);
-      const leaves = orderedPaneLeaves(activeTab.root);
-      this.focusModel.setPaneOrder(workspaceId, leaves.map((leaf) => leaf.paneId));
-      this.focusModel.activateWorkspace(workspaceId);
-      this.focusModel.focusPane(activeTab.focusedPaneId);
       this.sessionModel.resetPanes(workspaceId);
       this.renderWorkspaceTabs(workspaceId);
       this.updateWorkspaceSelector();
-      this.renderLayoutNode(activeTab.root, workspace, this.terminalGrid);
-      this.sessionModel.setActiveWorkspace(workspaceId);
-      this.applyActivePaneFocus();
+      this.renderWorkspaceLayout(workspace, layout);
+      this.activateMountedTab(workspaceId);
       this.setStatus(`Workspace: ${workspace.name}`);
     } finally {
       this.switching = false;
       this.updateWorkspaceSelector();
       const createButton = requiredElement<HTMLButtonElement>(this.document, 'tab-create-button');
       createButton.disabled = this.createDefaultTabDisabledReason() !== null;
+    }
+  }
+
+  renderWorkspaceLayout(workspace: WorkspaceDescriptor, layout: WorkspaceLayoutState): void {
+    for (const tab of layout.tabs) {
+      const layer = this.document.createElement('section');
+      layer.className = 'tab-layout-layer';
+      layer.dataset.tabId = tab.tabId;
+      layer.dataset.active = String(tab.tabId === layout.activeTabId);
+      layer.dataset.testid = `tab-layout-${tab.tabId}`;
+      layer.setAttribute('aria-label', `${tab.title} tab terminal layout`);
+      layer.setAttribute('aria-hidden', String(tab.tabId !== layout.activeTabId));
+      this.terminalGrid.append(layer);
+      this.renderLayoutNode(tab.root, workspace, layer);
+    }
+  }
+
+  activateMountedTab(workspaceId: string): void {
+    const layout = this.workspaceLayouts.get(workspaceId);
+    const activeTab = layout?.tabs.find((tab) => tab.tabId === layout.activeTabId);
+    if (!layout || !activeTab) return;
+    const activeLeaves = new Set(orderedPaneLeaves(activeTab.root).map((leaf) => leaf.paneId));
+    for (const layer of this.terminalGrid.querySelectorAll<HTMLElement>('.tab-layout-layer')) {
+      const active = layer.dataset.tabId === activeTab.tabId;
+      layer.dataset.active = String(active);
+      layer.setAttribute('aria-hidden', String(!active));
+    }
+    this.focusModel.setPaneOrder(workspaceId, [...activeLeaves]);
+    this.focusModel.activateWorkspace(workspaceId);
+    this.focusModel.focusPane(activeTab.focusedPaneId);
+    this.sessionModel.setActiveWorkspace(workspaceId);
+    this.applyActivePaneFocus();
+    for (const pane of this.panes) {
+      if (activeLeaves.has(pane.paneId)) pane.scheduleFitAndResize();
     }
   }
 
