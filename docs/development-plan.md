@@ -531,17 +531,19 @@ Development workflow:
 - [x] Keep WSL/Rust/TypeScript/fake-hub checks authoritative for daily work when a managed Windows endpoint blocks the GUI runtime.
 - [x] Add alpha release scripts for WSL Rust build, Electron build, packaging, optional Authenticode signing, SHA256SUMS/manifest generation, and verification.
 - [x] Add packaged app-managed WSL hub lifecycle for the default loopback endpoint without putting the hub token on a command line.
+- [x] Add certificate-independent release hardening: Electron fuse report checks, SBOM generation, Windows-local verification staging, and clean-VM checklist script.
 - [ ] Establish a Defender-enabled Windows VM/CI release gate independent of a developer's managed workstation.
 
 Production distribution:
 
 - [x] Package a branded alpha `NeonCode.exe` with generated app files, `app.asar`, and bundled WSL hub resource; never use the development publish layout for release artifacts.
-- [ ] Enable and verify appropriate Electron fuses, including disabling `RunAsNode` and requiring packaged application loading.
+- [x] Enable and verify appropriate Electron fuses, including disabling `RunAsNode` and requiring packaged application loading.
 - [ ] Select a hardware/cloud-backed Authenticode signing provider and timestamp all application, helper, installer, and uninstaller executables.
 - [ ] Produce and evaluate signed MSIX/Microsoft Store distribution, plus a signed direct-download installer if required.
 - [ ] Add clean-VM signature, hash, install, launch, update, Defender cloud-protection, and SmartScreen checks to the release pipeline.
 - [ ] Define Microsoft Security Intelligence false-positive submission and release-blocking response procedures.
 - [x] Publish alpha checksums and version/git-SHA provenance manifest for every scripted release output.
+- [x] Generate and include an alpha SBOM in release hashes/manifests.
 - [ ] Publish SBOM and signing-certificate identity in a release channel visible to users.
 - [ ] Never require customers to disable Defender or add exclusions; enterprise allowlisting must use managed certificate/package policy.
 

@@ -260,6 +260,7 @@ Write-ReleaseInfo -RepoPath $wslPath -Version $version -GitSha $gitSha
 
 if (-not $SkipPackage) {
     Invoke-WslCommand -RepoPath $wslPath -Command "NEONCODE_BUILD_GIT_SHA=$gitSha npm --prefix frontends/electron run package:alpha"
+    Invoke-WslCommand -RepoPath $wslPath -Command "node scripts/generate-release-sbom.cjs --root . --output release/windows-alpha/sbom.json --version '$version' --git-sha '$gitSha'"
 } else {
     Write-Host "Packaging skipped; signing, manifest generation, and artifact verification are skipped."
     if (-not $DryRun) { exit 0 }

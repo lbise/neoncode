@@ -3,6 +3,7 @@ productName: NeonCode Alpha
 copyright: Copyright © 2026 NeonCode contributors
 asar: true
 compression: maximum
+afterPack: build/after-pack.cjs
 directories:
   output: ../../release/windows-alpha
   buildResources: build

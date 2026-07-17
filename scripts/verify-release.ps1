@@ -125,6 +125,29 @@ function Get-SignableArtifacts {
         Sort-Object FullName
 }
 
+function Assert-FuseReport {
+    param([Parameter(Mandatory=$true)][string]$Directory)
+    $fusePath = Join-Path $Directory "neoncode-fuses.json"
+    if (-not (Test-Path -LiteralPath $fusePath -PathType Leaf)) {
+        throw "Electron fuse report is missing: neoncode-fuses.json"
+    }
+    $report = Get-Content -LiteralPath $fusePath -Raw | ConvertFrom-Json
+    $expected = [ordered]@{
+        RunAsNode = $false
+        EnableNodeOptionsEnvironmentVariable = $false
+        EnableNodeCliInspectArguments = $false
+        EnableEmbeddedAsarIntegrityValidation = $true
+        OnlyLoadAppFromAsar = $true
+    }
+    foreach ($entry in $expected.GetEnumerator()) {
+        $actual = $report.fuses.($entry.Key)
+        if ($actual -ne $entry.Value) {
+            throw "Electron fuse $($entry.Key) expected $($entry.Value), got $actual"
+        }
+    }
+    Write-Host "fuses ok: neoncode-fuses.json"
+}
+
 function Assert-AuthenticodeSignatures {
     param(
         [Parameter(Mandatory=$true)][string]$Directory,
@@ -232,6 +255,7 @@ try {
 
     Assert-HashFile -Directory $releaseDir
     $null = Assert-Manifest -Directory $releaseDir -Path $manifest
+    Assert-FuseReport -Directory $releaseDir
     Assert-AuthenticodeSignatures -Directory $releaseDir -Required ([bool]$RequireSigning)
     Invoke-DefenderScan -Directory $releaseDir
     Write-Host "Release verification passed."

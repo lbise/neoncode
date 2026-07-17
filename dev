@@ -35,6 +35,7 @@ Release commands:
   ./dev package-alpha      Package alpha artifacts from existing release build outputs
   ./dev verify-release     Verify alpha hashes, signatures, and Defender scan when available
   ./dev alpha-run-portable Verify/copy/unblock/launch the portable alpha for dogfooding
+  ./dev clean-vm-check    Print/run clean-VM release verification checklist
 
 Utility commands:
   ./dev reset-token  Rotate the local hub capability token
@@ -240,6 +241,10 @@ case "$command" in
     NEONCODE_WSL_NODE_BIN="$(command -v node || true)" ps_file 'scripts\alpha-run-portable.ps1' -WslRepoPath "$ROOT_DIR" "$@"
     ;;
 
+  clean-vm-check)
+    ps_file 'scripts\check-clean-vm-release.ps1' "$@"
+    ;;
+
   reset-token)
     if [[ -n "${NEONCODE_HUB_TOKEN:-}" ]]; then
       echo "Unset the externally supplied NEONCODE_HUB_TOKEN before rotating the managed token." >&2
@@ -266,6 +271,7 @@ Useful commands:
   ./dev release-alpha
   ./dev verify-release
   ./dev alpha-run-portable
+  ./dev clean-vm-check
 
 Release output:
   Windows alpha: release\windows-alpha

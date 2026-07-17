@@ -106,8 +106,11 @@ The scripts sign only signable Windows artifacts (`.exe`, `.msi`, `.msix`, `.app
 
 - every `SHA256SUMS` entry exists and matches its SHA-256 hash;
 - every manifest artifact exists and matches its recorded SHA-256 hash;
+- `neoncode-fuses.json` exists and confirms release-critical Electron fuses (`RunAsNode=false`, `NODE_OPTIONS=false`, inspect args disabled, ASAR integrity on, load-app-from-ASAR on);
 - Authenticode status for signable artifacts, failing when signing is required and any signable artifact is not `Valid`;
 - Microsoft Defender custom scan when `Start-MpScan` or `MpCmdRun.exe` is available.
+
+If release artifacts live under a WSL UNC path, verification copies them to a Windows-local temporary directory before hashing, signature checks, and Defender scans. This avoids WSL/UNC `.exe` read/custom-scan failures without adding exclusions.
 
 Defender validation must run with normal Defender settings. Do not disable Defender and do not add exclusions for NeonCode build, package, release, or runtime paths. If Defender or SmartScreen flags an artifact, treat it as a release blocker: preserve the artifact, manifest, hashes, certificate identity, and detection details for false-positive/reputation submission rather than bypassing protection.
 
@@ -118,6 +121,16 @@ SmartScreen reputation validation is manual until CI/VM automation exists:
 3. confirm the file hash matches `SHA256SUMS` and the signature is valid/timestamped;
 4. launch/install without exclusions;
 5. record any SmartScreen or Defender prompt/detection and block the release if reputation is unacceptable.
+
+Each release writes a simple JSON SBOM to `release/windows-alpha/sbom.json`. It records npm and Cargo components plus release version/channel/git SHA and is included in `SHA256SUMS` and `manifest.json`.
+
+For release promotion on a clean Windows machine, run:
+
+```bash
+./dev clean-vm-check
+```
+
+The script reruns release verification unless `-ChecklistOnly` is supplied and prints the manual clean-VM observations that must be recorded before promoting an alpha.
 
 ## App-managed hub lifecycle
 
