@@ -5,6 +5,7 @@ import { CommandRegistry } from '../renderer/command-registry';
 async function run(): Promise<void> {
   const calls: string[] = [];
   let paneNextEnabled = false;
+  let paneSplitEnabled = false;
   const registry = new CommandRegistry({
     'palette.open': () => { calls.push('palette.open'); },
     'palette.close': () => { calls.push('palette.close'); },
@@ -35,10 +36,24 @@ async function run(): Promise<void> {
     'tab.renameDialog': () => { calls.push('tab.renameDialog'); },
     'tab.closeDialog': () => { calls.push('tab.closeDialog'); },
     'pane.focus': ({ paneId }) => { calls.push(`pane.focus:${paneId}`); },
+    'pane.split': ({ splitId }) => { calls.push(`pane.split:${splitId}`); },
+    'split.resize': ({ delta }) => { calls.push(`split.resize:${delta}`); },
+    'pane.close': ({ disposition }) => { calls.push(`pane.close:${disposition}`); },
+    'pane.detach': ({ paneId }) => { calls.push(`pane.detach:${paneId}`); },
+    'pane.kill': ({ paneId }) => { calls.push(`pane.kill:${paneId}`); },
+    'pane.restart': ({ paneId }) => { calls.push(`pane.restart:${paneId}`); },
+    'pane.splitHorizontal': () => { calls.push('pane.splitHorizontal'); },
+    'pane.splitVertical': () => { calls.push('pane.splitVertical'); },
+    'pane.resizeLeft': () => { calls.push('pane.resizeLeft'); },
+    'pane.resizeRight': () => { calls.push('pane.resizeRight'); },
+    'pane.resizeUp': () => { calls.push('pane.resizeUp'); },
+    'pane.resizeDown': () => { calls.push('pane.resizeDown'); },
+    'pane.closeDialog': () => { calls.push('pane.closeDialog'); },
     'pane.next': async () => { calls.push('pane.next'); },
     'pane.previous': () => { calls.push('pane.previous'); },
   }, {
     'pane.next': () => paneNextEnabled ? null : 'No other pane is available',
+    'pane.splitHorizontal': () => paneSplitEnabled ? null : 'Pane limit reached',
     'workspace.open': ({ workspaceId }) => (
       workspaceId === 'missing' ? 'Workspace is unavailable' : null
     ),
@@ -72,6 +87,19 @@ async function run(): Promise<void> {
       'tab.renameDialog',
       'tab.closeDialog',
       'pane.focus',
+      'pane.split',
+      'split.resize',
+      'pane.close',
+      'pane.detach',
+      'pane.kill',
+      'pane.restart',
+      'pane.splitHorizontal',
+      'pane.splitVertical',
+      'pane.resizeLeft',
+      'pane.resizeRight',
+      'pane.resizeUp',
+      'pane.resizeDown',
+      'pane.closeDialog',
       'pane.next',
       'pane.previous',
     ],
@@ -100,6 +128,11 @@ async function run(): Promise<void> {
     { status: 'disabled', reason: 'No other pane is available' },
   );
   assert(!calls.includes('pane.next'), 'disabled command invoked its handler');
+  assert.deepEqual(
+    await registry.execute('pane.splitHorizontal'),
+    { status: 'disabled', reason: 'Pane limit reached' },
+  );
+  assert(!calls.includes('pane.splitHorizontal'), 'disabled pane split invoked its handler');
   assert.deepEqual(
     await registry.execute('workspace.open', { workspaceId: 'missing' }),
     { status: 'disabled', reason: 'Workspace is unavailable' },
@@ -142,6 +175,23 @@ async function run(): Promise<void> {
   await registry.execute('tab.renameDialog');
   await registry.execute('tab.closeDialog');
   await registry.execute('pane.focus', { paneId: 'tasks' });
+  await registry.execute('pane.split', {
+    workspaceId: 'review', paneId: 'tasks', sessionId: 'agent', splitId: 'split-agent',
+    title: 'Agent', launchProfile: 'shell', direction: 'horizontal', position: 'after',
+  });
+  await registry.execute('split.resize', { workspaceId: 'review', splitId: 'split-agent', delta: 0.05 });
+  await registry.execute('pane.close', { workspaceId: 'review', paneId: 'tasks', disposition: 'detach' });
+  await registry.execute('pane.detach', { workspaceId: 'review', paneId: 'tasks' });
+  await registry.execute('pane.kill', { workspaceId: 'review', paneId: 'tasks' });
+  await registry.execute('pane.restart', { workspaceId: 'review', paneId: 'tasks' });
+  paneSplitEnabled = true;
+  await registry.execute('pane.splitHorizontal');
+  await registry.execute('pane.splitVertical');
+  await registry.execute('pane.resizeLeft');
+  await registry.execute('pane.resizeRight');
+  await registry.execute('pane.resizeUp');
+  await registry.execute('pane.resizeDown');
+  await registry.execute('pane.closeDialog');
   paneNextEnabled = true;
   await registry.execute('pane.next');
   await registry.executeInvocation({ id: 'pane.previous' });
@@ -171,6 +221,19 @@ async function run(): Promise<void> {
     'tab.renameDialog',
     'tab.closeDialog',
     'pane.focus:tasks',
+    'pane.split:split-agent',
+    'split.resize:0.05',
+    'pane.close:detach',
+    'pane.detach:tasks',
+    'pane.kill:tasks',
+    'pane.restart:tasks',
+    'pane.splitHorizontal',
+    'pane.splitVertical',
+    'pane.resizeLeft',
+    'pane.resizeRight',
+    'pane.resizeUp',
+    'pane.resizeDown',
+    'pane.closeDialog',
     'pane.next',
     'pane.previous',
   ]);
@@ -206,6 +269,19 @@ async function run(): Promise<void> {
     'tab.renameDialog': () => {},
     'tab.closeDialog': () => {},
     'pane.focus': () => {},
+    'pane.split': () => {},
+    'split.resize': () => {},
+    'pane.close': () => {},
+    'pane.detach': () => {},
+    'pane.kill': () => {},
+    'pane.restart': () => {},
+    'pane.splitHorizontal': () => {},
+    'pane.splitVertical': () => {},
+    'pane.resizeLeft': () => {},
+    'pane.resizeRight': () => {},
+    'pane.resizeUp': () => {},
+    'pane.resizeDown': () => {},
+    'pane.closeDialog': () => {},
     'pane.next': () => {},
     'pane.previous': () => {},
   });

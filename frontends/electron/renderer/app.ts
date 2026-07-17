@@ -21,6 +21,10 @@ import {
   type CommandInvocation,
   type CommandMetadata,
   type CommandOperationResult,
+  type PaneCloseCommandArgs,
+  type PaneSplitCommandArgs,
+  type PaneTargetCommandArgs,
+  type SplitResizeCommandArgs,
   type TabCloseCommandArgs,
   type TabCreateCommandArgs,
   type TabMoveCommandArgs,
@@ -44,22 +48,30 @@ import { CommandRegistry } from './command-registry';
 import { HubClient, type UnknownMessage } from './hub-client';
 import { KeybindingRouter } from './keybinding-router';
 import {
+  MAX_WORKSPACE_PANES,
   MAX_WORKSPACE_TABS,
   activateTab,
   addTab,
+  closePane as closeLayoutPane,
   closeTab,
+  computeDirectionalResizeDelta,
   focusPane as focusLayoutPane,
   moveTab,
   orderedPaneLeaves,
+  orderedSplitIds,
   reconcileWorkspaceLayout,
   renameTab,
+  resizeSplit,
+  splitPane as splitLayoutPane,
   validateWorkspaceLayoutState,
   type LayoutNode,
   type PaneLeaf,
+  type PaneResizeDirection,
   type TabLayout,
   type WorkspaceLayoutState,
 } from '../shared/layout-model';
 import { PaneFocusModel } from './pane-focus-model';
+import { PaneDialog } from './pane-dialog';
 import { SessionModel } from './session-model';
 import { SettingsView, type BindableCommandEntry } from './settings-view';
 import { TerminalPane } from './terminal-pane';
@@ -393,10 +405,15 @@ export class NeonCodeApp {
   readonly settingsView: SettingsView;
   readonly workspaceDialog: WorkspaceDialog;
   readonly tabDialog: TabDialog;
+  readonly paneDialog: PaneDialog;
   readonly workspaceLayouts: Map<string, WorkspaceLayoutState>;
   readonly pendingInitialLayoutSaves: Set<string>;
   readonly layoutSavePromises = new Map<string, Promise<void>>();
   readonly onDocumentKeyDown = (event: KeyboardEvent): void => {
+    if (this.paneDialog.isOpen) {
+      this.paneDialog.handleKeyDown(event);
+      return;
+    }
     if (this.tabDialog.isOpen) {
       this.tabDialog.handleKeyDown(event);
       return;
@@ -441,6 +458,7 @@ export class NeonCodeApp {
   switchPromise: Promise<void> = Promise.resolve();
   switching = false;
   catalogSaving = false;
+  paneOperationBusy = false;
 
   constructor({ documentRef = document, windowRef = window, bootstrap = {} }: NeonCodeAppOptions = {}) {
     this.document = documentRef;
@@ -489,6 +507,19 @@ export class NeonCodeApp {
       'tab.renameDialog': () => this.tabDialog.open('rename'),
       'tab.closeDialog': () => this.tabDialog.open('close'),
       'pane.focus': ({ paneId }) => this.focusPane(paneId),
+      'pane.split': (args) => this.splitPane(args),
+      'split.resize': (args) => this.resizeSplit(args),
+      'pane.close': (args) => this.closePane(args),
+      'pane.detach': (args) => this.detachPane(args),
+      'pane.kill': (args) => this.killPaneSession(args),
+      'pane.restart': (args) => this.restartPane(args),
+      'pane.splitHorizontal': () => this.splitActivePane('horizontal'),
+      'pane.splitVertical': () => this.splitActivePane('vertical'),
+      'pane.resizeLeft': () => this.resizeActivePane('left'),
+      'pane.resizeRight': () => this.resizeActivePane('right'),
+      'pane.resizeUp': () => this.resizeActivePane('up'),
+      'pane.resizeDown': () => this.resizeActivePane('down'),
+      'pane.closeDialog': () => this.paneDialog.open(),
       'pane.next': () => this.focusNextPane(),
       'pane.previous': () => this.focusPreviousPane(),
     }, {
@@ -496,13 +527,13 @@ export class NeonCodeApp {
         ? 'Application is closing'
         : this.settingsView.isOpen
           ? 'Another overlay is open'
-          : this.workspaceDialog.isOpen || this.tabDialog.isOpen
+          : this.workspaceDialog.isOpen || this.tabDialog.isOpen || this.paneDialog.isOpen
             ? 'Another overlay is open'
             : this.commandPalette.isOpen ? 'Command palette is already open' : null,
       'palette.close': () => this.commandPalette.isOpen ? null : 'Command palette is not open',
       'settings.open': () => this.closed
         ? 'Application is closing'
-        : this.workspaceDialog.isOpen || this.tabDialog.isOpen
+        : this.workspaceDialog.isOpen || this.tabDialog.isOpen || this.paneDialog.isOpen
           ? 'Another overlay is open'
           : this.settingsView.isOpen ? 'Settings are already open' : null,
       'settings.close': () => this.settingsView.isOpen ? null : 'Settings are not open',
@@ -527,6 +558,19 @@ export class NeonCodeApp {
       'tab.renameDialog': () => this.tabDialogDisabledReason('rename'),
       'tab.closeDialog': () => this.tabDialogDisabledReason('close'),
       'pane.focus': ({ paneId }) => this.paneCommandDisabledReason(paneId),
+      'pane.split': (args) => this.splitPaneDisabledReason(args),
+      'split.resize': (args) => this.resizeSplitDisabledReason(args),
+      'pane.close': (args) => this.closePaneDisabledReason(args),
+      'pane.detach': (args) => this.lifecyclePaneDisabledReason(args, 'detach'),
+      'pane.kill': (args) => this.lifecyclePaneDisabledReason(args, 'kill'),
+      'pane.restart': (args) => this.lifecyclePaneDisabledReason(args, 'restart'),
+      'pane.splitHorizontal': () => this.splitActivePaneDisabledReason(),
+      'pane.splitVertical': () => this.splitActivePaneDisabledReason(),
+      'pane.resizeLeft': () => this.resizeActivePaneDisabledReason('left'),
+      'pane.resizeRight': () => this.resizeActivePaneDisabledReason('right'),
+      'pane.resizeUp': () => this.resizeActivePaneDisabledReason('up'),
+      'pane.resizeDown': () => this.resizeActivePaneDisabledReason('down'),
+      'pane.closeDialog': () => this.paneCloseDialogDisabledReason(),
       'pane.next': () => this.relativePaneCommandDisabledReason(),
       'pane.previous': () => this.relativePaneCommandDisabledReason(),
     });
@@ -580,6 +624,19 @@ export class NeonCodeApp {
       },
       dispatchRename: (args) => this.dispatchCommand({ id: 'tab.rename', args }),
       dispatchClose: (args) => this.dispatchCommand({ id: 'tab.close', args }),
+      restoreActivePaneFocus: () => this.applyActivePaneFocus(),
+    });
+    this.paneDialog = new PaneDialog({
+      documentRef: this.document,
+      getActivePane: () => {
+        const workspaceId = this.activeWorkspaceId;
+        const paneId = this.activeLayoutTab()?.focusedPaneId;
+        if (!workspaceId || !paneId) return null;
+        const workspace = this.config.workspaces.find((candidate) => candidate.id === workspaceId);
+        const descriptor = workspace?.panes.find((pane) => pane.paneId === paneId);
+        return descriptor ? { workspaceId, paneId, title: descriptor.title } : null;
+      },
+      dispatchClose: (args) => this.dispatchCommand({ id: 'pane.close', args }),
       restoreActivePaneFocus: () => this.applyActivePaneFocus(),
     });
     requiredElement(this.document, 'commands-button').addEventListener('click', () => {
@@ -665,7 +722,8 @@ export class NeonCodeApp {
   workspaceDialogDisabledReason(mode: 'create' | 'rename' | 'delete'): CommandDisabledReason | null {
     if (this.closed) return 'Application is closing';
     if (this.catalogSaving || this.switching) return 'Workspace catalog update is in progress';
-    if (this.settingsView.isOpen || this.workspaceDialog.isOpen || this.tabDialog.isOpen) {
+    if (this.settingsView.isOpen || this.workspaceDialog.isOpen || this.tabDialog.isOpen
+        || this.paneDialog.isOpen) {
       return 'Another overlay is open';
     }
     if (mode === 'create') {
@@ -814,7 +872,8 @@ export class NeonCodeApp {
   }
 
   tabDialogDisabledReason(mode: 'rename' | 'close'): CommandDisabledReason | null {
-    if (this.settingsView.isOpen || this.workspaceDialog.isOpen || this.tabDialog.isOpen) {
+    if (this.settingsView.isOpen || this.workspaceDialog.isOpen || this.tabDialog.isOpen
+        || this.paneDialog.isOpen) {
       return 'Another overlay is open';
     }
     const tab = this.activeLayoutTab();
@@ -825,6 +884,12 @@ export class NeonCodeApp {
     return this.closed ? 'Application is closing' : null;
   }
 
+  findSplitNode(node: LayoutNode, splitId: string): Extract<LayoutNode, { type: 'split' }> | null {
+    if (node.type === 'pane') return null;
+    if (node.splitId === splitId) return node;
+    return this.findSplitNode(node.first, splitId) ?? this.findSplitNode(node.second, splitId);
+  }
+
   paneCommandDisabledReason(paneId: string): CommandDisabledReason | null {
     if (this.closed) return 'Application is closing';
     const activeTab = this.activeLayoutTab();
@@ -832,6 +897,138 @@ export class NeonCodeApp {
       return 'Pane is unavailable';
     }
     return null;
+  }
+
+  paneTargetDisabledReason(args: PaneTargetCommandArgs): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    if (this.paneOperationBusy || this.catalogSaving || this.switching) {
+      return 'Pane operation is in progress';
+    }
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === args.workspaceId);
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    if (!workspace || !layout
+        || !workspace.panes.some((pane) => pane.paneId === args.paneId)) {
+      return 'Pane is unavailable';
+    }
+    const activeTab = layout.tabs.find((tab) => tab.tabId === layout.activeTabId);
+    if (args.workspaceId !== this.activeWorkspaceId || !activeTab
+        || !orderedPaneLeaves(activeTab.root).some((pane) => pane.paneId === args.paneId)) {
+      return 'Pane is not in the active tab';
+    }
+    return null;
+  }
+
+  splitPaneDisabledReason(args: PaneSplitCommandArgs): CommandDisabledReason | null {
+    const targetReason = this.paneTargetDisabledReason(args);
+    if (targetReason !== null) return targetReason;
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === args.workspaceId);
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    if (!workspace || !layout) return 'Workspace is unavailable';
+    if (workspace.panes.length >= MAX_WORKSPACE_PANES) return 'Pane limit reached';
+    const totalSessions = this.config.workspaces.reduce(
+      (count, candidate) => count + candidate.panes.length,
+      0,
+    );
+    if (totalSessions >= 64) return 'Configured session limit reached';
+    if (!Object.hasOwn(this.config.launchProfiles, args.launchProfile)) {
+      return 'Launch profile is unavailable';
+    }
+    if (this.config.workspaces.some((candidate) => (
+      candidate.panes.some((pane) => pane.sessionKey === args.sessionId)
+    ))) return 'Session is already configured';
+    if (layoutHasId(layout, args.sessionId)) return 'Pane is already configured';
+    if (layoutHasId(layout, args.splitId)) return 'Split is already configured';
+    return null;
+  }
+
+  splitActivePaneDisabledReason(): CommandDisabledReason | null {
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === this.activeWorkspaceId);
+    const paneId = this.activeLayoutTab()?.focusedPaneId;
+    if (!workspace || !paneId) return 'No active pane is available';
+    const targetReason = this.paneTargetDisabledReason({ workspaceId: workspace.id, paneId });
+    if (targetReason !== null) return targetReason;
+    if (workspace.panes.length >= MAX_WORKSPACE_PANES) return 'Pane limit reached';
+    if (!Object.hasOwn(this.config.launchProfiles, workspace.defaultLaunchProfile)) {
+      return 'Launch profile is unavailable';
+    }
+    const totalSessions = this.config.workspaces.reduce(
+      (count, candidate) => count + candidate.panes.length,
+      0,
+    );
+    return totalSessions >= 64 ? 'Configured session limit reached' : null;
+  }
+
+  resizeSplitDisabledReason(args: SplitResizeCommandArgs): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    if (this.paneOperationBusy || this.catalogSaving || this.switching) {
+      return 'Pane operation is in progress';
+    }
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    const activeTab = layout?.tabs.find((tab) => tab.tabId === layout.activeTabId);
+    if (!layout) return 'Workspace is unavailable';
+    if (args.workspaceId !== this.activeWorkspaceId || !activeTab) {
+      return 'Pane is not in the active tab';
+    }
+    const split = this.findSplitNode(activeTab.root, args.splitId);
+    if (!split) return 'Split is unavailable';
+    const nextRatio = Math.min(0.9, Math.max(0.1, split.ratio + args.delta));
+    return nextRatio === split.ratio ? 'Split cannot be resized further' : null;
+  }
+
+  closePaneDisabledReason(args: PaneCloseCommandArgs): CommandDisabledReason | null {
+    const targetReason = this.paneTargetDisabledReason(args);
+    if (targetReason !== null) return targetReason;
+    const pane = this.panes.find((candidate) => candidate.paneId === args.paneId);
+    if (pane?.state && ['killed', 'killing', 'exited'].includes(pane.state.lifecycle)) {
+      return 'Pane is already killed';
+    }
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    const tab = layout?.tabs.find((candidate) => candidate.tabId === layout.activeTabId);
+    return tab && orderedPaneLeaves(tab.root).length > 1
+      ? null
+      : 'Cannot close the last pane in a tab';
+  }
+
+  lifecyclePaneDisabledReason(
+    args: PaneTargetCommandArgs,
+    operation: 'detach' | 'kill' | 'restart',
+  ): CommandDisabledReason | null {
+    const targetReason = this.paneTargetDisabledReason(args);
+    if (targetReason !== null) return targetReason;
+    const pane = this.panes.find((candidate) => candidate.paneId === args.paneId);
+    if (!pane) return 'Pane is unavailable';
+    if (operation === 'detach' && pane.state
+        && ['detached', 'detaching'].includes(pane.state.lifecycle)) {
+      return 'Pane is already detached';
+    }
+    if (operation !== 'restart' && pane.state
+        && ['killed', 'killing', 'exited'].includes(pane.state.lifecycle)) {
+      return 'Pane is already killed';
+    }
+    return null;
+  }
+
+  resizeActivePaneDisabledReason(direction: PaneResizeDirection): CommandDisabledReason | null {
+    if (this.closed) return 'Application is closing';
+    if (this.paneOperationBusy || this.catalogSaving || this.switching) {
+      return 'Pane operation is in progress';
+    }
+    const tab = this.activeLayoutTab();
+    if (!tab) return 'No active pane is available';
+    const resize = computeDirectionalResizeDelta(tab.root, tab.focusedPaneId, direction);
+    if (!resize) return 'No matching split is available';
+    return resize.delta === 0 ? 'Split cannot be resized further' : null;
+  }
+
+  paneCloseDialogDisabledReason(): CommandDisabledReason | null {
+    if (this.settingsView.isOpen || this.workspaceDialog.isOpen || this.tabDialog.isOpen
+        || this.paneDialog.isOpen) {
+      return 'Another overlay is open';
+    }
+    const workspaceId = this.activeWorkspaceId;
+    const paneId = this.activeLayoutTab()?.focusedPaneId;
+    if (!workspaceId || !paneId) return 'No active pane is available';
+    return this.closePaneDisabledReason({ workspaceId, paneId, disposition: 'detach' });
   }
 
   relativePaneCommandDisabledReason(): CommandDisabledReason | null {
@@ -893,6 +1090,13 @@ export class NeonCodeApp {
       { invocation: { id: 'tab.previous' }, title: getCommandMetadata('tab.previous').title },
       { invocation: { id: 'tab.renameDialog' }, title: getCommandMetadata('tab.renameDialog').title },
       { invocation: { id: 'tab.closeDialog' }, title: getCommandMetadata('tab.closeDialog').title },
+      { invocation: { id: 'pane.splitHorizontal' }, title: getCommandMetadata('pane.splitHorizontal').title },
+      { invocation: { id: 'pane.splitVertical' }, title: getCommandMetadata('pane.splitVertical').title },
+      { invocation: { id: 'pane.resizeLeft' }, title: getCommandMetadata('pane.resizeLeft').title },
+      { invocation: { id: 'pane.resizeRight' }, title: getCommandMetadata('pane.resizeRight').title },
+      { invocation: { id: 'pane.resizeUp' }, title: getCommandMetadata('pane.resizeUp').title },
+      { invocation: { id: 'pane.resizeDown' }, title: getCommandMetadata('pane.resizeDown').title },
+      { invocation: { id: 'pane.closeDialog' }, title: getCommandMetadata('pane.closeDialog').title },
     ];
     for (const workspace of this.config.workspaces) {
       entries.push({
@@ -943,6 +1147,13 @@ export class NeonCodeApp {
     add({ id: 'tab.previous' }, getCommandMetadata('tab.previous').title);
     add({ id: 'tab.renameDialog' }, getCommandMetadata('tab.renameDialog').title);
     add({ id: 'tab.closeDialog' }, getCommandMetadata('tab.closeDialog').title);
+    add({ id: 'pane.splitHorizontal' }, getCommandMetadata('pane.splitHorizontal').title);
+    add({ id: 'pane.splitVertical' }, getCommandMetadata('pane.splitVertical').title);
+    add({ id: 'pane.resizeLeft' }, getCommandMetadata('pane.resizeLeft').title);
+    add({ id: 'pane.resizeRight' }, getCommandMetadata('pane.resizeRight').title);
+    add({ id: 'pane.resizeUp' }, getCommandMetadata('pane.resizeUp').title);
+    add({ id: 'pane.resizeDown' }, getCommandMetadata('pane.resizeDown').title);
+    add({ id: 'pane.closeDialog' }, getCommandMetadata('pane.closeDialog').title);
     for (const workspace of this.config.workspaces) {
       add(
         { id: 'workspace.open', args: { workspaceId: workspace.id } },
@@ -962,6 +1173,13 @@ export class NeonCodeApp {
     }
     add({ id: 'pane.next' }, getCommandMetadata('pane.next').title);
     add({ id: 'pane.previous' }, getCommandMetadata('pane.previous').title);
+    const activePaneId = this.activeLayoutTab()?.focusedPaneId;
+    if (activeWorkspace && activePaneId) {
+      const target = { workspaceId: activeWorkspace.id, paneId: activePaneId };
+      add({ id: 'pane.detach', args: target }, getCommandMetadata('pane.detach').title);
+      add({ id: 'pane.kill', args: target }, getCommandMetadata('pane.kill').title);
+      add({ id: 'pane.restart', args: target }, getCommandMetadata('pane.restart').title);
+    }
     for (const workspace of this.config.workspaces) {
       add(
         { id: 'workspace.dismissAttention', args: { workspaceId: workspace.id } },
@@ -1017,6 +1235,282 @@ export class NeonCodeApp {
         if (saved) this.pendingInitialLayoutSaves.delete(workspaceId);
       });
     }
+  }
+
+  private createLayoutToken(prefix: string, layout: WorkspaceLayoutState): string {
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      const nonce = typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID().toLowerCase()
+        : `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}-${attempt}`;
+      const candidate = `${prefix}-${nonce}`;
+      if (!layoutHasId(layout, candidate)
+          && !this.config.workspaces.some((workspace) => (
+            workspace.panes.some((pane) => pane.sessionKey === candidate)
+          ))) return candidate;
+    }
+    throw new Error(`could not allocate a unique ${prefix} identifier`);
+  }
+
+  async splitActivePane(direction: 'horizontal' | 'vertical'): Promise<void> {
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === this.activeWorkspaceId);
+    const layout = workspace ? this.workspaceLayouts.get(workspace.id) : undefined;
+    const paneId = this.activeLayoutTab()?.focusedPaneId;
+    if (!workspace || !layout || !paneId) throw new Error('no active pane');
+    const sessionId = this.createLayoutToken('session', layout);
+    await this.splitPane({
+      workspaceId: workspace.id,
+      paneId,
+      sessionId,
+      splitId: this.createLayoutToken('split', layout),
+      title: `Terminal ${workspace.panes.length + 1}`,
+      launchProfile: workspace.defaultLaunchProfile,
+      direction,
+      position: 'after',
+    });
+  }
+
+  async splitPane(args: PaneSplitCommandArgs): Promise<void> {
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === args.workspaceId);
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    const profile = this.config.launchProfiles[args.launchProfile];
+    if (!workspace || !layout) throw new Error(`unknown workspace: ${args.workspaceId}`);
+    if (!profile) throw new Error(`launch profile is unavailable: ${args.launchProfile}`);
+    const nextLayout = splitLayoutPane(layout, {
+      paneId: args.paneId,
+      newPaneId: args.sessionId,
+      newSessionKey: args.sessionId,
+      splitId: args.splitId,
+      direction: args.direction,
+      position: args.position,
+    });
+
+    this.paneOperationBusy = true;
+    this.catalogSaving = true;
+    try {
+      const snapshot = await this.window.neoncodeDesktop.getWorkspaceCatalog();
+      const configured = snapshot.workspaces.find((candidate) => candidate.id === args.workspaceId);
+      if (!configured) throw new Error(`unknown workspace: ${args.workspaceId}`);
+      if (configured.sessions.length >= MAX_WORKSPACE_PANES) throw new Error('pane limit reached');
+      if (snapshot.workspaces.some((candidate) => (
+        candidate.sessions.some((session) => session.id === args.sessionId)
+      ))) throw new Error(`session is already configured: ${args.sessionId}`);
+      await this.window.neoncodeDesktop.saveWorkspaceCatalog({
+        revision: snapshot.revision,
+        workspaces: snapshot.workspaces.map((candidate) => candidate.id === args.workspaceId
+          ? {
+            ...candidate,
+            sessions: [...candidate.sessions, {
+              id: args.sessionId,
+              title: args.title,
+              launchProfile: args.launchProfile,
+            }],
+          }
+          : candidate),
+      });
+
+      const descriptor: PaneDescriptor = {
+        index: workspace.panes.length,
+        workspaceId: workspace.id,
+        paneId: args.sessionId,
+        sessionKey: args.sessionId,
+        title: args.title,
+        terminalElementId: `terminal-${workspace.id}-${args.sessionId}`,
+        sessionId: createSessionId(this.config.sessionPrefix, args.sessionId),
+        launchProfileId: args.launchProfile,
+        launchProfile: {
+          ...profile,
+          args: [...profile.args],
+          cwd: workspace.path ?? profile.cwd,
+        },
+      };
+      workspace.panes.push(descriptor);
+      this.workspaceSessionStates.set(descriptor.sessionId, {
+        workspaceId: workspace.id,
+        lifecycle: 'idle',
+        error: '',
+        attention: null,
+      });
+      this.workspaceLayouts.set(workspace.id, nextLayout);
+      this.syncPublicConfiguration();
+      this.rebuildKeybindingRouter();
+      await this.persistWorkspaceLayout(workspace.id, 'Split pane layout');
+    } finally {
+      this.catalogSaving = false;
+      this.paneOperationBusy = false;
+    }
+    await this.switchWorkspace(workspace.id, { force: true });
+  }
+
+  resizeActivePane(direction: PaneResizeDirection): Promise<void> {
+    const workspaceId = this.activeWorkspaceId;
+    const tab = this.activeLayoutTab();
+    if (!workspaceId || !tab) return Promise.resolve();
+    const resize = computeDirectionalResizeDelta(tab.root, tab.focusedPaneId, direction);
+    if (!resize || resize.delta === 0) return Promise.resolve();
+    return this.resizeSplit({ workspaceId, splitId: resize.splitId, delta: resize.delta });
+  }
+
+  async resizeSplit(args: SplitResizeCommandArgs): Promise<void> {
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    const activeTab = layout?.tabs.find((tab) => tab.tabId === layout.activeTabId);
+    const split = activeTab ? this.findSplitNode(activeTab.root, args.splitId) : null;
+    if (!layout || !split) throw new Error(`unknown split: ${args.splitId}`);
+    const nextRatio = Math.min(0.9, Math.max(0.1, split.ratio + args.delta));
+    const nextLayout = resizeSplit(layout, args.splitId, nextRatio);
+    this.workspaceLayouts.set(args.workspaceId, nextLayout);
+    this.updateSplitSurface(args.splitId, nextRatio);
+    for (const pane of this.panes) pane.scheduleFitAndResize();
+    await this.persistWorkspaceLayout(args.workspaceId, 'Resized split layout');
+  }
+
+  updateSplitSurface(splitId: string, ratio: number): void {
+    const split = [...this.terminalGrid.querySelectorAll<HTMLElement>('.layout-split')]
+      .find((candidate) => candidate.dataset.splitId === splitId);
+    const children = split?.querySelectorAll<HTMLElement>(':scope > .layout-child');
+    const first = children?.[0];
+    const second = children?.[1];
+    if (!first || !second) return;
+    first.style.flex = `0 1 ${ratio * 100}%`;
+    second.style.flex = `0 1 ${(1 - ratio) * 100}%`;
+    split?.querySelector<HTMLElement>(':scope > .layout-separator')
+      ?.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
+  }
+
+  private descriptorForPaneTarget(args: PaneTargetCommandArgs): PaneDescriptor | null {
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === args.workspaceId);
+    const leaf = this.activeLayoutTab(args.workspaceId)
+      ? orderedPaneLeaves(this.activeLayoutTab(args.workspaceId)!.root)
+        .find((candidate) => candidate.paneId === args.paneId)
+      : undefined;
+    return workspace?.panes.find((pane) => pane.sessionKey === leaf?.sessionKey) ?? null;
+  }
+
+  private async requestVisiblePaneClose(
+    pane: TerminalPane,
+    disposition: 'detach' | 'kill',
+  ): Promise<void> {
+    if (disposition === 'kill' && pane.state.lifecycle === 'detached') {
+      await this.controlSession(pane.sessionId, 'kill');
+      pane.finishClose('killed');
+    } else if (disposition === 'kill') {
+      await pane.killAndClose();
+    } else {
+      await pane.detachAndClose();
+    }
+    if (pane.state.lifecycle !== (disposition === 'kill' ? 'killed' : 'detached')) {
+      throw new Error(pane.state.error || `${disposition} acknowledgement failed`);
+    }
+  }
+
+  async closePane(args: PaneCloseCommandArgs): Promise<void> {
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === args.workspaceId);
+    const layout = this.workspaceLayouts.get(args.workspaceId);
+    const descriptor = this.descriptorForPaneTarget(args);
+    const visiblePane = this.panes.find((pane) => pane.paneId === args.paneId);
+    if (!workspace || !layout || !descriptor || !visiblePane) {
+      throw new Error(`unknown pane: ${args.workspaceId}/${args.paneId}`);
+    }
+    const removed = closeLayoutPane(layout, args.paneId);
+
+    this.paneOperationBusy = true;
+    this.catalogSaving = true;
+    try {
+      await this.requestVisiblePaneClose(visiblePane, args.disposition);
+      try {
+        const snapshot = await this.window.neoncodeDesktop.getWorkspaceCatalog();
+        await this.window.neoncodeDesktop.saveWorkspaceCatalog({
+          revision: snapshot.revision,
+          workspaces: snapshot.workspaces.map((candidate) => candidate.id === workspace.id
+            ? {
+              ...candidate,
+              sessions: candidate.sessions.filter((session) => session.id !== descriptor.sessionKey),
+            }
+            : candidate),
+        });
+      } catch (error) {
+        const warning = `Pane lifecycle completed, but its durable definition could not be removed: ${errorMessage(error)}. The pane was restored.`;
+        this.addRuntimeWarning(warning);
+        await this.reconstructPane(args.paneId);
+        throw error;
+      }
+
+      workspace.panes = workspace.panes
+        .filter((pane) => pane.sessionKey !== descriptor.sessionKey)
+        .map((pane, index) => ({ ...pane, index }));
+      this.workspaceLayouts.set(workspace.id, removed.state);
+      this.workspaceSessionStates.delete(descriptor.sessionId);
+      this.visitedSessionIds.delete(descriptor.sessionId);
+      if (args.disposition === 'kill') {
+        this.discoveredSessionIds.delete(descriptor.sessionId);
+        this.hubSessionsById.delete(descriptor.sessionId);
+      }
+      const removedTargets = new Set([args.paneId, descriptor.sessionKey]);
+      this.config.keybindingOverrides = this.config.keybindingOverrides.filter(({ command }) => (
+        command.id !== 'pane.focus' || !removedTargets.has(command.args.paneId)
+      ));
+      this.syncPublicConfiguration();
+      this.rebuildKeybindingRouter();
+      await this.persistWorkspaceLayout(workspace.id, 'Closed pane layout');
+    } finally {
+      this.catalogSaving = false;
+      this.paneOperationBusy = false;
+    }
+    await this.switchWorkspace(workspace.id, { force: true });
+  }
+
+  async detachPane(args: PaneTargetCommandArgs): Promise<void> {
+    const pane = this.panes.find((candidate) => candidate.paneId === args.paneId);
+    if (!pane) throw new Error(`unknown visible pane: ${args.paneId}`);
+    this.paneOperationBusy = true;
+    try {
+      await this.requestVisiblePaneClose(pane, 'detach');
+      this.setStatus(`Detached ${pane.sessionId}; restart attaches it again`);
+    } finally {
+      this.paneOperationBusy = false;
+    }
+  }
+
+  async killPaneSession(args: PaneTargetCommandArgs): Promise<void> {
+    const pane = this.panes.find((candidate) => candidate.paneId === args.paneId);
+    if (!pane) throw new Error(`unknown visible pane: ${args.paneId}`);
+    this.paneOperationBusy = true;
+    try {
+      await this.requestVisiblePaneClose(pane, 'kill');
+      this.setStatus(`Killed ${pane.sessionId}; restart starts a replacement`);
+    } finally {
+      this.paneOperationBusy = false;
+    }
+  }
+
+  async restartPane(args: PaneTargetCommandArgs): Promise<void> {
+    this.paneOperationBusy = true;
+    try {
+      await this.reconstructPane(args.paneId);
+      this.setStatus(`Restarting or attaching ${args.paneId}`);
+    } finally {
+      this.paneOperationBusy = false;
+    }
+  }
+
+  private async reconstructPane(paneId: string): Promise<void> {
+    const index = this.panes.findIndex((pane) => pane.paneId === paneId);
+    const current = this.panes[index];
+    const workspace = this.config.workspaces.find((candidate) => candidate.id === this.activeWorkspaceId);
+    const leaf = this.activeLayoutTab()
+      ? orderedPaneLeaves(this.activeLayoutTab()!.root).find((pane) => pane.paneId === paneId)
+      : undefined;
+    if (!current || !workspace || !leaf || index < 0) throw new Error(`unknown visible pane: ${paneId}`);
+    const descriptor = this.descriptorForLeaf(workspace, leaf);
+    const running = this.hubSessionsById.get(descriptor.sessionId)?.state === 'running'
+      || this.discoveredSessionIds.has(descriptor.sessionId);
+    if (running) this.discoveredSessionIds.add(descriptor.sessionId);
+    else this.discoveredSessionIds.delete(descriptor.sessionId);
+    current.dispose();
+    const container = this.document.getElementById(descriptor.terminalElementId);
+    container?.replaceChildren();
+    this.createPane(descriptor, index);
+    this.applyActivePaneFocus();
+    await Promise.resolve();
   }
 
   async createTab(args: TabCreateCommandArgs): Promise<void> {
@@ -2024,10 +2518,37 @@ export class NeonCodeApp {
     const first = this.document.createElement('div');
     first.className = 'layout-child';
     first.style.flex = `0 1 ${node.ratio * 100}%`;
+    const separator = this.document.createElement('div');
+    separator.className = 'layout-separator';
+    separator.dataset.splitId = node.splitId;
+    separator.dataset.testid = `split-separator-${node.splitId}`;
+    separator.setAttribute('role', 'separator');
+    separator.setAttribute('aria-label', `Resize split ${node.splitId}`);
+    separator.setAttribute(
+      'aria-orientation',
+      node.direction === 'horizontal' ? 'vertical' : 'horizontal',
+    );
+    separator.setAttribute('aria-valuemin', '10');
+    separator.setAttribute('aria-valuemax', '90');
+    separator.setAttribute('aria-valuenow', String(Math.round(node.ratio * 100)));
+    separator.tabIndex = 0;
+    separator.addEventListener('keydown', (event) => {
+      let delta = 0;
+      if (node.direction === 'horizontal' && event.key === 'ArrowLeft') delta = -0.05;
+      else if (node.direction === 'horizontal' && event.key === 'ArrowRight') delta = 0.05;
+      else if (node.direction === 'vertical' && event.key === 'ArrowUp') delta = -0.05;
+      else if (node.direction === 'vertical' && event.key === 'ArrowDown') delta = 0.05;
+      if (delta === 0) return;
+      event.preventDefault();
+      void this.dispatchCommand({
+        id: 'split.resize',
+        args: { workspaceId: workspace.id, splitId: node.splitId, delta },
+      });
+    });
     const second = this.document.createElement('div');
     second.className = 'layout-child';
     second.style.flex = `0 1 ${(1 - node.ratio) * 100}%`;
-    split.append(first, second);
+    split.append(first, separator, second);
     parent.append(split);
     this.renderLayoutNode(node.first, workspace, first);
     this.renderLayoutNode(node.second, workspace, second);
@@ -2052,7 +2573,10 @@ export class NeonCodeApp {
 
     const titleBar = this.document.createElement('div');
     titleBar.className = 'pane-title';
+    const identity = this.document.createElement('span');
+    identity.className = 'pane-identity';
     const title = this.document.createElement('span');
+    title.className = 'pane-title-text';
     title.textContent = descriptor.title;
     title.dataset.testid = `pane-title-${descriptor.paneId}`;
     const status = this.document.createElement('span');
@@ -2061,7 +2585,64 @@ export class NeonCodeApp {
     status.dataset.state = 'connecting';
     status.dataset.testid = `pane-status-${descriptor.paneId}`;
     status.textContent = 'Connecting';
-    titleBar.append(title, status);
+    identity.append(title, status);
+
+    const controls = this.document.createElement('span');
+    controls.className = 'pane-controls';
+    const commandButton = (
+      label: string,
+      testId: string,
+      command: CommandInvocation,
+    ): HTMLButtonElement => {
+      const button = this.document.createElement('button');
+      button.type = 'button';
+      button.className = 'pane-control';
+      button.textContent = label;
+      button.title = getCommandMetadata(command.id).title;
+      button.setAttribute('aria-label', `${button.title} for ${descriptor.title}`);
+      button.dataset.testid = testId;
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        this.focusPane(descriptor.paneId);
+        void this.dispatchCommand(command);
+      });
+      return button;
+    };
+    const splitButton = commandButton(
+      'Split',
+      `pane-split-${descriptor.paneId}`,
+      { id: 'pane.splitHorizontal' },
+    );
+    splitButton.disabled = (
+      this.config.workspaces.find((workspace) => workspace.id === descriptor.workspaceId)?.panes.length
+        ?? MAX_WORKSPACE_PANES
+    ) >= MAX_WORKSPACE_PANES;
+    const closeButton = commandButton(
+      'Close',
+      `pane-close-${descriptor.paneId}`,
+      { id: 'pane.closeDialog' },
+    );
+    closeButton.disabled = orderedPaneLeaves(this.activeLayoutTab()?.root ?? {
+      type: 'pane', paneId: descriptor.paneId, sessionKey: descriptor.sessionKey,
+    }).length === 1;
+    const more = this.document.createElement('details');
+    more.className = 'pane-more';
+    const moreSummary = this.document.createElement('summary');
+    moreSummary.className = 'pane-control';
+    moreSummary.textContent = 'More';
+    moreSummary.setAttribute('aria-label', `More lifecycle controls for ${descriptor.title}`);
+    more.append(moreSummary);
+    const moreMenu = this.document.createElement('span');
+    moreMenu.className = 'pane-more-menu';
+    const target = { workspaceId: descriptor.workspaceId, paneId: descriptor.paneId };
+    moreMenu.append(
+      commandButton('Detach', `pane-detach-${descriptor.paneId}`, { id: 'pane.detach', args: target }),
+      commandButton('Kill', `pane-kill-${descriptor.paneId}`, { id: 'pane.kill', args: target }),
+      commandButton('Restart', `pane-restart-${descriptor.paneId}`, { id: 'pane.restart', args: target }),
+    );
+    more.append(moreMenu);
+    controls.append(splitButton, closeButton, more);
+    titleBar.append(identity, controls);
 
     const terminal = this.document.createElement('div');
     terminal.id = descriptor.terminalElementId;
@@ -2071,13 +2652,13 @@ export class NeonCodeApp {
     parent.append(pane);
   }
 
-  createPane(descriptor: PaneDescriptor): void {
+  createPane(descriptor: PaneDescriptor, index = this.panes.length): void {
     const container = this.document.getElementById(descriptor.terminalElementId);
     if (!container) return;
     if (!this.config.terminal) throw new Error('Terminal appearance is unavailable');
 
     const pane = new TerminalPane({
-      index: this.panes.length,
+      index,
       paneId: descriptor.paneId,
       sessionKey: descriptor.sessionKey,
       sessionId: descriptor.sessionId,
@@ -2096,7 +2677,8 @@ export class NeonCodeApp {
       },
       onSessionExit: (outcome) => this.recordSessionExit(descriptor, outcome),
     });
-    this.panes.push(pane);
+    if (index === this.panes.length) this.panes.push(pane);
+    else this.panes[index] = pane;
     pane.start();
   }
 
@@ -2221,6 +2803,50 @@ export class NeonCodeApp {
     this.updateWorkspaceStatuses();
     const failed = results.filter((result) => result.status === 'rejected');
     if (failed.length > 0) throw new Error(`${failed.length} attention acknowledgement(s) failed`);
+  }
+
+  controlSession(sessionId: string, action: 'kill'): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let timeoutHandle!: TimerHandle;
+      let client!: HubClient;
+      const finish = (error?: Error): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutHandle);
+        client.close();
+        if (error) reject(error); else resolve();
+      };
+      timeoutHandle = setTimeout(
+        () => finish(new Error(`${action} acknowledgement timed out`)),
+        CONTROL_OPERATION_TIMEOUT_MS,
+      );
+      client = new HubClient({
+        endpoint: this.config.endpoint,
+        capabilityToken: this.config.capabilityToken,
+        sessionId,
+        onOpen: () => {
+          if (!client.kill()) finish(new Error(`failed to send ${action}`));
+        },
+        onMessage: (message) => {
+          if (message.type === 'killed' && message.session_id === sessionId) finish();
+          else if (message.type === 'error'
+              && (!message.session_id || message.session_id === sessionId)) {
+            finish(new Error(
+              typeof message.message === 'string' && message.message
+                ? message.message
+                : `${action} failed`,
+            ));
+          }
+        },
+        onInvalidMessage: (error) => finish(
+          error instanceof Error ? error : new Error(errorMessage(error)),
+        ),
+        onClose: () => finish(new Error(`${action} connection closed before acknowledgement`)),
+        onError: () => {},
+      });
+      client.connect();
+    });
   }
 
   killDetachedSession(sessionId: string): Promise<void> {

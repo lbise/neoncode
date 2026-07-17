@@ -91,6 +91,30 @@
       </footer>
     </form>
   </div>
+  <div id="pane-dialog-overlay" class="workspace-dialog-overlay" data-testid="pane-dialog-overlay" hidden>
+    <form id="pane-dialog" class="workspace-dialog pane-dialog" role="dialog" aria-modal="true" aria-labelledby="pane-dialog-title" novalidate>
+      <header class="workspace-dialog-header">
+        <div>
+          <h2 id="pane-dialog-title">Close pane</h2>
+          <p id="pane-dialog-description"></p>
+        </div>
+        <button id="pane-dialog-close" class="workspace-dialog-secondary" type="button" aria-label="Close pane dialog" data-testid="pane-dialog-close">Close</button>
+      </header>
+      <div class="workspace-dialog-content">
+        <fieldset>
+          <legend>Session disposition</legend>
+          <label><input name="pane-disposition" type="radio" value="detach" checked /> Detach session and keep it running</label>
+          <label><input name="pane-disposition" type="radio" value="kill" /> Kill pane session</label>
+        </fieldset>
+      </div>
+      <p id="pane-dialog-error" class="workspace-dialog-error" role="alert" data-testid="pane-dialog-error" hidden></p>
+      <footer class="workspace-dialog-footer">
+        <span id="pane-dialog-status" role="status" data-testid="pane-dialog-status"></span>
+        <button id="pane-dialog-cancel" class="workspace-dialog-secondary" type="button" data-testid="pane-dialog-cancel">Cancel</button>
+        <button id="pane-dialog-submit" class="workspace-dialog-primary" type="submit" data-testid="pane-dialog-submit">Close pane</button>
+      </footer>
+    </form>
+  </div>
   <div id="tab-dialog-overlay" class="workspace-dialog-overlay" data-testid="tab-dialog-overlay" hidden>
     <form id="tab-dialog" class="workspace-dialog tab-dialog" role="dialog" aria-modal="true" aria-labelledby="tab-dialog-title" novalidate>
       <header class="workspace-dialog-header">

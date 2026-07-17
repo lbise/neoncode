@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Persistent visible workspace tabs complete
+Stage: Keyboard-complete pane layout and lifecycle controls complete
 Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: interactive pane splitting/resizing, then GUI polish
+Next focus: authenticated local app-control transport for CLI, then GUI polish
 ```
 
 The Windows tech stack is now:
@@ -177,7 +177,7 @@ Limitations:
 
 - the schema 6 Settings UI edits supported General values and keybindings; launch profiles still require JSON edits, while workspace definitions can be created/renamed/deleted in-app;
 - General values are restart-required in this slice, while keybinding overrides and workspace catalog edits apply live;
-- schema 6 grids seed persisted visible tab/split trees; interactive pane splitting/resizing is not exposed yet;
+- schema 6 grids seed persisted visible tab/split trees, with interactive durable split/resize/close and lifecycle controls now exposed;
 - live appearance reload, font discovery, and external workspace files remain future work;
 - changing a configured ID does not automatically kill an old detached hub session.
 
@@ -352,7 +352,7 @@ Status: protocol, retention, polling UI, and acknowledgement complete; CLI publi
 
 ### Immediate product priority: keyboard-first workspace cockpit
 
-Status: phases 1–4 now deliver the typed command boundary, keyboard-complete palette, persisted editable Settings/keybindings, and app-created durable workspaces. Visible runtime tabs/splits and authenticated external app control remain later phases.
+Status: phases 1–5 now deliver the typed command boundary, keyboard-complete palette, persisted editable Settings/keybindings, app-created durable workspaces/tabs, and complete pane split/resize/close/lifecycle controls. Authenticated external app control is the next phase.
 
 #### Phase 1: shared typed command contract, results, and context
 
@@ -402,7 +402,11 @@ General endpoint/session/appearance fields and close policy are explicitly resta
 - [x] Add typed create/open/rename/reorder/close tab commands, contextual palette actions, durable session transactions, and detach/kill semantics with a last-tab guard.
 - [x] Keep dynamic pane definitions in the durable workspace catalog, derive new tab pane IDs from stable session IDs, and apply workspace path cwd overrides.
 - [x] Restore/reconcile tabs and focused panes across relaunch, attach visible leaves with replay, and leave inactive tabs unattached.
-- [ ] Add interactive split/close/resize pane commands and controls without changing the hub's layout-agnostic contract.
+- [x] Add strict externally eligible pane split/close/lifecycle and split-resize commands plus contextual UI commands without changing the hub's layout-agnostic contract.
+- [x] Save stable pane session definitions before split-tree mutation, derive pane IDs from session IDs, apply workspace cwd overrides, persist ratios, and force-render active tabs.
+- [x] Add accessible split separators, compact pane-header controls, a reusable detach/kill close dialog, depth-first F6 updates, sibling/new-pane focus, and safe sole-pane/max-pane guards.
+- [x] Keep lifecycle-only detach/kill/restart definitions and layouts intact; restart attaches running sessions or starts replacements, while explicit inactive-tab targets return bounded disabled results.
+- [x] Add `Alt+Shift+=`/`Alt+Shift+-` split defaults and `Alt+Shift+Arrow` resize defaults while leaving destructive lifecycle commands unbound and terminal conventions untouched.
 
 #### Phase 6: authenticated local app-control transport for CLI
 
@@ -412,7 +416,7 @@ General endpoint/session/appearance fields and close policy are explicitly resta
 - [ ] Extend `neoncode` CLI workspace list/open and app-control commands over that transport.
 - [ ] Keep `neoncode-hub` layout-agnostic: it continues to own PTY/session lifecycle while Electron owns workspaces, tabs, splits, palette, and presentation.
 
-Current tab defaults are `Ctrl+Shift+T` for a new tab and `Ctrl+PageUp/PageDown` for tab navigation. Future shortcut candidates (subject to conflict tests) include Windows-Terminal-style `Alt+Shift+D/-/=` splitting, directional pane focus, and close operations. `F6`/`Shift+F6`, `Alt+1..9`, and `Ctrl+Shift+P` remain defaults.
+Current defaults include `Ctrl+Shift+T` for a new tab, `Ctrl+PageUp/PageDown` for tab navigation, `Alt+Shift+=`/`Alt+Shift+-` for side-by-side/stacked splits, and `Alt+Shift+Arrow` for directional border resize. Close/kill/detach/restart remain unbound. `F6`/`Shift+F6`, `Alt+1..9`, and `Ctrl+Shift+P` remain defaults.
 
 Acceptance for the full cockpit milestone: starting from the keyboard, a user can switch/open a workspace, create and rename a tab, split and focus panes, start a terminal from a profile, resize/close the layout, inspect attention, and restore the same view after relaunch without disrupting normal terminal input.
 

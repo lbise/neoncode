@@ -24,6 +24,8 @@ From WSL/Linux repo root:
 ./dev app
 ```
 
+The desktop supports persistent tabs plus keyboard-complete pane splitting, directional resizing, explicit detach/kill close, and detach/kill/restart lifecycle controls. Defaults are `Alt+Shift+=` for a side-by-side split, `Alt+Shift+-` for a stacked split, `Alt+Shift+Arrow` for directional border resizing, and `F6`/`Shift+F6` for depth-first pane focus. Destructive pane lifecycle actions are deliberately unbound and remain available from Commands and pane headers.
+
 Useful commands:
 
 ```bash

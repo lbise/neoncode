@@ -36,7 +36,15 @@ assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'tab.createD
 assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'tab.next' })!), 'Ctrl+PageDown');
 assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'tab.previous' })!), 'Ctrl+PageUp');
 assert.equal(bindingForCommand(defaults, { id: 'tab.closeDialog' }), null);
+assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'pane.splitHorizontal' })!), 'Alt+Shift+=');
+assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'pane.splitVertical' })!), 'Alt+Shift+-');
+assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'pane.resizeLeft' })!), 'Alt+Shift+Left');
+assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'pane.resizeRight' })!), 'Alt+Shift+Right');
+assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'pane.resizeUp' })!), 'Alt+Shift+Up');
+assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'pane.resizeDown' })!), 'Alt+Shift+Down');
+assert.equal(bindingForCommand(defaults, { id: 'pane.closeDialog' }), null);
 assert(allowed.some((command) => command.id === 'tab.renameDialog'));
+assert(allowed.some((command) => command.id === 'pane.closeDialog'));
 
 const overrides: KeybindingOverride[] = [
   {

@@ -46,6 +46,22 @@ const validInvocations: CommandInvocation[] = [
   { id: 'tab.renameDialog' },
   { id: 'tab.closeDialog' },
   { id: 'pane.focus', args: { paneId: 'tasks' } },
+  { id: 'pane.split', args: {
+    workspaceId: 'review', paneId: 'tasks', sessionId: 'review-agent', splitId: 'split-agent',
+    title: 'Agent', launchProfile: 'default-shell', direction: 'horizontal', position: 'after',
+  } },
+  { id: 'split.resize', args: { workspaceId: 'review', splitId: 'split-agent', delta: -0.05 } },
+  { id: 'pane.close', args: { workspaceId: 'review', paneId: 'tasks', disposition: 'detach' } },
+  { id: 'pane.detach', args: { workspaceId: 'review', paneId: 'tasks' } },
+  { id: 'pane.kill', args: { workspaceId: 'review', paneId: 'tasks' } },
+  { id: 'pane.restart', args: { workspaceId: 'review', paneId: 'tasks' } },
+  { id: 'pane.splitHorizontal' },
+  { id: 'pane.splitVertical' },
+  { id: 'pane.resizeLeft' },
+  { id: 'pane.resizeRight' },
+  { id: 'pane.resizeUp' },
+  { id: 'pane.resizeDown' },
+  { id: 'pane.closeDialog' },
   { id: 'pane.next' },
   { id: 'pane.previous' },
 ];
@@ -62,6 +78,8 @@ const internalCommands = new Set([
   'palette.open', 'palette.close', 'settings.open', 'settings.close',
   'workspace.createDialog', 'workspace.renameDialog', 'workspace.deleteDialog',
   'tab.createDefault', 'tab.next', 'tab.previous', 'tab.renameDialog', 'tab.closeDialog',
+  'pane.splitHorizontal', 'pane.splitVertical',
+  'pane.resizeLeft', 'pane.resizeRight', 'pane.resizeUp', 'pane.resizeDown', 'pane.closeDialog',
 ]);
 for (const metadata of listCommandMetadata()) {
   assert.equal(
@@ -107,6 +125,23 @@ for (const invalid of [
   { id: 'tab.close', args: { workspaceId: 'review', tabId: 'tab', disposition: 'later' } },
   { id: 'pane.focus', args: { paneId: 'bad\nvalue' } },
   { id: 'pane.focus', args: { paneId: 'x'.repeat(129) } },
+  { id: 'pane.splitHorizontal', args: {} },
+  { id: 'pane.split', args: {
+    workspaceId: 'review', paneId: 'tasks', sessionId: 'new', splitId: 'split', title: 'New',
+    launchProfile: 'shell', direction: 'diagonal', position: 'after',
+  } },
+  { id: 'pane.split', args: {
+    workspaceId: 'review', paneId: 'tasks', sessionId: 'new', splitId: 'split', title: 'New',
+    launchProfile: 'shell', direction: 'horizontal', position: 'middle',
+  } },
+  { id: 'pane.split', args: {
+    workspaceId: 'review', paneId: 'tasks', sessionId: 'duplicate', splitId: 'duplicate',
+    title: 'New', launchProfile: 'shell', direction: 'horizontal', position: 'after',
+  } },
+  { id: 'split.resize', args: { workspaceId: 'review', splitId: 'split', delta: 0.81 } },
+  { id: 'split.resize', args: { workspaceId: 'review', splitId: 'split', delta: Number.NaN } },
+  { id: 'pane.close', args: { workspaceId: 'review', paneId: 'tasks', disposition: 'later' } },
+  { id: 'pane.detach', args: { workspaceId: 'review' } },
 ]) {
   assert.throws(() => validateCommandInvocation(invalid), /command|arguments|Unknown/u);
 }

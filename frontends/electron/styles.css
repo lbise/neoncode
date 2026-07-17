@@ -355,7 +355,7 @@ main {
   min-height: 0;
   display: flex;
   flex: 1 1 auto;
-  gap: 8px;
+  gap: 0;
   overflow: hidden;
 }
 
@@ -374,12 +374,36 @@ main {
   overflow: hidden;
 }
 
+.layout-separator {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 8px;
+  background: #111827;
+  outline: none;
+}
+
+.layout-split[data-direction="horizontal"] > .layout-separator {
+  cursor: col-resize;
+  border-inline: 1px solid #334155;
+}
+
+.layout-split[data-direction="vertical"] > .layout-separator {
+  cursor: row-resize;
+  border-block: 1px solid #334155;
+}
+
+.layout-separator:hover,
+.layout-separator:focus-visible {
+  background: #0e7490;
+  box-shadow: inset 0 0 0 2px #22d3ee;
+}
+
 .terminal-pane {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: 24px 1fr;
+  grid-template-rows: 28px 1fr;
   background: #0c0c0c;
   border: 1px solid #27272a;
 }
@@ -395,18 +419,98 @@ main {
 }
 
 .pane-title {
+  position: relative;
   box-sizing: border-box;
-  height: 24px;
+  height: 28px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 3px 8px;
+  gap: 6px;
+  padding: 2px 4px 2px 8px;
   color: #9ca3af;
   font-size: 12px;
   background: #18181b;
   border-bottom: 1px solid #27272a;
   user-select: none;
+}
+
+.pane-identity {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+}
+
+.pane-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane-controls {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.pane-control {
+  padding: 2px 5px;
+  color: #cbd5e1;
+  font: inherit;
+  font-size: 10px;
+  line-height: 16px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.pane-control:hover {
+  color: #ecfeff;
+  background: #155e75;
+}
+
+.pane-control:focus-visible {
+  outline: 2px solid #22d3ee;
+  outline-offset: 1px;
+}
+
+.pane-control:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.pane-more {
+  position: relative;
+}
+
+.pane-more > summary {
+  list-style: none;
+  user-select: none;
+}
+
+.pane-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pane-more-menu {
+  position: absolute;
+  z-index: 20;
+  top: 24px;
+  right: 0;
+  display: grid;
+  gap: 3px;
+  min-width: 76px;
+  padding: 4px;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 55%);
+}
+
+.pane-more:not([open]) .pane-more-menu {
+  display: none;
 }
 
 .pane-status {

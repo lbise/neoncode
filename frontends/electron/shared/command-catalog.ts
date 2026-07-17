@@ -24,9 +24,24 @@ export const COMMAND_IDS = Object.freeze([
   'tab.renameDialog',
   'tab.closeDialog',
   'pane.focus',
+  'pane.split',
+  'split.resize',
+  'pane.close',
+  'pane.detach',
+  'pane.kill',
+  'pane.restart',
+  'pane.splitHorizontal',
+  'pane.splitVertical',
+  'pane.resizeLeft',
+  'pane.resizeRight',
+  'pane.resizeUp',
+  'pane.resizeDown',
+  'pane.closeDialog',
   'pane.next',
   'pane.previous',
 ] as const);
+
+export const MAX_SPLIT_RESIZE_DELTA = 0.8;
 
 export type CommandId = typeof COMMAND_IDS[number];
 export type CommandCategory = 'Application' | 'Workspace' | 'Tab' | 'Pane';
@@ -89,6 +104,30 @@ export interface PaneFocusCommandArgs {
   paneId: string;
 }
 
+export interface PaneTargetCommandArgs {
+  workspaceId: string;
+  paneId: string;
+}
+
+export interface PaneSplitCommandArgs extends PaneTargetCommandArgs {
+  sessionId: string;
+  splitId: string;
+  title: string;
+  launchProfile: string;
+  direction: 'horizontal' | 'vertical';
+  position: 'before' | 'after';
+}
+
+export interface SplitResizeCommandArgs {
+  workspaceId: string;
+  splitId: string;
+  delta: number;
+}
+
+export interface PaneCloseCommandArgs extends PaneTargetCommandArgs {
+  disposition: 'detach' | 'kill';
+}
+
 export interface CommandArgumentMap {
   'palette.open': undefined;
   'palette.close': undefined;
@@ -115,6 +154,19 @@ export interface CommandArgumentMap {
   'tab.renameDialog': undefined;
   'tab.closeDialog': undefined;
   'pane.focus': PaneFocusCommandArgs;
+  'pane.split': PaneSplitCommandArgs;
+  'split.resize': SplitResizeCommandArgs;
+  'pane.close': PaneCloseCommandArgs;
+  'pane.detach': PaneTargetCommandArgs;
+  'pane.kill': PaneTargetCommandArgs;
+  'pane.restart': PaneTargetCommandArgs;
+  'pane.splitHorizontal': undefined;
+  'pane.splitVertical': undefined;
+  'pane.resizeLeft': undefined;
+  'pane.resizeRight': undefined;
+  'pane.resizeUp': undefined;
+  'pane.resizeDown': undefined;
+  'pane.closeDialog': undefined;
   'pane.next': undefined;
   'pane.previous': undefined;
 }
@@ -147,7 +199,17 @@ export type CommandDisabledReason =
   | 'Tab is unavailable'
   | 'No active pane is available'
   | 'No other pane is available'
-  | 'Pane is unavailable';
+  | 'Pane is unavailable'
+  | 'Pane is not in the active tab'
+  | 'Pane limit reached'
+  | 'Split is unavailable'
+  | 'Split is already configured'
+  | 'No matching split is available'
+  | 'Split cannot be resized further'
+  | 'Cannot close the last pane in a tab'
+  | 'Pane operation is in progress'
+  | 'Pane is already detached'
+  | 'Pane is already killed';
 
 export type CommandOperationResult =
   | { status: 'completed' }
@@ -183,6 +245,19 @@ export interface CommandResultMap {
   'tab.renameDialog': CommandOperationResult;
   'tab.closeDialog': CommandOperationResult;
   'pane.focus': CommandOperationResult;
+  'pane.split': CommandOperationResult;
+  'split.resize': CommandOperationResult;
+  'pane.close': CommandOperationResult;
+  'pane.detach': CommandOperationResult;
+  'pane.kill': CommandOperationResult;
+  'pane.restart': CommandOperationResult;
+  'pane.splitHorizontal': CommandOperationResult;
+  'pane.splitVertical': CommandOperationResult;
+  'pane.resizeLeft': CommandOperationResult;
+  'pane.resizeRight': CommandOperationResult;
+  'pane.resizeUp': CommandOperationResult;
+  'pane.resizeDown': CommandOperationResult;
+  'pane.closeDialog': CommandOperationResult;
   'pane.next': CommandOperationResult;
   'pane.previous': CommandOperationResult;
 }
@@ -445,6 +520,123 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     owningLayer: 'renderer',
     externalInvocation: true,
   }),
+  'pane.split': Object.freeze({
+    id: 'pane.split',
+    title: 'Split Pane',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'layout', 'side', 'stack'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'split.resize': Object.freeze({
+    id: 'split.resize',
+    title: 'Resize Split',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'layout', 'separator', 'ratio'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'pane.close': Object.freeze({
+    id: 'pane.close',
+    title: 'Close Pane',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'remove', 'detach', 'kill'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'pane.detach': Object.freeze({
+    id: 'pane.detach',
+    title: 'Detach Pane Session',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'session', 'disconnect', 'keep running'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'pane.kill': Object.freeze({
+    id: 'pane.kill',
+    title: 'Kill Pane Session',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'session', 'stop'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'pane.restart': Object.freeze({
+    id: 'pane.restart',
+    title: 'Restart or Attach Pane Session',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'session', 'attach', 'start', 'reconnect'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'pane.splitHorizontal': Object.freeze({
+    id: 'pane.splitHorizontal',
+    title: 'Split Pane Side by Side',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'layout', 'horizontal', 'row'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'pane.splitVertical': Object.freeze({
+    id: 'pane.splitVertical',
+    title: 'Split Pane Stacked',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'layout', 'vertical', 'column'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'pane.resizeLeft': Object.freeze({
+    id: 'pane.resizeLeft',
+    title: 'Resize Pane Left',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'layout', 'separator', 'left'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'pane.resizeRight': Object.freeze({
+    id: 'pane.resizeRight',
+    title: 'Resize Pane Right',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'layout', 'separator', 'right'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'pane.resizeUp': Object.freeze({
+    id: 'pane.resizeUp',
+    title: 'Resize Pane Up',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'layout', 'separator', 'up'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'pane.resizeDown': Object.freeze({
+    id: 'pane.resizeDown',
+    title: 'Resize Pane Down',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'layout', 'separator', 'down'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
+  'pane.closeDialog': Object.freeze({
+    id: 'pane.closeDialog',
+    title: 'Close Current Pane…',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'remove', 'detach', 'kill'],
+    owningLayer: 'renderer',
+    externalInvocation: false,
+  }),
   'pane.next': Object.freeze({
     id: 'pane.next',
     title: 'Focus Next Pane',
@@ -533,6 +725,13 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
     case 'tab.previous':
     case 'tab.renameDialog':
     case 'tab.closeDialog':
+    case 'pane.splitHorizontal':
+    case 'pane.splitVertical':
+    case 'pane.resizeLeft':
+    case 'pane.resizeRight':
+    case 'pane.resizeUp':
+    case 'pane.resizeDown':
+    case 'pane.closeDialog':
     case 'pane.next':
     case 'pane.previous':
       if (!hasExactKeys(value, ['id'])) throw new Error(`Invalid ${value.id} command invocation`);
@@ -667,6 +866,78 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
       if (!hasExactKeys(value, ['id', 'args'])) throw new Error('Invalid pane.focus command invocation');
       const args = validateTargetArgs(value.args, 'paneId');
       return { id: value.id, args };
+    }
+    case 'pane.split': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, [
+            'workspaceId', 'paneId', 'sessionId', 'splitId', 'title', 'launchProfile',
+            'direction', 'position',
+          ])
+          || !isBoundedIdentifier(value.args.workspaceId)
+          || !isBoundedIdentifier(value.args.paneId)
+          || !isBoundedIdentifier(value.args.sessionId)
+          || !isBoundedIdentifier(value.args.splitId)
+          || value.args.sessionId === value.args.splitId
+          || !isBoundedLabel(value.args.title)
+          || !isBoundedIdentifier(value.args.launchProfile)
+          || (value.args.direction !== 'horizontal' && value.args.direction !== 'vertical')
+          || (value.args.position !== 'before' && value.args.position !== 'after')) {
+        throw new Error('Invalid pane.split command arguments');
+      }
+      return { id: value.id, args: {
+        workspaceId: value.args.workspaceId,
+        paneId: value.args.paneId,
+        sessionId: value.args.sessionId,
+        splitId: value.args.splitId,
+        title: value.args.title,
+        launchProfile: value.args.launchProfile,
+        direction: value.args.direction,
+        position: value.args.position,
+      } };
+    }
+    case 'split.resize': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, ['workspaceId', 'splitId', 'delta'])
+          || !isBoundedIdentifier(value.args.workspaceId)
+          || !isBoundedIdentifier(value.args.splitId)
+          || typeof value.args.delta !== 'number'
+          || !Number.isFinite(value.args.delta)
+          || Math.abs(value.args.delta) > MAX_SPLIT_RESIZE_DELTA) {
+        throw new Error('Invalid split.resize command arguments');
+      }
+      return { id: value.id, args: {
+        workspaceId: value.args.workspaceId,
+        splitId: value.args.splitId,
+        delta: value.args.delta,
+      } };
+    }
+    case 'pane.close': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, ['workspaceId', 'paneId', 'disposition'])
+          || !isBoundedIdentifier(value.args.workspaceId)
+          || !isBoundedIdentifier(value.args.paneId)
+          || (value.args.disposition !== 'detach' && value.args.disposition !== 'kill')) {
+        throw new Error('Invalid pane.close command arguments');
+      }
+      return { id: value.id, args: {
+        workspaceId: value.args.workspaceId,
+        paneId: value.args.paneId,
+        disposition: value.args.disposition,
+      } };
+    }
+    case 'pane.detach':
+    case 'pane.kill':
+    case 'pane.restart': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, ['workspaceId', 'paneId'])
+          || !isBoundedIdentifier(value.args.workspaceId)
+          || !isBoundedIdentifier(value.args.paneId)) {
+        throw new Error(`Invalid ${value.id} command arguments`);
+      }
+      return { id: value.id, args: {
+        workspaceId: value.args.workspaceId,
+        paneId: value.args.paneId,
+      } };
     }
     default:
       throw new Error(`Unknown command: ${value.id}`);

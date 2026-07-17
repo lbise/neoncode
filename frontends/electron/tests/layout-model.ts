@@ -3,12 +3,16 @@ import assert = require('node:assert/strict');
 import {
   activateTab,
   addTab,
+  ancestorSplitIds,
   closePane,
   closeTab,
+  computeDirectionalResizeDelta,
+  findNearestAncestorSplit,
   focusPane,
   movePane,
   moveTab,
   orderedDepthFirstPanes,
+  orderedSplitIds,
   reconcileWorkspaceLayout,
   renameTab,
   resizeSplit,
@@ -186,6 +190,7 @@ function testFocusSplitCloseAndResize(): void {
   assert.deepEqual(paneIds(closed.state), [
     'pane-shell', 'pane-tasks', 'pane-before', 'pane-agent', 'pane-logs',
   ]);
+  assert.equal(closed.state.tabs[0]?.focusedPaneId, 'pane-before', 'close did not focus its sibling');
   assert.equal(findRatio(closed.state.tabs[0]!.root, 'split-after'), null, 'parent split did not collapse');
 }
 
@@ -230,26 +235,84 @@ function testPaneMovesWithinAndAcrossTabs(): void {
   }), /relative to itself/);
 }
 
-function testClosingRootPaneRemovesItsTab(): void {
+function testClosingRootPaneRequiresTabClose(): void {
   const state = addTab(seed(), {
     tabId: 'tab-single',
     title: 'Single',
     paneId: 'pane-single',
     sessionKey: 'single',
   });
-  const result = closePane(state, 'pane-single');
-  assert.deepEqual(result.state.tabs.map((tab) => tab.tabId), ['tab-main']);
-  assert.equal(result.state.activeTabId, 'tab-main');
-  assert.deepEqual(result.removedLeaves, [
-    { type: 'pane', paneId: 'pane-single', sessionKey: 'single' },
-  ]);
+  assert.throws(() => closePane(state, 'pane-single'), /last pane in a tab/);
+  assert.deepEqual(state.tabs.map((tab) => tab.tabId), ['tab-main', 'tab-single']);
 
   const only = seedWorkspaceLayout({
     name: 'Only',
     layout: { columns: 1 },
     sessions: [{ id: 'only', title: 'Only' }],
   }, { tabId: 'only-tab', splitIds: [] });
-  assert.throws(() => closePane(only, 'only'), /last pane/);
+  assert.throws(() => closePane(only, 'only'), /last pane in a tab/);
+}
+
+function testAncestorSplitsAndDirectionalResize(): void {
+  const root: LayoutNode = {
+    type: 'split',
+    splitId: 'outer-horizontal',
+    direction: 'horizontal',
+    ratio: 0.6,
+    first: { type: 'pane', paneId: 'left', sessionKey: 'left' },
+    second: {
+      type: 'split',
+      splitId: 'right-vertical',
+      direction: 'vertical',
+      ratio: 0.5,
+      first: {
+        type: 'split',
+        splitId: 'inner-horizontal',
+        direction: 'horizontal',
+        ratio: 0.88,
+        first: { type: 'pane', paneId: 'target-a', sessionKey: 'target-a' },
+        second: { type: 'pane', paneId: 'target-b', sessionKey: 'target-b' },
+      },
+      second: { type: 'pane', paneId: 'bottom', sessionKey: 'bottom' },
+    },
+  };
+
+  assert.deepEqual(orderedSplitIds(root), [
+    'outer-horizontal', 'right-vertical', 'inner-horizontal',
+  ]);
+  assert.deepEqual(ancestorSplitIds(root, 'target-a'), [
+    'inner-horizontal', 'right-vertical', 'outer-horizontal',
+  ]);
+  assert.deepEqual(ancestorSplitIds(root, 'missing'), []);
+  assert.deepEqual(findNearestAncestorSplit(root, 'target-a', 'horizontal'), {
+    splitId: 'inner-horizontal', direction: 'horizontal', ratio: 0.88, panePosition: 'first',
+  });
+  assert.deepEqual(findNearestAncestorSplit(root, 'target-a', 'horizontal', 'second'), {
+    splitId: 'outer-horizontal', direction: 'horizontal', ratio: 0.6, panePosition: 'second',
+  });
+  assert.equal(findNearestAncestorSplit(root, 'left', 'vertical'), null);
+  assert.equal(findNearestAncestorSplit(root, 'missing'), null);
+
+  assert.deepEqual(computeDirectionalResizeDelta(root, 'target-a', 'right'), {
+    splitId: 'inner-horizontal', direction: 'horizontal', ratio: 0.88,
+    panePosition: 'first', delta: 0.02, nextRatio: 0.9,
+  });
+  assert.deepEqual(computeDirectionalResizeDelta(root, 'target-a', 'left'), {
+    splitId: 'outer-horizontal', direction: 'horizontal', ratio: 0.6,
+    panePosition: 'second', delta: -0.05, nextRatio: 0.5499999999999999,
+  });
+  assert.deepEqual(computeDirectionalResizeDelta(root, 'target-a', 'down'), {
+    splitId: 'right-vertical', direction: 'vertical', ratio: 0.5,
+    panePosition: 'first', delta: 0.05, nextRatio: 0.55,
+  });
+  assert.equal(computeDirectionalResizeDelta(root, 'target-a', 'up'), null);
+  assert.equal(computeDirectionalResizeDelta(root, 'target-b', 'right'), null);
+  assert.equal(computeDirectionalResizeDelta(root, 'left', 'left'), null);
+  assert.deepEqual(computeDirectionalResizeDelta(root, 'bottom', 'up'), {
+    splitId: 'right-vertical', direction: 'vertical', ratio: 0.5,
+    panePosition: 'second', delta: -0.05, nextRatio: 0.45,
+  });
+  assert.throws(() => computeDirectionalResizeDelta(root, 'target-a', 'right', 0), /resize step/);
 }
 
 function testStrictValidationAndLimits(): void {
@@ -437,7 +500,8 @@ for (const test of [
   testTabOperationsAndRemovedLeaves,
   testFocusSplitCloseAndResize,
   testPaneMovesWithinAndAcrossTabs,
-  testClosingRootPaneRemovesItsTab,
+  testClosingRootPaneRequiresTabClose,
+  testAncestorSplitsAndDirectionalResize,
   testStrictValidationAndLimits,
   testLayoutReconciliationPreservesSurvivors,
   testSharedNodeAndCyclesAreRejected,

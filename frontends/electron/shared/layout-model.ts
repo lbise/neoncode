@@ -10,6 +10,20 @@ const IDENTIFIER_PATTERN = /^[A-Za-z0-9_.-]+$/;
 
 export type SplitDirection = 'horizontal' | 'vertical';
 export type SplitPosition = 'before' | 'after';
+export type SplitChildPosition = 'first' | 'second';
+export type PaneResizeDirection = 'left' | 'right' | 'up' | 'down';
+
+export interface PaneAncestorSplit {
+  splitId: string;
+  direction: SplitDirection;
+  ratio: number;
+  panePosition: SplitChildPosition;
+}
+
+export interface DirectionalSplitResize extends PaneAncestorSplit {
+  delta: number;
+  nextRatio: number;
+}
 
 export interface PaneLeaf {
   type: 'pane';
@@ -469,6 +483,92 @@ export function orderedPaneLeaves(node: LayoutNode): PaneLeaf[] {
   return [...orderedPaneLeaves(node.first), ...orderedPaneLeaves(node.second)];
 }
 
+export function orderedSplitIds(node: LayoutNode): string[] {
+  if (node.type === 'pane') return [];
+  return [node.splitId, ...orderedSplitIds(node.first), ...orderedSplitIds(node.second)];
+}
+
+function paneAncestorPath(node: LayoutNode, paneId: string): PaneAncestorSplit[] | null {
+  if (node.type === 'pane') return node.paneId === paneId ? [] : null;
+  const firstPath = paneAncestorPath(node.first, paneId);
+  if (firstPath) {
+    return [...firstPath, {
+      splitId: node.splitId,
+      direction: node.direction,
+      ratio: node.ratio,
+      panePosition: 'first',
+    }];
+  }
+  const secondPath = paneAncestorPath(node.second, paneId);
+  if (!secondPath) return null;
+  return [...secondPath, {
+    splitId: node.splitId,
+    direction: node.direction,
+    ratio: node.ratio,
+    panePosition: 'second',
+  }];
+}
+
+/** Returns split IDs from the pane's nearest parent through the root. */
+export function ancestorSplitIds(node: LayoutNode, paneId: string): string[] {
+  return paneAncestorPath(node, paneId)?.map((split) => split.splitId) ?? [];
+}
+
+/**
+ * Finds the nearest split ancestor of a pane. Direction and child-position
+ * filters make this suitable for finding a pane's directional border.
+ */
+export function findNearestAncestorSplit(
+  node: LayoutNode,
+  paneId: string,
+  direction?: SplitDirection,
+  panePosition?: SplitChildPosition,
+): PaneAncestorSplit | null {
+  const path = paneAncestorPath(node, paneId);
+  if (!path) return null;
+  const match = path.find((split) => (
+    (direction === undefined || split.direction === direction)
+    && (panePosition === undefined || split.panePosition === panePosition)
+  ));
+  return match ? { ...match } : null;
+}
+
+/**
+ * Computes a bounded ratio delta for moving the nearest border in the given
+ * direction. A null result means the pane has no border on that side.
+ */
+export function computeDirectionalResizeDelta(
+  node: LayoutNode,
+  paneId: string,
+  resizeDirection: PaneResizeDirection,
+  step = 0.05,
+): DirectionalSplitResize | null {
+  if (typeof step !== 'number' || !Number.isFinite(step) || step <= 0 || step > 1) {
+    throw new LayoutValidationError('resize step must be a finite number between 0 and 1');
+  }
+  const horizontal = resizeDirection === 'left' || resizeDirection === 'right';
+  const panePosition: SplitChildPosition = resizeDirection === 'left' || resizeDirection === 'up'
+    ? 'second'
+    : 'first';
+  const split = findNearestAncestorSplit(
+    node,
+    paneId,
+    horizontal ? 'horizontal' : 'vertical',
+    panePosition,
+  );
+  if (!split) return null;
+  const requestedDelta = panePosition === 'first' ? step : -step;
+  const nextRatio = Number(Math.min(
+    MAX_SPLIT_RATIO,
+    Math.max(MIN_SPLIT_RATIO, split.ratio + requestedDelta),
+  ).toFixed(12));
+  return {
+    ...split,
+    delta: Number((nextRatio - split.ratio).toFixed(12)),
+    nextRatio,
+  };
+}
+
 function layoutIds(state: WorkspaceLayoutState): Set<string> {
   const ids = new Set<string>();
   const visit = (node: LayoutNode): void => {
@@ -553,7 +653,14 @@ export function reconcileWorkspaceLayout(
   }
 
   for (const leaf of orderedDepthFirstPanes(state)) {
-    if (!configured.has(leaf.sessionKey)) state = closePane(state, leaf.paneId).state;
+    if (configured.has(leaf.sessionKey)) continue;
+    const tab = state.tabs.find((candidate) => (
+      orderedPaneLeaves(candidate.root).some((pane) => pane.paneId === leaf.paneId)
+    ));
+    if (!tab) continue;
+    state = orderedPaneLeaves(tab.root).length === 1
+      ? closeTab(state, tab.tabId).state
+      : closePane(state, leaf.paneId).state;
   }
 
   const represented = new Set(orderedDepthFirstPanes(state).map((leaf) => leaf.sessionKey));
@@ -761,26 +868,20 @@ export function closePane(state: WorkspaceLayoutState, paneId: string): LayoutRe
   const located = findPane(valid, paneId);
   const tab = valid.tabs[located.tabIndex];
   if (!tab) throw new LayoutValidationError(`unknown pane: ${paneId}`);
+  const panesBeforeRemoval = orderedPaneLeaves(tab.root);
+  if (panesBeforeRemoval.length === 1) {
+    throw new LayoutValidationError('cannot close the last pane in a tab');
+  }
+  const removedIndex = panesBeforeRemoval.findIndex((pane) => pane.paneId === paneId);
   const removal = removePaneFromNode(tab.root, paneId);
   if (!removal.removed) throw new LayoutValidationError(`unknown pane: ${paneId}`);
 
   if (removal.root === null) {
-    if (valid.tabs.length === 1) {
-      throw new LayoutValidationError('cannot close the last pane in the workspace');
-    }
-    const tabs = valid.tabs.filter((_tab, index) => index !== located.tabIndex).map(cloneTab);
-    return {
-      state: finish({
-        activeTabId: valid.activeTabId === tab.tabId
-          ? fallbackTabId(tabs, located.tabIndex)
-          : valid.activeTabId,
-        tabs,
-      }),
-      removedLeaves: [removal.removed],
-    };
+    throw new LayoutValidationError('cannot close the last pane in a tab');
   }
 
-  const fallbackPane = orderedPaneLeaves(removal.root)[0];
+  const remainingPanes = orderedPaneLeaves(removal.root);
+  const fallbackPane = remainingPanes[Math.min(removedIndex, remainingPanes.length - 1)];
   if (!fallbackPane) throw new LayoutValidationError('tab must retain a pane');
   return {
     state: finish({

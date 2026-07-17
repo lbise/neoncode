@@ -1614,6 +1614,199 @@ async function runPersistentTabCheck(runToken: string): Promise<void> {
   }
 }
 
+async function runPaneLayoutCheck(runToken: string): Promise<void> {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-pane-layout-'));
+  const sessionPrefix = `pane-layout-${runToken}`;
+  let instance: ElectronTestInstance | undefined;
+  let detachedSessionKey = '';
+  try {
+    writeTestConfig(directory);
+    const configPath = path.join(directory, 'config.json');
+    const config = parseJson<DesktopConfig>(fs.readFileSync(configPath, 'utf8'), 'pane layout config');
+    const workspace = config.workspaces.find((candidate) => candidate.id === 'default');
+    assert(workspace, 'pane layout config omitted default workspace');
+    workspace.path = '/tmp';
+    workspace.layout.columns = 1;
+    workspace.sessions = [workspace.sessions[0]!];
+    config.workspaces = [workspace];
+    fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+    instance = await launchApp(sessionPrefix, directory);
+    let { page } = instance;
+    await waitForActivePane(page, 'default', 'shell');
+
+    await page.keyboard.press('Alt+Shift+=');
+    await page.waitForFunction(() => (
+      window.neoncodeTest.getState().panes.length === 2
+      && window.neoncodeTest.getState().panes.every((pane) => pane.started)
+    ), null, { timeout });
+    let state = await getState(page);
+    const firstSplitPaneId = state.workspace.activePaneId;
+    assert(firstSplitPaneId && firstSplitPaneId !== 'shell', 'side-by-side split did not focus a new pane');
+    assert(await page.locator('.layout-separator[aria-orientation="vertical"]').count() === 1,
+      'side-by-side split omitted its accessible vertical separator');
+
+    await page.keyboard.press('Alt+Shift+-');
+    await page.waitForFunction(() => (
+      window.neoncodeTest.getState().panes.length === 3
+      && window.neoncodeTest.getState().panes.every((pane) => pane.started)
+    ), null, { timeout });
+    state = await getState(page);
+    const secondSplitPaneId = state.workspace.activePaneId;
+    assert(secondSplitPaneId && secondSplitPaneId !== firstSplitPaneId && secondSplitPaneId !== 'shell',
+      'stacked split did not focus a second new pane');
+    assert(await page.locator('.layout-separator[aria-orientation="horizontal"]').count() === 1,
+      'stacked split omitted its accessible horizontal separator');
+    for (const pane of state.panes) {
+      const box = await page.getByTestId(`terminal-pane-${pane.paneId}`).boundingBox();
+      assert(box && box.width > 0 && box.height > 0, `${pane.paneId} did not have positive split dimensions`);
+    }
+
+    const cwdMarker = `pane-cwd-/tmp-${runToken}`;
+    const cwdCommand = `printf 'pane-cwd-%s-${runToken}\\n' "$PWD"\n`;
+    assertMarkerIsNotEchoed(cwdCommand, cwdMarker);
+    await sendText(page, secondSplitPaneId, cwdCommand);
+    await waitForOutput(page, secondSplitPaneId, cwdMarker);
+
+    await page.keyboard.press('F6');
+    await waitForActivePane(page, 'default', 'shell');
+    await page.keyboard.press('F6');
+    await waitForActivePane(page, 'default', firstSplitPaneId);
+    await page.keyboard.press('F6');
+    await waitForActivePane(page, 'default', secondSplitPaneId);
+
+    const shellBefore = await page.getByTestId('terminal-pane-shell').boundingBox();
+    assert(shellBefore, 'shell pane omitted a pre-resize bounding box');
+    const verticalSeparator = page.locator('.layout-separator[aria-orientation="vertical"]').first();
+    const ratioBefore = Number.parseInt(await verticalSeparator.getAttribute('aria-valuenow') ?? '', 10);
+    await page.keyboard.press('Alt+Shift+ArrowLeft');
+    await page.waitForFunction((previousWidth) => {
+      const shell = document.querySelector<HTMLElement>('[data-testid="terminal-pane-shell"]');
+      return shell !== null && shell.getBoundingClientRect().width < previousWidth - 2;
+    }, shellBefore.width, { timeout });
+    const shellAfter = await page.getByTestId('terminal-pane-shell').boundingBox();
+    assert(shellAfter && shellAfter.width < shellBefore.width, 'directional resize did not change bounding ratio');
+    const ratioAfter = Number.parseInt(await verticalSeparator.getAttribute('aria-valuenow') ?? '', 10);
+    assert(ratioAfter === ratioBefore - 5, `resize ratio changed ${ratioBefore} -> ${ratioAfter}, expected one step`);
+
+    await closeInstance(instance);
+    instance = await launchApp(sessionPrefix, directory);
+    page = instance.page;
+    await page.waitForFunction(() => (
+      window.neoncodeTest.getState().panes.length === 3
+      && window.neoncodeTest.getState().panes.every((pane) => pane.started)
+    ), null, { timeout });
+    const restoredRatio = Number.parseInt(
+      await page.locator('.layout-separator[aria-orientation="vertical"]').first()
+        .getAttribute('aria-valuenow') ?? '',
+      10,
+    );
+    assert(restoredRatio === ratioAfter, 'directional resize ratio did not persist across relaunch');
+    await waitForActivePane(page, 'default', secondSplitPaneId);
+
+    await sendText(page, secondSplitPaneId, `export NEONCODE_PANE_CONTINUITY='kept-${runToken}'\n`);
+    const detachResult = await page.evaluate((paneId) => window.neoncodeTest.executeCommand(
+      'pane.detach', { workspaceId: 'default', paneId },
+    ), secondSplitPaneId);
+    assert(detachResult.status === 'completed', 'pane lifecycle detach failed');
+    await page.waitForFunction((paneId) => (
+      window.neoncodeTest.getState().panes.find((pane) => pane.paneId === paneId)?.lifecycle === 'detached'
+    ), secondSplitPaneId, { timeout });
+    const restartDetached = await page.evaluate((paneId) => window.neoncodeTest.executeCommand(
+      'pane.restart', { workspaceId: 'default', paneId },
+    ), secondSplitPaneId);
+    assert(restartDetached.status === 'completed', 'detached pane restart failed');
+    await page.waitForFunction((paneId) => {
+      const pane = window.neoncodeTest.getState().panes.find((candidate) => candidate.paneId === paneId);
+      return pane?.started === true && (pane.lifecycle === 'attached' || pane.lifecycle === 'started');
+    }, secondSplitPaneId, { timeout });
+    const continuityMarker = `pane-life-kept-${runToken}`;
+    const continuityCommand = `printf 'pane-life-%s\\n' "$NEONCODE_PANE_CONTINUITY"\n`;
+    assertMarkerIsNotEchoed(continuityCommand, continuityMarker);
+    await sendText(page, secondSplitPaneId, continuityCommand);
+    await waitForOutput(page, secondSplitPaneId, continuityMarker);
+
+    const killResult = await page.evaluate((paneId) => window.neoncodeTest.executeCommand(
+      'pane.kill', { workspaceId: 'default', paneId },
+    ), secondSplitPaneId);
+    assert(killResult.status === 'completed', 'pane lifecycle kill failed');
+    const restartKilled = await page.evaluate((paneId) => window.neoncodeTest.executeCommand(
+      'pane.restart', { workspaceId: 'default', paneId },
+    ), secondSplitPaneId);
+    assert(restartKilled.status === 'completed', 'killed pane restart failed');
+    await page.waitForFunction((paneId) => (
+      window.neoncodeTest.getState().panes.find((pane) => pane.paneId === paneId)?.started === true
+    ), secondSplitPaneId, { timeout });
+    const replacementMarker = `pane-replacement-fresh-${runToken}`;
+    const replacementCommand = `printf 'pane-replacement-%s-${runToken}\\n' "${'${NEONCODE_PANE_CONTINUITY:-fresh}'}"\n`;
+    assertMarkerIsNotEchoed(replacementCommand, replacementMarker);
+    await sendText(page, secondSplitPaneId, replacementCommand);
+    await waitForOutput(page, secondSplitPaneId, replacementMarker);
+
+    state = await getState(page);
+    detachedSessionKey = requirePane(state, secondSplitPaneId).sessionKey;
+    const detachedHubSessionId = requirePane(state, secondSplitPaneId).sessionId;
+    const killedHubSessionId = requirePane(state, firstSplitPaneId).sessionId;
+    const firstDialogOpen = await page.evaluate(() => window.neoncodeTest.executeCommand('pane.closeDialog'));
+    assert(firstDialogOpen.status === 'completed', 'pane close dialog did not open');
+    const paneDialog = page.getByTestId('pane-dialog-overlay');
+    await paneDialog.waitFor({ state: 'visible', timeout });
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Escape');
+    await paneDialog.waitFor({ state: 'hidden', timeout });
+    await waitForActivePane(page, 'default', secondSplitPaneId);
+    const secondDialogOpen = await page.evaluate(() => window.neoncodeTest.executeCommand('pane.closeDialog'));
+    assert(secondDialogOpen.status === 'completed', 'pane close dialog was not reusable');
+    await paneDialog.waitFor({ state: 'visible', timeout });
+    const paneDialogSubmit = page.getByTestId('pane-dialog-submit');
+    assert(await paneDialogSubmit.isEnabled(), 'reused pane close dialog left its controls disabled');
+    await paneDialogSubmit.focus();
+    await page.keyboard.press('Enter');
+    await paneDialog.waitFor({ state: 'hidden', timeout });
+    await page.waitForFunction(() => window.neoncodeTest.getState().panes.length === 2, null, { timeout });
+    const closeKill = await page.evaluate((paneId) => window.neoncodeTest.executeCommand(
+      'pane.close', { workspaceId: 'default', paneId, disposition: 'kill' },
+    ), firstSplitPaneId);
+    assert(closeKill.status === 'completed', 'kill-close pane transaction failed');
+    await page.waitForFunction(() => window.neoncodeTest.getState().panes.length === 1, null, { timeout });
+    assert(await page.locator('.layout-separator').count() === 0, 'closing panes did not collapse split parents');
+    const soleGuard = await page.evaluate(() => window.neoncodeTest.executeCommand(
+      'pane.close', { workspaceId: 'default', paneId: 'shell', disposition: 'detach' },
+    ));
+    assert(soleGuard.status === 'disabled' && soleGuard.reason === 'Cannot close the last pane in a tab',
+      'sole-pane close guard was not enforced');
+
+    await closeInstance(instance);
+    instance = await launchApp(sessionPrefix, directory);
+    state = await getState(instance.page);
+    assert(state.sessionDiscovery.sessions.includes(detachedHubSessionId),
+      'detach-close pane did not leave its hub session running');
+    assert(!state.sessionDiscovery.sessions.includes(killedHubSessionId),
+      'kill-close pane left its hub session running');
+    assert(state.panes.length === 1 && state.panes[0]?.paneId === 'shell',
+      'collapsed one-pane layout did not persist across relaunch');
+
+    const cleanupSplit = await instance.page.evaluate(({ paneId, splitId }) => (
+      window.neoncodeTest.executeCommand('pane.split', {
+        workspaceId: 'default', paneId: 'shell', sessionId: paneId, splitId,
+        title: 'Cleanup', launchProfile: 'default-shell', direction: 'horizontal', position: 'after',
+      })
+    ), { paneId: detachedSessionKey, splitId: `cleanup-${runToken}` });
+    assert(cleanupSplit.status === 'completed', 'detached pane could not be reattached for cleanup');
+    await instance.page.waitForFunction((paneId) => (
+      window.neoncodeTest.getState().panes.some((pane) => pane.paneId === paneId && pane.started)
+    ), detachedSessionKey, { timeout });
+    const cleanupClose = await instance.page.evaluate((paneId) => window.neoncodeTest.executeCommand(
+      'pane.close', { workspaceId: 'default', paneId, disposition: 'kill' },
+    ), detachedSessionKey);
+    assert(cleanupClose.status === 'completed', 'detached pane cleanup kill failed');
+    await killAllPanes(instance);
+  } finally {
+    await closeInstance(instance).catch(() => {});
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 async function runKillPolicyCheck(runToken: string): Promise<void> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-kill-policy-'));
   const sessionPrefix = `kill-policy-${runToken}`;
@@ -1722,6 +1915,7 @@ async function main(): Promise<void> {
     instance = undefined;
     await runWorkspaceCatalogCheck(runToken);
     await runPersistentTabCheck(runToken);
+    await runPaneLayoutCheck(runToken);
     await runKillPolicyCheck(runToken);
     await runInvalidConfigurationCheck(runToken);
     log('passed');

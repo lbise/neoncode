@@ -37,10 +37,11 @@ Current role:
 - renders only the active tab's 1–8 pane leaves and opens one WebSocket per visible pane/session;
 - switches workspaces and tabs by serially detaching old visible panes, then attaching/starting the selected leaves with replay;
 - restores the active workspace, active tab, and authoritative focused pane from app-owned state;
-- routes workspace, tab, pane-focus, palette, Settings, and attention-dismissal actions through a typed central command registry;
+- routes workspace, tab, pane split/resize/close/lifecycle/focus, palette, Settings, and attention-dismissal actions through a typed central command registry;
 - renders an accessible command palette for catalog operations and concrete configured workspace/current-pane targets, including live effective shortcut labels and disabled reasons;
-- renders keyboard-accessible Settings and reusable create/rename/delete workspace dialogs;
-- persists app-created durable workspace definitions through revisioned catalog IPC before mutating renderer catalog state;
+- renders keyboard-accessible Settings, reusable workspace/tab/pane dialogs, compact pane-header controls, and accessible split separators;
+- persists app-created durable workspace/session definitions through revisioned catalog IPC before mutating renderer catalog state;
+- keeps explicit pane targets limited to the visible active-tab attachment slice; unavailable inactive targets return a bounded disabled result;
 - applies each workspace's optional literal path as the effective process-profile cwd;
 - owns the active pane in a DOM-free mutable focus model, remembers one pane per workspace, and restores xterm focus after workspace/catalog changes;
 - summarizes hub-owned WSL launch metadata and aggregate pane lifecycle in the workspace sidebar, falling back to configured locations for sessions not yet created;
@@ -140,6 +141,7 @@ frontends/electron/renderer/        strict TypeScript renderer modules:
   settings-view.ts                  accessible General/Keyboard editor and shortcut recorder
   workspace-dialog.ts               accessible create/rename/delete workspace modal
   tab-dialog.ts                     reusable rename/close tab modal
+  pane-dialog.ts                    reusable detach/kill pane-close modal
   pane-focus-model.ts               DOM-free ordered pane focus/memory model
   hub-client.ts                     typed WebSocket protocol client and validators
   session-model.ts                  typed pane/session state and bounded output view
@@ -162,11 +164,11 @@ The Electron frontend uses strict TypeScript throughout without a runtime TypeSc
 
 ## Renderer command, palette, and focus boundary
 
-`shared/command-catalog.ts` is the stable contract for palette/settings, strict workspace create/rename/delete operations and their UI-only dialog launchers, workspace open/traversal/attention operations, explicit tab create/open/rename/move/close operations and contextual tab actions, and pane focus/traversal. It maps each ID to exact argument/result types and records title, category, context, search terms, owning layer, and future external-invocation eligibility. Runtime validation rejects unknown IDs, extra fields, missing arguments, and invalid target identifiers. The external marker is descriptive only; this commit adds no app-control listener or transport.
+`shared/command-catalog.ts` is the stable contract for palette/settings, strict workspace create/rename/delete operations and their UI-only dialog launchers, workspace open/traversal/attention operations, explicit tab create/open/rename/move/close operations and contextual tab actions, explicit pane split/close/detach/kill/restart and split-resize operations, plus contextual split/resize/close-dialog and pane focus/traversal actions. It maps each ID to exact argument/result types and records title, category, context, search terms, owning layer, and future external-invocation eligibility. Runtime validation rejects unknown IDs, extra fields, missing arguments, and invalid target identifiers. The external marker is descriptive only; this commit adds no app-control listener or transport.
 
 `renderer/command-registry.ts` remains the implementation boundary. It checks contextual enablement before invoking handlers, reports a bounded typed disabled reason for expected unavailable operations, and otherwise returns a completed result. Handler exceptions may reject inside the registry; app dispatch logs and converts them to a typed failed result so DOM event paths do not create unhandled rejections. Sidebar workspace buttons, pane pointer/focus changes, the Commands/Settings/palette controls, Dismiss attention, keyboard shortcuts, and the typed test API all reach these handlers.
 
-One document capture-phase `keydown` listener gives an open tab/workspace dialog first claim, then Settings, then an open palette first claim on Escape, arrows, Enter, and Tab. While overlays are closed, a DOM-free exact-match router uses effective defaults plus persisted overrides. Defaults are `Ctrl+Shift+P`, `Alt+Digit1..9` for configured workspaces, `Ctrl+Shift+T`, `Ctrl+PageUp/PageDown`, `F6`, and `Shift+F6`. Already-prevented, Ctrl+Alt/AltGraph, extra-modifier, repeat execution, and unclaimed events are untouched, so xterm remains responsible for terminal input, copy/paste, and special keys. A successful Settings save safely replaces the router and updates palette/header labels without restarting.
+One document capture-phase `keydown` listener gives an open pane/tab/workspace dialog first claim, then Settings, then an open palette first claim on Escape, arrows, Enter, and Tab. While overlays are closed, a DOM-free exact-match router uses effective defaults plus persisted overrides. Defaults are `Ctrl+Shift+P`, `Alt+Digit1..9` for configured workspaces, `Ctrl+Shift+T`, `Ctrl+PageUp/PageDown`, `Alt+Shift+=`/`Alt+Shift+-` for side-by-side/stacked splits, `Alt+Shift+Arrow` for directional border resize, `F6`, and `Shift+F6`. Pane close/detach/kill/restart remain deliberately unbound. Already-prevented, Ctrl+Alt/AltGraph, extra-modifier, repeat execution, and unclaimed events are untouched, so xterm remains responsible for terminal input, copy/paste, and special keys. A successful Settings save safely replaces the router and updates palette/header labels without restarting.
 
 The palette is an accessible modal DOM surface with initial search focus, catalog/dynamic-target filtering, categories, current shortcut labels, disabled reasons, wrapping arrow selection, one-shot Enter dispatch, Escape close, and a two-control Tab focus loop. Closing restores the element focused before opening when it still exists; otherwise the authoritative active pane is focused.
 
@@ -176,11 +178,11 @@ The active tab's persisted `focusedPaneId` is authoritative. Its depth-first pan
 
 ## Frontend layout-state boundary
 
-`shared/layout-model.ts` now defines the DOM-free frontend layout vocabulary: a workspace has ordered tabs, each tab has one binary pane/split tree, and each pane leaf references a session key without becoming the backend session identity. IDs are caller-supplied rather than generated inside the model. Pure immutable operations validate add/rename/reorder/activate/close tab, focus/split/move/close pane, and clamped split-resize transitions; pane ordering is first-child/second-child depth-first. A deterministic helper converts a schema 6 configured session grid to one initial tab while retaining configured session keys. Reconciliation prunes removed configured sessions, retains surviving tabs/trees/focus, and adds newly configured sessions without resetting the rest of the layout.
+`shared/layout-model.ts` now defines the DOM-free frontend layout vocabulary: a workspace has ordered tabs, each tab has one binary pane/split tree, and each pane leaf references a session key without becoming the backend session identity. IDs are caller-supplied rather than generated inside the model. Pure immutable operations validate add/rename/reorder/activate/close tab, focus/split/move/close pane, and clamped split-resize transitions; pane ordering is first-child/second-child depth-first. Pure ancestor-path helpers identify split IDs and select the nearest directional border with a safely clamped ratio delta. A deterministic helper converts a schema 6 configured session grid to one initial tab while retaining configured session keys. Reconciliation prunes removed configured sessions, retains surviving tabs/trees/focus, and adds newly configured sessions without resetting the rest of the layout.
 
 App-owned state schema 3 stores validated layouts under `workspaceLayouts`, separately from configuration schema 6 and hub lifecycle state. The state boundary allows at most 16 workspace entries, 64 leaves total, 8 tabs and 8 panes per workspace, tree depth 8, and a 64 KiB state file. Electron main accepts layout saves only for a workspace in the current validated config, validates before merge, and persists through the existing backup plus atomic-rename path.
 
-The renderer owns a runtime `Map<workspaceId, WorkspaceLayoutState>` separate from durable session definitions. It asynchronously persists seeded/reconciled layouts, renders an accessible tab strip plus the active tree recursively, and saves tab/focus mutations. Tab creation writes the durable session catalog before layout state; a failed state save leaves a visible warning and is repaired from the catalog on relaunch. Interactive pane splitting and resizing controls remain future work.
+The renderer owns a runtime `Map<workspaceId, WorkspaceLayoutState>` separate from durable session definitions. It asynchronously persists seeded/reconciled layouts, renders an accessible tab strip plus the active tree recursively, and saves tab/focus/ratio mutations. Tab and pane split creation write the durable session catalog before layout state, derive the pane leaf from the stable session ID, apply the workspace path cwd override, and then force-render the active tab. Resize updates matching DOM flex ratios in place and refits xterm without restarting PTYs. Pane close first receives the requested visible detach/kill acknowledgement, then removes the durable definition and collapses the tree; a catalog failure leaves definition/layout intact, reconstructs the visible pane where possible, and emits a warning. Pane lifecycle detach/kill keeps the definition/tree visible, while restart reconstructs only that pane and attaches a running session or starts a replacement.
 
 ## Electron security boundary
 
@@ -297,7 +299,7 @@ sessions:
     command: ./andromeda test --hil
 ```
 
-The current Electron sidebar switches these configured workspaces, restores the active choice, and derives status from hub-owned effective command/configured launch cwd/attachment metadata plus frontend-observed pane lifecycle. It falls back to configured launch locations before a session exists. Runtime cwd/git metadata is now additive where the hub can resolve it. The visible renderer restores/reconciles persisted tabs and recursively renders the active split tree; interactive free-form split controls and external workspace files remain future work.
+The current Electron sidebar switches these configured workspaces, restores the active choice, and derives status from hub-owned effective command/configured launch cwd/attachment metadata plus frontend-observed pane lifecycle. It falls back to configured launch locations before a session exists. Runtime cwd/git metadata is now additive where the hub can resolve it. The visible renderer restores/reconciles persisted tabs, recursively renders the active split tree, and provides keyboard/header controls for durable splits, directional resize, explicit pane close, and session detach/kill/restart. External workspace files remain future work.
 
 The hub should eventually own:
 

@@ -73,6 +73,13 @@ export function commandInvocationSignature(command: CommandInvocation): string {
       return `${command.id}:${command.args.workspaceId}:${command.args.tabId}`;
     case 'pane.focus':
       return `${command.id}:${command.args.paneId}`;
+    case 'pane.split':
+    case 'split.resize':
+    case 'pane.close':
+    case 'pane.detach':
+    case 'pane.kill':
+    case 'pane.restart':
+      return `${command.id}:${JSON.stringify(command.args)}`;
     default:
       return command.id;
   }
@@ -192,6 +199,13 @@ export function createConcreteCommandInvocations(
     { id: 'tab.previous' },
     { id: 'tab.renameDialog' },
     { id: 'tab.closeDialog' },
+    { id: 'pane.splitHorizontal' },
+    { id: 'pane.splitVertical' },
+    { id: 'pane.resizeLeft' },
+    { id: 'pane.resizeRight' },
+    { id: 'pane.resizeUp' },
+    { id: 'pane.resizeDown' },
+    { id: 'pane.closeDialog' },
     { id: 'pane.next' },
     { id: 'pane.previous' },
     ...workspaceIds.flatMap((workspaceId): CommandInvocation[] => [
@@ -245,6 +259,30 @@ export function createDefaultKeybindings(workspaceIds: readonly string[]): Keybi
       shiftKey: false,
       command: { id: 'tab.previous' },
     },
+    {
+      code: 'Equal',
+      altKey: true,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: true,
+      command: { id: 'pane.splitHorizontal' },
+    },
+    {
+      code: 'Minus',
+      altKey: true,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: true,
+      command: { id: 'pane.splitVertical' },
+    },
+    ...(['Left', 'Right', 'Up', 'Down'] as const).map((direction): Keybinding => ({
+      code: `Arrow${direction}`,
+      altKey: true,
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: true,
+      command: { id: `pane.resize${direction}` },
+    })),
     {
       code: 'F6',
       altKey: false,

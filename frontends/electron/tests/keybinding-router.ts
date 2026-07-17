@@ -29,7 +29,8 @@ assert.deepEqual(
   bindings.map((binding) => binding.code),
   [
     'KeyP', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7',
-    'Digit8', 'Digit9', 'KeyT', 'PageDown', 'PageUp', 'F6', 'F6',
+    'Digit8', 'Digit9', 'KeyT', 'PageDown', 'PageUp', 'Equal', 'Minus',
+    'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'F6', 'F6',
   ],
   'default bindings contained an unexpected shortcut',
 );
@@ -60,6 +61,14 @@ assert.deepEqual(
 assert.deepEqual(
   router.resolve(key({ code: 'PageUp', ctrlKey: true })),
   { claimed: true, execute: true, command: { id: 'tab.previous' } },
+);
+assert.deepEqual(
+  router.resolve(key({ code: 'Equal', altKey: true, shiftKey: true })),
+  { claimed: true, execute: true, command: { id: 'pane.splitHorizontal' } },
+);
+assert.deepEqual(
+  router.resolve(key({ code: 'ArrowLeft', altKey: true, shiftKey: true })),
+  { claimed: true, execute: true, command: { id: 'pane.resizeLeft' } },
 );
 assert.deepEqual(
   router.resolve(key({ code: 'F6' })),

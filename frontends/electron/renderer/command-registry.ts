@@ -9,7 +9,11 @@ import {
   type CommandInvocation,
   type CommandMetadata,
   type CommandOperationResult,
+  type PaneCloseCommandArgs,
   type PaneFocusCommandArgs,
+  type PaneSplitCommandArgs,
+  type PaneTargetCommandArgs,
+  type SplitResizeCommandArgs,
   type TabCloseCommandArgs,
   type TabCreateCommandArgs,
   type TabMoveCommandArgs,
@@ -48,6 +52,19 @@ export interface CommandHandlers {
   'tab.renameDialog': () => void | Promise<void>;
   'tab.closeDialog': () => void | Promise<void>;
   'pane.focus': (args: PaneFocusCommandArgs) => void | Promise<void>;
+  'pane.split': (args: PaneSplitCommandArgs) => void | Promise<void>;
+  'split.resize': (args: SplitResizeCommandArgs) => void | Promise<void>;
+  'pane.close': (args: PaneCloseCommandArgs) => void | Promise<void>;
+  'pane.detach': (args: PaneTargetCommandArgs) => void | Promise<void>;
+  'pane.kill': (args: PaneTargetCommandArgs) => void | Promise<void>;
+  'pane.restart': (args: PaneTargetCommandArgs) => void | Promise<void>;
+  'pane.splitHorizontal': () => void | Promise<void>;
+  'pane.splitVertical': () => void | Promise<void>;
+  'pane.resizeLeft': () => void | Promise<void>;
+  'pane.resizeRight': () => void | Promise<void>;
+  'pane.resizeUp': () => void | Promise<void>;
+  'pane.resizeDown': () => void | Promise<void>;
+  'pane.closeDialog': () => void | Promise<void>;
   'pane.next': () => void | Promise<void>;
   'pane.previous': () => void | Promise<void>;
 }
@@ -80,6 +97,19 @@ export interface CommandEnablement {
   'tab.renameDialog'?: () => CommandDisabledReason | null;
   'tab.closeDialog'?: () => CommandDisabledReason | null;
   'pane.focus'?: (args: PaneFocusCommandArgs) => CommandDisabledReason | null;
+  'pane.split'?: (args: PaneSplitCommandArgs) => CommandDisabledReason | null;
+  'split.resize'?: (args: SplitResizeCommandArgs) => CommandDisabledReason | null;
+  'pane.close'?: (args: PaneCloseCommandArgs) => CommandDisabledReason | null;
+  'pane.detach'?: (args: PaneTargetCommandArgs) => CommandDisabledReason | null;
+  'pane.kill'?: (args: PaneTargetCommandArgs) => CommandDisabledReason | null;
+  'pane.restart'?: (args: PaneTargetCommandArgs) => CommandDisabledReason | null;
+  'pane.splitHorizontal'?: () => CommandDisabledReason | null;
+  'pane.splitVertical'?: () => CommandDisabledReason | null;
+  'pane.resizeLeft'?: () => CommandDisabledReason | null;
+  'pane.resizeRight'?: () => CommandDisabledReason | null;
+  'pane.resizeUp'?: () => CommandDisabledReason | null;
+  'pane.resizeDown'?: () => CommandDisabledReason | null;
+  'pane.closeDialog'?: () => CommandDisabledReason | null;
   'pane.next'?: () => CommandDisabledReason | null;
   'pane.previous'?: () => CommandDisabledReason | null;
 }
@@ -205,6 +235,45 @@ export class CommandRegistry {
       case 'pane.focus':
         await this.handlers['pane.focus'](invocation.args);
         return completed();
+      case 'pane.split':
+        await this.handlers['pane.split'](invocation.args);
+        return completed();
+      case 'split.resize':
+        await this.handlers['split.resize'](invocation.args);
+        return completed();
+      case 'pane.close':
+        await this.handlers['pane.close'](invocation.args);
+        return completed();
+      case 'pane.detach':
+        await this.handlers['pane.detach'](invocation.args);
+        return completed();
+      case 'pane.kill':
+        await this.handlers['pane.kill'](invocation.args);
+        return completed();
+      case 'pane.restart':
+        await this.handlers['pane.restart'](invocation.args);
+        return completed();
+      case 'pane.splitHorizontal':
+        await this.handlers['pane.splitHorizontal']();
+        return completed();
+      case 'pane.splitVertical':
+        await this.handlers['pane.splitVertical']();
+        return completed();
+      case 'pane.resizeLeft':
+        await this.handlers['pane.resizeLeft']();
+        return completed();
+      case 'pane.resizeRight':
+        await this.handlers['pane.resizeRight']();
+        return completed();
+      case 'pane.resizeUp':
+        await this.handlers['pane.resizeUp']();
+        return completed();
+      case 'pane.resizeDown':
+        await this.handlers['pane.resizeDown']();
+        return completed();
+      case 'pane.closeDialog':
+        await this.handlers['pane.closeDialog']();
+        return completed();
       case 'pane.next':
         await this.handlers['pane.next']();
         return completed();
@@ -266,6 +335,32 @@ export class CommandRegistry {
         return this.enablement['tab.closeDialog']?.() ?? null;
       case 'pane.focus':
         return this.enablement['pane.focus']?.(command.args) ?? null;
+      case 'pane.split':
+        return this.enablement['pane.split']?.(command.args) ?? null;
+      case 'split.resize':
+        return this.enablement['split.resize']?.(command.args) ?? null;
+      case 'pane.close':
+        return this.enablement['pane.close']?.(command.args) ?? null;
+      case 'pane.detach':
+        return this.enablement['pane.detach']?.(command.args) ?? null;
+      case 'pane.kill':
+        return this.enablement['pane.kill']?.(command.args) ?? null;
+      case 'pane.restart':
+        return this.enablement['pane.restart']?.(command.args) ?? null;
+      case 'pane.splitHorizontal':
+        return this.enablement['pane.splitHorizontal']?.() ?? null;
+      case 'pane.splitVertical':
+        return this.enablement['pane.splitVertical']?.() ?? null;
+      case 'pane.resizeLeft':
+        return this.enablement['pane.resizeLeft']?.() ?? null;
+      case 'pane.resizeRight':
+        return this.enablement['pane.resizeRight']?.() ?? null;
+      case 'pane.resizeUp':
+        return this.enablement['pane.resizeUp']?.() ?? null;
+      case 'pane.resizeDown':
+        return this.enablement['pane.resizeDown']?.() ?? null;
+      case 'pane.closeDialog':
+        return this.enablement['pane.closeDialog']?.() ?? null;
       case 'pane.next':
         return this.enablement['pane.next']?.() ?? null;
       case 'pane.previous':
