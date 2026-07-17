@@ -69,6 +69,22 @@ PowerShell switches can be passed through, for example:
 
 `-DryRun` prints the planned WSL, package, signing, and verification steps without modifying artifacts where practical.
 
+## Local dogfood launch
+
+For local feedback before publisher reputation is established, use the controlled portable launcher:
+
+```bash
+./dev alpha-run-portable
+```
+
+The command verifies the current alpha release, copies the portable executable to a Windows-local directory, unblocks only that copied executable with `Unblock-File`, records `dogfood.json`, and launches it through Explorer at medium integrity:
+
+```text
+%LOCALAPPDATA%\NeonCodeAlpha\NeonCodeAlpha.exe
+```
+
+This does not disable Defender and does not add exclusions. It only removes Mark-of-the-Web from the local copy you intentionally built. SmartScreen can still warn for unsigned builds; choose **More info → Run anyway** only for local artifacts whose SHA-256 matches `release/windows-alpha/SHA256SUMS`.
+
 ## Signing
 
 Authenticode signing is optional for local dry runs but required for dogfoodable release candidates. Configure signing with environment variables visible to Windows PowerShell:
