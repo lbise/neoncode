@@ -32,6 +32,7 @@ Current role:
 - default Windows app path;
 - renders terminals with xterm.js;
 - loads validated user configuration and app-owned state from `%APPDATA%\\NeonCode`;
+- manages the default loopback WSL hub lifecycle for packaged alpha builds when `/health` is not already healthy;
 - performs startup session discovery with `list_sessions`;
 - restores and reconciles a separately persisted tab/split layout for every configured workspace;
 - renders only the active tab's 1–8 pane leaves and opens one WebSocket per visible pane/session;
@@ -94,6 +95,10 @@ Detailed docs:
 - [hub.md](hub.md)
 - [protocol.md](protocol.md)
 
+### Release packaging
+
+Alpha Windows packaging is documented in [release.md](release.md). The release path uses electron-builder configuration in `frontends/electron/electron-builder.yml`, outputs artifacts under `release/windows-alpha`, includes the WSL hub binary as `resources/hub/linux-x64/neoncode-hub`, writes `SHA256SUMS` plus `manifest.json`, optionally Authenticode-signs signable artifacts, and verifies hashes/signatures plus Microsoft Defender scanning when the host exposes Defender tooling. This release path is separate from the `%USERPROFILE%\\neoncode-electron` development publish directory.
+
 ### Protocol
 
 Current protocol is authenticated JSON over WebSocket with base64 terminal bytes. An authenticated `welcome` supplies protocol version 1 and a per-process hub `boot_id` before session operations begin.
@@ -128,9 +133,10 @@ hub/src/state.rs                   app state and session registry
 hub/src/ws.rs                      WebSocket handling and protocol dispatch
 hub/tests/                         real WebSocket and PTY integration tests
 
-frontends/electron/main.ts          Electron main process, lifecycle, and state persistence
+frontends/electron/main.ts          Electron main process, lifecycle, app-managed hub startup, and state persistence
 frontends/electron/config-store.ts  versioned config/state validation, migration, recovery, atomic IO
-frontends/electron/token-loader.ts  validated environment/WSL hub capability loading
+frontends/electron/hub-manager.ts   packaged Windows WSL hub health/copy/start lifecycle manager
+frontends/electron/token-loader.ts  validated environment/WSL hub capability loading/creation
 frontends/electron/preload.ts       narrow context-isolated desktop bridge
 frontends/electron/renderer.ts      typed browser-bundle bootstrap entrypoint
 frontends/electron/renderer/        strict TypeScript renderer modules:

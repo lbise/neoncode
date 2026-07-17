@@ -11,6 +11,7 @@
     "main.ts",
     "preload.ts",
     "config-store.ts",
+    "hub-manager.ts",
     "token-loader.ts",
     "shared/**/*.ts"
   ],

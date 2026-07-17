@@ -3,9 +3,9 @@
 ## Current stage
 
 ```text
-Stage: Keyboard-complete pane layout and lifecycle controls complete
-Supported Windows app: Electron + xterm.js + neoncode-hub
-Next focus: authenticated local app-control transport for CLI, then GUI polish
+Stage: Alpha release workflow groundwork complete
+Supported Windows app: Electron + xterm.js + app-managed neoncode-hub
+Next focus: signed clean-VM release gates, then authenticated local app-control transport
 ```
 
 The Windows tech stack is now:
@@ -520,7 +520,7 @@ The migration intentionally does not use a runtime TypeScript loader. Windows pu
 
 ### 6. Windows distribution trust and Defender compatibility
 
-Status: planned and release-blocking. The current development runtime executes Electron's official checksum-verified but unsigned generic `electron.exe` directly from `node_modules`; this is not a product distribution model and has repeatedly triggered Defender heuristic detections.
+Status: alpha workflow groundwork complete; signed clean-VM release gates remain release-blocking. The development runtime still executes Electron's official checksum-verified generic `electron.exe` from `node_modules`, but alpha packaging now uses a branded app/asar release path with separate verification scripts.
 
 Development workflow:
 
@@ -529,17 +529,20 @@ Development workflow:
 - [x] Make normal publish rebuild/copy app artifacts only; require an explicit bootstrap command when runtime dependencies change.
 - [x] Add a read-only runtime diagnostic command for version, hash, Authenticode status, executable availability, and actionable Defender failure reporting.
 - [x] Keep WSL/Rust/TypeScript/fake-hub checks authoritative for daily work when a managed Windows endpoint blocks the GUI runtime.
+- [x] Add alpha release scripts for WSL Rust build, Electron build, packaging, optional Authenticode signing, SHA256SUMS/manifest generation, and verification.
+- [x] Add packaged app-managed WSL hub lifecycle for the default loopback endpoint without putting the hub token on a command line.
 - [ ] Establish a Defender-enabled Windows VM/CI release gate independent of a developer's managed workstation.
 
 Production distribution:
 
-- [ ] Package a branded `NeonCode.exe` with production-only dependencies and `app.asar`; never ship the `node_modules/electron/dist/electron.exe` development layout.
+- [x] Package a branded alpha `NeonCode.exe` with generated app files, `app.asar`, and bundled WSL hub resource; never use the development publish layout for release artifacts.
 - [ ] Enable and verify appropriate Electron fuses, including disabling `RunAsNode` and requiring packaged application loading.
 - [ ] Select a hardware/cloud-backed Authenticode signing provider and timestamp all application, helper, installer, and uninstaller executables.
 - [ ] Produce and evaluate signed MSIX/Microsoft Store distribution, plus a signed direct-download installer if required.
 - [ ] Add clean-VM signature, hash, install, launch, update, Defender cloud-protection, and SmartScreen checks to the release pipeline.
 - [ ] Define Microsoft Security Intelligence false-positive submission and release-blocking response procedures.
-- [ ] Publish checksums, version provenance/SBOM, and signing-certificate identity for every release.
+- [x] Publish alpha checksums and version/git-SHA provenance manifest for every scripted release output.
+- [ ] Publish SBOM and signing-certificate identity in a release channel visible to users.
 - [ ] Never require customers to disable Defender or add exclusions; enterprise allowlisting must use managed certificate/package policy.
 
 Release acceptance: a production artifact installs and launches on a clean, fully updated Defender-enabled Windows machine without exclusions, has a valid timestamped trusted signature, and passes the documented false-positive/reputation gate.

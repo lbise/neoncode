@@ -27,11 +27,11 @@ async fn run() -> Result<()> {
         print_help();
         return Ok(());
     }
-    let token = env::var("NEONCODE_HUB_TOKEN")
-        .context("NEONCODE_HUB_TOKEN is required (use './dev cli ...')")?;
-    let token = hex::decode(&token).context("NEONCODE_HUB_TOKEN must be hexadecimal")?;
+    let token =
+        neoncode_hub::load_capability_token().context("load neoncode-hub capability token")?;
+    let token = hex::decode(&token).context("hub capability token must be hexadecimal")?;
     if token.len() != 32 {
-        bail!("NEONCODE_HUB_TOKEN must contain exactly 64 hexadecimal characters");
+        bail!("hub capability token must contain exactly 64 hexadecimal characters");
     }
     let endpoint =
         env::var("NEONCODE_HUB_ENDPOINT").unwrap_or_else(|_| "ws://127.0.0.1:44777/ws".to_string());

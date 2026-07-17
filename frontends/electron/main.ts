@@ -22,6 +22,7 @@ import {
   defaultState,
   settingsFromConfig,
 } from './config-store';
+import { manageHubLifecycle, type ManageHubLifecycleOptions } from './hub-manager';
 import { validateWorkspaceLayoutState } from './shared/layout-model';
 import type {
   DesktopBootstrapResult,
@@ -35,7 +36,7 @@ import type {
   WorkspaceCatalogSnapshot,
 } from './shared/types';
 import type { WorkspaceLayoutState } from './shared/layout-model';
-import { loadHubToken } from './token-loader';
+import { loadHubToken, type HubTokenResult } from './token-loader';
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-gpu');
@@ -43,8 +44,14 @@ app.commandLine.appendSwitch('disable-gpu-compositing');
 app.setName('NeonCode');
 
 const testMode = process.env.NEONCODE_TEST_MODE === '1';
-const hubTokenResult = loadHubToken();
-const hubCapabilityToken = hubTokenResult.token;
+let hubTokenResult: HubTokenResult | null = null;
+let hubTokenError: string | null = null;
+try {
+  hubTokenResult = loadHubToken();
+} catch (error) {
+  hubTokenError = errorMessage(error);
+}
+const hubCapabilityToken = hubTokenResult?.token ?? '';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -97,6 +104,10 @@ if (hasSingleInstanceLock) {
         errors: [`configuration storage failed: ${errorMessage(error)}`],
       },
     };
+  }
+  if (hubTokenError) {
+    bootstrapResult.diagnostics.hubStatus = 'error';
+    bootstrapResult.diagnostics.errors.push(`hub token setup failed: ${hubTokenError}`);
   }
 }
 
@@ -179,6 +190,7 @@ function rendererConfig(): RendererBootstrapConfig {
       stateStatus: bootstrapResult.diagnostics.stateStatus,
       warnings: [...bootstrapResult.diagnostics.warnings],
       errors: [...bootstrapResult.diagnostics.errors],
+      hubStatus: bootstrapResult.diagnostics.hubStatus ?? 'not_checked',
     },
     testMode,
   };
@@ -187,6 +199,47 @@ function rendererConfig(): RendererBootstrapConfig {
 ipcMain.on('neoncode:get-renderer-config', (event) => {
   event.returnValue = rendererConfig();
 });
+
+function addDiagnosticWarning(warning: string): void {
+  if (!bootstrapResult.diagnostics.warnings.includes(warning)) {
+    bootstrapResult.diagnostics.warnings.push(warning);
+  }
+}
+
+function addDiagnosticError(error: string): void {
+  if (!bootstrapResult.diagnostics.errors.includes(error)) {
+    bootstrapResult.diagnostics.errors.push(error);
+  }
+}
+
+async function prepareManagedHubLifecycle(): Promise<void> {
+  const endpoint = bootstrapResult.config?.hub.endpoint;
+  if (!endpoint) {
+    bootstrapResult.diagnostics.hubStatus = 'not_configured';
+    return;
+  }
+
+  const options: ManageHubLifecycleOptions = {
+    endpoint,
+    appVersion: app.getVersion(),
+    resourcesPath: process.resourcesPath,
+  };
+  const buildSha = process.env.NEONCODE_BUILD_GIT_SHA;
+  if (buildSha) options.appSha = buildSha;
+
+  try {
+    const result = await manageHubLifecycle(options);
+    bootstrapResult.diagnostics.hubStatus = result.status;
+    for (const warning of result.warnings) addDiagnosticWarning(`hub manager: ${warning}`);
+    for (const error of result.errors) addDiagnosticError(`hub manager: ${error}`);
+    log('hub-manager.result', result);
+  } catch (error) {
+    const message = `hub manager failed unexpectedly: ${errorMessage(error)}`;
+    bootstrapResult.diagnostics.hubStatus = 'error';
+    addDiagnosticError(message);
+    log('hub-manager.unhandled-error', { message: errorMessage(error) });
+  }
+}
 
 function requireCurrentRenderer(sender: WebContents): BrowserWindow {
   const window = mainWindow;
@@ -463,7 +516,7 @@ function createWindow(): void {
     stateStatus: bootstrapResult.diagnostics.stateStatus,
     warnings: bootstrapResult.diagnostics.warnings,
     errors: bootstrapResult.diagnostics.errors,
-    hubTokenSource: hubTokenResult.source,
+    hubTokenSource: hubTokenResult?.source ?? 'unavailable',
     integrityLevel: processIntegrityLevel(),
   });
 
@@ -533,8 +586,9 @@ if (!hasSingleInstanceLock) {
     }
   });
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     configureSessionSecurity();
+    await prepareManagedHubLifecycle();
     createWindow();
   });
 

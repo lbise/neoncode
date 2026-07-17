@@ -13,8 +13,8 @@ async fn main() -> Result<()> {
     let bind = env::var("NEONCODE_HUB_BIND")
         .or_else(|_| env::var("WORKSPACE_HUB_BIND"))
         .unwrap_or_else(|_| DEFAULT_BIND.to_string());
-    let capability_token = env::var("NEONCODE_HUB_TOKEN")
-        .context("NEONCODE_HUB_TOKEN is required (use ./dev hub to manage it)")?;
+    let capability_token =
+        neoncode_hub::load_capability_token().context("load neoncode-hub capability token")?;
     let addr: SocketAddr = bind
         .parse()
         .with_context(|| format!("invalid NEONCODE_HUB_BIND address: {bind}"))?;

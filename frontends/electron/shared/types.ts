@@ -253,6 +253,7 @@ export interface DesktopDiagnostics {
   stateStatus: StateStorageStatus;
   warnings: string[];
   errors: string[];
+  hubStatus?: string;
 }
 
 export interface DesktopBootstrapResult {
@@ -320,6 +321,7 @@ export interface AppDiagnostics {
   stateStatus: string;
   warnings: string[];
   errors: string[];
+  hubStatus: string;
 }
 
 export interface RendererAppConfig {
@@ -367,6 +369,7 @@ export interface PublicConfiguration {
   stateStatus: string;
   warnings: string[];
   errors: string[];
+  hubStatus: string;
   persistencePolicy: string;
   sessions?: unknown[];
   activeWorkspaceId?: string | null;

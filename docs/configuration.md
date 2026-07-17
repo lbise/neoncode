@@ -281,9 +281,11 @@ NEONCODE_TERMINAL_COUNT
 NEONCODE_PERSIST_SESSIONS
 ```
 
-`NEONCODE_HUB_TOKEN` remains environment-only. `NEONCODE_TEST_CONFIG_DIR` is accepted only with `NEONCODE_TEST_MODE=1`.
+`NEONCODE_HUB_TOKEN` remains environment-only for developer overrides. In the Windows desktop runtime, Electron can create/read the managed WSL token file at `${XDG_STATE_HOME:-$HOME/.local/state}/neoncode/hub-token` when the environment variable is absent; the token is still never stored in `%APPDATA%\\NeonCode` and is never placed on a command line. The Rust hub also falls back to that managed file when `NEONCODE_HUB_TOKEN` is absent. `NEONCODE_TEST_CONFIG_DIR` is accepted only with `NEONCODE_TEST_MODE=1`.
 
 ## Manual preview
+
+For development, `./dev hub` and `./dev app` still exercise the explicit two-process loop. Packaged alpha builds manage the default loopback WSL hub automatically: if `ws://127.0.0.1:<port>/ws` is unhealthy, Electron copies the bundled WSL hub into `~/.local/share/neoncode/hub/`, ensures the managed token file exists, starts the hub with `wsl.exe`, and surfaces diagnostics in the app header/status. Non-loopback or unsupported endpoints are never started automatically.
 
 1. Run `./dev hub` and `./dev app` once.
 2. Open Settings from the header and edit General values; verify each restart-required label before saving.

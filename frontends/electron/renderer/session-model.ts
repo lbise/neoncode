@@ -56,6 +56,7 @@ export class SessionModel {
         stateStatus: 'idle',
         warnings: [],
         errors: [],
+        hubStatus: 'idle',
         persistencePolicy: 'detach',
         sessions: [],
       },

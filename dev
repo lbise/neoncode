@@ -30,6 +30,11 @@ Electron app commands:
   ./dev electron-audit         Audit the locked Electron app dependencies
   ./dev electron-test     Run hidden-window Playwright functional tests
 
+Release commands:
+  ./dev release-alpha      Build, package, sign (optional), and verify Windows alpha artifacts
+  ./dev package-alpha      Package alpha artifacts from existing release build outputs
+  ./dev verify-release     Verify alpha hashes, signatures, and Defender scan when available
+
 Utility commands:
   ./dev reset-token  Rotate the local hub capability token
   ./dev status       Show git status and important output paths
@@ -215,6 +220,18 @@ case "$command" in
     ps_file 'scripts\electron-test.ps1' "$@"
     ;;
 
+  release-alpha)
+    ps_file 'scripts\release-windows.ps1' -WslRepoPath "$ROOT_DIR" "$@"
+    ;;
+
+  package-alpha)
+    ps_file 'scripts\release-windows.ps1' -WslRepoPath "$ROOT_DIR" -SkipRustBuild -SkipElectronBuild "$@"
+    ;;
+
+  verify-release)
+    ps_file 'scripts\verify-release.ps1' "$@"
+    ;;
+
   reset-token)
     if [[ -n "${NEONCODE_HUB_TOKEN:-}" ]]; then
       echo "Unset the externally supplied NEONCODE_HUB_TOKEN before rotating the managed token." >&2
@@ -238,6 +255,11 @@ Useful commands:
   ./dev hub
   ./dev app
   ./dev check
+  ./dev release-alpha
+  ./dev verify-release
+
+Release output:
+  Windows alpha: release\windows-alpha
 EOF
     ;;
 

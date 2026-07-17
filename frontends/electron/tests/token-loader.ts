@@ -2,6 +2,7 @@ import assert = require('node:assert/strict');
 import type { SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
 
 import {
+  ensureWslHubToken,
   loadHubToken,
   type HubTokenResult,
   type TokenSpawn,
@@ -32,8 +33,22 @@ const fromWsl: HubTokenResult = loadHubToken({
 });
 assert.deepEqual(fromWsl, { token: TOKEN, source: 'wsl' });
 assert.equal(invocation!.command, 'wsl.exe');
-assert(invocation!.args.includes('--exec'));
+assert.deepEqual(invocation!.args.slice(0, 3), ['--exec', 'sh', '-c']);
+assert(invocation!.args[3]!.includes('/dev/urandom'));
+assert(invocation!.args[3]!.includes('mktemp'));
 assert.equal(invocation!.options.windowsHide, true);
+
+let createdInvocation: SpawnInvocation | undefined;
+const created = ensureWslHubToken({
+  spawn: (command, args, options) => {
+    createdInvocation = { command, args, options };
+    return { status: 0, stdout: `${TOKEN}\n`, stderr: '' };
+  },
+});
+assert.deepEqual(created, { token: TOKEN, source: 'wsl' });
+assert.equal(createdInvocation!.command, 'wsl.exe');
+assert(createdInvocation!.args[3]!.includes('umask 077'));
+assert(createdInvocation!.args[3]!.includes('chmod 600'));
 
 assert.throws(
   () => loadHubToken({ env: {}, platform: 'linux' }),
@@ -43,9 +58,15 @@ assert.throws(
   () => loadHubToken({
     env: {},
     platform: 'win32',
-    spawn: () => ({ status: 1, stdout: '', stderr: 'missing token' }),
+    spawn: () => ({ status: 2, stdout: '', stderr: 'hub token file is malformed' }),
   }),
-  /missing token/,
+  /malformed/,
+);
+assert.throws(
+  () => ensureWslHubToken({
+    spawn: () => ({ status: 0, stdout: 'not-a-token', stderr: '' }),
+  }),
+  /64 hexadecimal/,
 );
 
 console.log('token-loader tests passed');

@@ -60,7 +60,7 @@ The current hub protects a local development service from browser cross-origin r
 ${XDG_STATE_HOME:-$HOME/.local/state}/neoncode/hub-token
 ```
 
-The file is mode `0600`. The wrapper loads the same token for `./dev hub`, `./dev app`, `./dev electron`, and `./dev electron-test`, passing it to Windows Electron through the process environment. It is never copied into the published app directory, and the hub explicitly removes `NEONCODE_HUB_TOKEN` from every spawned PTY child environment. Rotate it and restart both processes with:
+The file is mode `0600`. The wrapper loads the same token for `./dev hub`, `./dev app`, `./dev electron`, and `./dev electron-test`, passing it to Windows Electron through the process environment for developer workflows. The Windows desktop token loader can also create/read this WSL file directly when `NEONCODE_HUB_TOKEN` is absent, and the Rust hub falls back to the same file so packaged `wsl.exe` launch does not need a token environment variable. The token is never copied into the published app directory, never placed on a command line, and the hub explicitly removes `NEONCODE_HUB_TOKEN` from every spawned PTY child environment. Rotate it and restart both processes with:
 
 ```bash
 ./dev reset-token
@@ -87,7 +87,13 @@ From the repository root in WSL/Linux:
 ./dev hub
 ```
 
-Equivalent direct command after loading a valid token:
+Equivalent direct command with the managed token file already present:
+
+```bash
+cargo run -p neoncode-hub
+```
+
+To override the managed file for a manual developer session, export a valid environment token:
 
 ```bash
 export NEONCODE_HUB_TOKEN="$(tr -d '\r\n' < "${XDG_STATE_HOME:-$HOME/.local/state}/neoncode/hub-token")"

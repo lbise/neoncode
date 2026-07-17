@@ -363,6 +363,7 @@ export function createAppConfig(bootstrap: unknown = {}): RendererAppConfig {
       stateStatus: stringOr(diagnostics.stateStatus, 'error'),
       warnings: stringArrayOrEmpty(diagnostics.warnings),
       errors: stringArrayOrEmpty(diagnostics.errors),
+      hubStatus: stringOr(diagnostics.hubStatus, 'not_checked'),
     },
     workspaces,
   };
@@ -687,6 +688,7 @@ export class NeonCodeApp {
       stateStatus: this.config.diagnostics.stateStatus,
       warnings: this.config.diagnostics.warnings,
       errors: this.config.diagnostics.errors,
+      hubStatus: this.config.diagnostics.hubStatus,
       persistencePolicy: this.config.persistencePolicy,
       terminal: this.config.terminal,
       activeWorkspaceId: this.activeWorkspaceId ?? this.config.activeWorkspaceId,
@@ -2242,6 +2244,9 @@ export class NeonCodeApp {
 
   async start(): Promise<void> {
     this.showConfigurationDiagnostics();
+    if (this.config.diagnostics.hubStatus !== 'not_checked') {
+      this.setStatus(`Hub: ${this.config.diagnostics.hubStatus}`);
+    }
     if (!this.config.configurationValid) {
       const message = this.config.diagnostics.errors.join('; ') || 'Configuration is invalid';
       this.sessionModel.setSessionDiscoveryStatus('configuration_error', message);

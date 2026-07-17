@@ -29,9 +29,10 @@ The desktop supports persistent tabs plus keyboard-complete pane splitting, dire
 Useful commands:
 
 ```bash
-./dev publish   # publish Electron app
-./dev check     # JS/Rust checks
-./dev status    # useful paths/status
+./dev publish       # publish Electron app for local development
+./dev check         # JS/Rust checks
+./dev release-alpha # build/package/sign(optional)/verify alpha artifacts
+./dev status        # useful paths/status
 ```
 
 ## Key documents
@@ -43,6 +44,7 @@ Useful commands:
 - [Hub guide](docs/hub.md)
 - [Hub protocol](docs/protocol.md)
 - [Testing strategy](docs/testing.md)
+- [Alpha release workflow](docs/release.md)
 - [Terminal renderer decision](docs/terminal-renderer-decision.md)
 - [External tool inspiration](docs/external-tool-inspiration.md)
 

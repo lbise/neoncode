@@ -1,0 +1,43 @@
+appId: dev.neoncode.desktop
+name: neoncode
+productName: NeonCode Alpha
+copyright: Copyright © 2026 NeonCode contributors
+asar: true
+compression: maximum
+directories:
+  output: ../../release/windows-alpha
+  buildResources: build
+artifactName: "${productName}-${version}-alpha-${arch}.${ext}"
+files:
+  - from: dist
+    to: dist
+    filter:
+      - "**/*"
+  - index.html
+  - styles.css
+  - package.json
+extraResources:
+  - from: resources/hub/linux-x64/neoncode-hub
+    to: hub/linux-x64/neoncode-hub
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+    - target: zip
+      arch:
+        - x64
+  executableName: NeonCode
+  verifyUpdateCodeSignature: true
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: NeonCode Alpha
+  uninstallDisplayName: NeonCode Alpha
+publish: null
