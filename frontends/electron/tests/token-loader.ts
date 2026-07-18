@@ -1,7 +1,11 @@
 import assert = require('node:assert/strict');
 import type { SpawnSyncOptionsWithStringEncoding } from 'node:child_process';
+import fs = require('node:fs');
+import os = require('node:os');
+import path = require('node:path');
 
 import {
+  ensureLocalHubToken,
   ensureWslHubToken,
   loadHubToken,
   type HubTokenResult,
@@ -50,10 +54,21 @@ assert.equal(createdInvocation!.command, 'wsl.exe');
 assert(createdInvocation!.args[3]!.includes('umask 077'));
 assert(createdInvocation!.args[3]!.includes('chmod 600'));
 
-assert.throws(
-  () => loadHubToken({ env: {}, platform: 'linux' }),
-  /required outside/,
-);
+{
+  const stateHome = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-token-loader-'));
+  const local = loadHubToken({ env: { XDG_STATE_HOME: stateHome }, platform: 'linux' });
+  assert.equal(local.source, 'local');
+  assert.match(local.token, /^[0-9a-fA-F]{64}$/);
+  assert.equal(
+    fs.readFileSync(path.join(stateHome, 'neoncode', 'hub-token'), 'utf8').trim(),
+    local.token,
+  );
+  assert.deepEqual(
+    ensureLocalHubToken({ env: { XDG_STATE_HOME: stateHome } }),
+    local,
+  );
+  fs.rmSync(stateHome, { recursive: true, force: true });
+}
 assert.throws(
   () => loadHubToken({
     env: {},

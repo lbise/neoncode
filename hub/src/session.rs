@@ -18,9 +18,9 @@ use tracing::{debug, info, warn};
 
 use crate::protocol::{ExitReason, ExitSummary, RuntimeCwd, RuntimeCwdState};
 
-const SESSION_EVENT_BUFFER: usize = 256;
+const SESSION_EVENT_BUFFER: usize = 4096;
 const SESSION_REPLAY_BUFFER_BYTES: usize = 2 * 1024 * 1024;
-const SESSION_REPLAY_BUFFER_ENTRIES: usize = 4096;
+const SESSION_REPLAY_BUFFER_ENTRIES: usize = 8192;
 
 #[derive(Debug, Clone)]
 pub enum SessionEvent {

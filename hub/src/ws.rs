@@ -25,7 +25,7 @@ use tracing::{debug, error, info, warn};
 
 const APP_WEBSOCKET_PROTOCOL: &str = "neoncode.v1";
 const AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(5);
-const OUTGOING_MESSAGE_BUFFER: usize = 256;
+const OUTGOING_MESSAGE_BUFFER: usize = 4096;
 const MAX_CLIENT_MESSAGE_BYTES: usize = 64 * 1024;
 const MAX_INPUT_BYTES: usize = 32 * 1024;
 const MAX_ATTACHMENTS_PER_CONNECTION: usize = 64;

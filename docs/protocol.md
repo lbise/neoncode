@@ -42,7 +42,7 @@ Immediately after upgrade, the hub sends a fresh random `auth_challenge`. The cl
 For the current prototype, all WebSocket messages are JSON text frames.
 Terminal bytes are base64-encoded in `data_b64` fields.
 
-Client text messages and frames are limited to 64 KiB. Decoded `input` data is limited to 32 KiB per message. Each WebSocket has a bounded 256-message server queue and may attach to at most 64 sessions. The hub permits at most 128 WebSockets and 64 active sessions/top-level PTY child processes; descendant process containment is not implemented yet. Oversized WebSocket messages are closed by the transport; semantic limit violations produce scoped `error` messages where possible.
+Client text messages and frames are limited to 64 KiB. Decoded `input` data is limited to 32 KiB per message. Each WebSocket has a bounded 4,096-message server queue and may attach to at most 64 sessions. The hub permits at most 128 WebSockets and 64 active sessions/top-level PTY child processes; descendant process containment is not implemented yet. Oversized WebSocket messages are closed by the transport; semantic limit violations produce scoped `error` messages where possible.
 
 This is not the final high-performance protocol. Later we can move terminal output/input to binary frames while keeping JSON for control messages.
 

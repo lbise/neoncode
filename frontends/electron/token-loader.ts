@@ -2,10 +2,14 @@ import {
   spawnSync,
   type SpawnSyncOptionsWithStringEncoding,
 } from 'node:child_process';
+import crypto = require('node:crypto');
+import fs = require('node:fs');
+import os = require('node:os');
+import path = require('node:path');
 
 export const TOKEN_PATTERN = /^[0-9a-fA-F]{64}$/;
 
-export type HubTokenSource = 'environment' | 'wsl';
+export type HubTokenSource = 'environment' | 'wsl' | 'local';
 
 export interface HubTokenResult {
   token: string;
@@ -27,6 +31,10 @@ export type TokenSpawn = (
 
 export interface EnsureWslHubTokenOptions {
   spawn?: TokenSpawn;
+}
+
+export interface EnsureLocalHubTokenOptions {
+  env?: unknown;
 }
 
 export interface LoadHubTokenOptions {
@@ -98,6 +106,77 @@ export function validateToken(token: unknown, source: string): string {
   return normalized;
 }
 
+function envString(env: UnknownRecord, key: string): string | undefined {
+  const value = env[key];
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function currentUserId(): number | undefined {
+  return typeof process.getuid === 'function' ? process.getuid() : undefined;
+}
+
+function assertOwnedByCurrentUser(stat: fs.Stats, label: string): void {
+  const uid = currentUserId();
+  if (uid !== undefined && stat.uid !== uid) {
+    throw new Error(`${label} must be owned by the current user`);
+  }
+}
+
+function localTokenPath(env: UnknownRecord): string {
+  const stateHome = envString(env, 'XDG_STATE_HOME');
+  if (stateHome) return path.join(stateHome, 'neoncode', 'hub-token');
+  const home = envString(env, 'HOME') ?? os.homedir();
+  if (!home) {
+    throw new Error('HOME is unavailable for the managed hub token file');
+  }
+  return path.join(home, '.local', 'state', 'neoncode', 'hub-token');
+}
+
+export function ensureLocalHubToken({ env = process.env }: EnsureLocalHubTokenOptions = {}): HubTokenResult {
+  if (!isRecord(env)) {
+    throw new Error('hub token environment must be an object');
+  }
+
+  const tokenPath = localTokenPath(env);
+  const tokenDirectory = path.dirname(tokenPath);
+  fs.mkdirSync(tokenDirectory, { recursive: true, mode: 0o700 });
+  const directoryStat = fs.lstatSync(tokenDirectory);
+  if (directoryStat.isSymbolicLink() || !directoryStat.isDirectory()) {
+    throw new Error(`hub token directory must be a real directory: ${tokenDirectory}`);
+  }
+  assertOwnedByCurrentUser(directoryStat, `hub token directory ${tokenDirectory}`);
+  fs.chmodSync(tokenDirectory, 0o700);
+
+  try {
+    const tokenStat = fs.lstatSync(tokenPath);
+    if (tokenStat.isSymbolicLink()) {
+      throw new Error(`hub token path must not be a symlink: ${tokenPath}`);
+    }
+    if (!tokenStat.isFile()) {
+      throw new Error(`hub token path must be a regular file: ${tokenPath}`);
+    }
+    assertOwnedByCurrentUser(tokenStat, `hub token file ${tokenPath}`);
+    const token = validateToken(fs.readFileSync(tokenPath, 'utf8'), 'managed hub token file');
+    fs.chmodSync(tokenPath, 0o600);
+    return { token, source: 'local' };
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') throw error;
+  }
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const temporaryPath = path.join(tokenDirectory, `.hub-token.tmp.${String(process.pid)}.${crypto.randomBytes(6).toString('hex')}`);
+  const file = fs.openSync(temporaryPath, 'wx', 0o600);
+  try {
+    fs.writeFileSync(file, `${token}\n`, { encoding: 'utf8' });
+  } finally {
+    fs.closeSync(file);
+  }
+  fs.renameSync(temporaryPath, tokenPath);
+  fs.chmodSync(tokenPath, 0o600);
+  return { token, source: 'local' };
+}
+
 export function ensureWslHubToken({
   spawn = spawnSync,
 }: EnsureWslHubTokenOptions = {}): HubTokenResult {
@@ -139,9 +218,9 @@ export function loadHubToken({
       source: 'environment',
     };
   }
-  if (platform !== 'win32') {
-    throw new Error('NEONCODE_HUB_TOKEN is required outside the Windows desktop runtime');
+  if (platform === 'win32') {
+    return ensureWslHubToken({ spawn });
   }
 
-  return ensureWslHubToken({ spawn });
+  return ensureLocalHubToken({ env });
 }

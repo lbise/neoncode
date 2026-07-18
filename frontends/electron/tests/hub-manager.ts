@@ -133,6 +133,44 @@ async function run(): Promise<void> {
 
   {
     const { directory, binary } = temporaryHubBinary();
+    const spawnInvocations: Array<{ command: string; args: string[]; options: SpawnOptions }> = [];
+    const fakeSpawn: HubSpawn = (command, args, options) => {
+      spawnInvocations.push({ command, args, options });
+      return {
+        pid: 5151,
+        unref(): void {},
+      };
+    };
+
+    const result = await manageHubLifecycle({
+      endpoint: 'ws://127.0.0.1:44777/ws',
+      appVersion: '0.1.0',
+      resourcesPath: directory,
+      bundledHubPath: binary,
+      platform: 'linux',
+      fetch: healthSequence([false, true]),
+      spawn: fakeSpawn,
+      sleep: async () => {},
+      ensureToken: () => ({ token: TOKEN, source: 'local' }),
+      env: { NEONCODE_HUB_TOKEN: TOKEN, PATH: '/usr/bin' },
+      pollAttempts: 3,
+      pollIntervalMs: 1,
+    });
+
+    assert.equal(result.status, 'started');
+    assert.equal(result.pid, 5151);
+    assert.equal(result.bundledHubPath, binary);
+    assert.equal(result.wslHubPath, undefined);
+    assert.equal(spawnInvocations.length, 1);
+    assert.equal(spawnInvocations[0]!.command, binary);
+    assert.deepEqual(spawnInvocations[0]!.args, []);
+    assert.equal(spawnInvocations[0]!.options.env!.NEONCODE_HUB_BIND, '127.0.0.1:44777');
+    assert.equal(spawnInvocations[0]!.options.env!.NEONCODE_HUB_TOKEN, undefined);
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+
+  {
+    const { directory, binary } = temporaryHubBinary();
     const failingSpawnSync: HubSpawnSync = (command, args, options) => {
       void command;
       void args;

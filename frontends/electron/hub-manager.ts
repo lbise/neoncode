@@ -7,7 +7,7 @@ import {
   type SpawnSyncOptionsWithStringEncoding,
 } from 'node:child_process';
 
-import { ensureWslHubToken, type HubTokenResult } from './token-loader';
+import { ensureLocalHubToken, ensureWslHubToken, type HubTokenResult } from './token-loader';
 
 export type HubManagerStatus =
   | 'healthy'
@@ -342,7 +342,7 @@ function installBundledHub(
   return installedPath;
 }
 
-function startManagedHub(
+function startManagedWslHub(
   bindAddress: string,
   wslHubPath: string,
   spawnImpl: HubSpawn,
@@ -356,6 +356,26 @@ function startManagedHub(
       detached: true,
       stdio: 'ignore',
       env: environment,
+    },
+  );
+}
+
+function startManagedNativeHub(
+  bindAddress: string,
+  hubPath: string,
+  spawnImpl: HubSpawn,
+  environment: NodeJS.ProcessEnv,
+): HubStartedProcess {
+  return spawnImpl(
+    hubPath,
+    [],
+    {
+      detached: true,
+      stdio: 'ignore',
+      env: {
+        ...environment,
+        NEONCODE_HUB_BIND: bindAddress,
+      },
     },
   );
 }
@@ -392,25 +412,26 @@ export async function manageHubLifecycle(
   }
 
   const platform = options.platform ?? process.platform;
-  if (platform !== 'win32') {
+  if (platform !== 'win32' && platform !== 'linux') {
     return createResult(
       'skipped',
       parsed,
       endpoint,
       true,
-      ['hub manager skipped app-managed WSL launch outside Windows'],
+      [`hub manager skipped app-managed launch on unsupported platform ${platform}`],
       [],
     );
   }
 
   const bundledHubPath = resolveBundledHubPath(options);
   if (!fs.existsSync(bundledHubPath)) {
+    const hubKind = platform === 'win32' ? 'bundled WSL hub binary' : 'bundled native hub binary';
     return createResult(
       'missing-bundled-hub',
       parsed,
       endpoint,
       true,
-      [`bundled WSL hub binary is missing; app-managed hub launch skipped: ${bundledHubPath}`],
+      [`${hubKind} is missing; app-managed hub launch skipped: ${bundledHubPath}`],
       [],
       { bundledHubPath },
     );
@@ -421,21 +442,31 @@ export async function manageHubLifecycle(
   const sleep = options.sleep ?? defaultSleep;
   const pollAttempts = options.pollAttempts ?? DEFAULT_POLL_ATTEMPTS;
   const pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
-  const environment = sanitizedHubEnvironment(options.env ?? process.env);
+  const sourceEnvironment = options.env ?? process.env;
+  const environment = sanitizedHubEnvironment(sourceEnvironment);
 
   try {
-    const ensureToken = options.ensureToken ?? (() => ensureWslHubToken({ spawn: spawnSyncImpl }));
+    const ensureToken = options.ensureToken ?? (platform === 'win32'
+      ? (() => ensureWslHubToken({ spawn: spawnSyncImpl }))
+      : (() => ensureLocalHubToken({ env: sourceEnvironment })));
     ensureToken();
-    const wslHubPath = installBundledHub(
-      bundledHubPath,
-      releaseLabel(options.appVersion, options.appSha),
-      spawnSyncImpl,
-      environment,
-    );
-    const child = startManagedHub(parsed.bindAddress, wslHubPath, spawnImpl, environment);
+    const wslHubPath = platform === 'win32'
+      ? installBundledHub(
+        bundledHubPath,
+        releaseLabel(options.appVersion, options.appSha),
+        spawnSyncImpl,
+        environment,
+      )
+      : undefined;
+    const child = platform === 'win32'
+      ? startManagedWslHub(parsed.bindAddress, wslHubPath!, spawnImpl, environment)
+      : startManagedNativeHub(parsed.bindAddress, bundledHubPath, spawnImpl, environment);
+    const baseDetails: Pick<HubManagerResult, 'bundledHubPath' | 'wslHubPath' | 'pid'> = platform === 'win32'
+      ? { bundledHubPath, wslHubPath: wslHubPath! }
+      : { bundledHubPath };
     const startedDetails = child.pid === undefined
-      ? { bundledHubPath, wslHubPath }
-      : { bundledHubPath, wslHubPath, pid: child.pid };
+      ? baseDetails
+      : { ...baseDetails, pid: child.pid };
     child.unref();
     for (let attempt = 0; attempt < pollAttempts; attempt += 1) {
       if (await checkHubHealth(parsed.healthUrl, fetcher, healthTimeoutMs)) {

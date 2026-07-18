@@ -202,10 +202,10 @@ Current resource bounds:
 
 - 64 KiB maximum WebSocket text message/frame;
 - 32 KiB maximum decoded terminal input per message;
-- 256 queued server messages per connection with asynchronous backpressure;
+- 4,096 queued server messages per connection with asynchronous backpressure;
 - 64 attached sessions per connection and 128 WebSockets per hub;
 - 64 active PTY sessions/top-level child processes per hub (descendant containment is future work);
-- 256 live session events plus at most 4,096 replay entries / 2 MiB raw replay data per session;
+- 4,096 live session events plus at most 8,192 replay entries / 2 MiB raw replay data per session;
 - 1–1,000 terminal rows/columns;
 - restricted 1–128 byte session IDs, 128 arguments, and 4 KiB command/argument/cwd strings.
 
@@ -248,7 +248,7 @@ Frontend sends `attach` with a `session_id` to subscribe the current WebSocket t
 
 The hub atomically captures a live broadcast receiver, replay bounds, session incarnation, and the session's bounded output history. It sends an `attached` checkpoint manifest, queues selected replay output in sequence order, and then forwards live events. Holding the same event-state lock while subscribing and snapshotting prevents gaps or duplicates at the replay/live boundary.
 
-The replay buffer retains up to 2 MiB/4,096 raw-output chunks per session. A matching `instance_id`/`after_output_seq` cursor receives only missed output. Cursors older than retained history report truncation; mismatched incarnations or ahead cursors require renderer reset. Fresh/legacy attaches still receive full bounded replay. This restores normal shell history and prompts but is not a canonical terminal-screen snapshot; output older than the bound is discarded and arbitrary full-screen state cannot be reconstructed exactly.
+The replay buffer retains up to 2 MiB/8,192 raw-output chunks per session. A matching `instance_id`/`after_output_seq` cursor receives only missed output. Cursors older than retained history report truncation; mismatched incarnations or ahead cursors require renderer reset. Fresh/legacy attaches still receive full bounded replay. This restores normal shell history and prompts but is not a canonical terminal-screen snapshot; output older than the bound is discarded and arbitrary full-screen state cannot be reconstructed exactly.
 
 ### Detach
 

@@ -1,0 +1,32 @@
+appId: dev.neoncode.desktop
+productName: NeonCode Alpha
+copyright: Copyright © 2026 NeonCode contributors
+asar: true
+compression: maximum
+afterPack: build/after-pack.cjs
+directories:
+  output: ../../release/linux-alpha
+  buildResources: build
+files:
+  - from: dist
+    to: dist
+    filter:
+      - "**/*"
+  - index.html
+  - styles.css
+  - package.json
+extraResources:
+  - from: resources/hub/linux-x64/neoncode-hub
+    to: hub/linux-x64/neoncode-hub
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+    - target: tar.gz
+      arch:
+        - x64
+  category: Development
+  executableName: neoncode
+  artifactName: "${productName}-${version}-alpha-linux-${arch}.${ext}"
+publish: null

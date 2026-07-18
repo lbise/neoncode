@@ -3,9 +3,10 @@
 ## Current stage
 
 ```text
-Stage: Alpha release workflow groundwork complete
+Stage: Native Linux developer workflow in progress after Windows alpha groundwork
 Supported Windows app: Electron + xterm.js + app-managed neoncode-hub
-Next focus: dogfood UX simplification and terminal continuity, then signed clean-VM release gates / app-control transport
+Native Linux dev path: Electron + xterm.js + local neoncode-hub
+Next focus: Linux native build/test loop, then dogfood UX simplification and signed clean-VM release gates / app-control transport
 ```
 
 The Windows tech stack is now:
@@ -23,6 +24,20 @@ Previous Windows Terminal/WPF embedding POCs are obsolete and are not a product 
 ## Dogfood feedback action plan
 
 Source: `docs/issues.md` from initial alpha dogfooding. This backlog supersedes polish work that would preserve the current chrome-heavy cockpit layout.
+
+### Priority -1: native Linux developer workflow
+
+Goal: on native Linux hosts without WSL/PowerShell, developers can build, run, test, and package development artifacts for the Electron/xterm/Rust-hub stack.
+
+- [x] Add native Linux branches to `./dev app`, `./dev publish`, `./dev electron`, and `./dev electron-test`.
+- [x] Keep the existing WSL-to-Windows PowerShell workflow when `powershell.exe` is available.
+- [x] Ensure Electron and the hub share a local managed capability token file outside Windows.
+- [x] Add Linux app-managed bundled hub startup for packaged artifacts.
+- [x] Add Linux electron-builder configuration and `./dev package-linux` for alpha development artifacts.
+- [x] Document native Linux setup, commands, token location, and limitations in `docs/linux-development.md`.
+- [ ] Run native Linux `./dev check` once Rust and npm dependencies are available on this host.
+- [x] Run native Linux headless `./dev electron-test` against a live hub over SSH/Xvfb.
+- [ ] Run native Linux full `./dev electron-test-gui` from a real graphical desktop or GUI CI worker.
 
 ### Priority 0: terminal continuity / no apparent re-execution
 

@@ -73,6 +73,8 @@ declare global {
 const appRoot = path.resolve(__dirname, '..', '..');
 const endpoint = process.env.NEONCODE_HUB_ENDPOINT || 'ws://127.0.0.1:44777/ws';
 const timeout = Number.parseInt(process.env.NEONCODE_PLAYWRIGHT_TIMEOUT || '20000', 10);
+const electronTestSuite = process.env.NEONCODE_ELECTRON_TEST_SUITE === 'headless' ? 'headless' : 'gui';
+const runGuiOnlyChecks = electronTestSuite === 'gui';
 
 function writeTestConfig(
   directory: string,
@@ -1051,9 +1053,10 @@ async function runFirstLaunchChecks(
   await waitForOutput(page, 'tasks', heavyExpected);
   assert(Date.now() - heavyStarted < 30000, '20,000-line output soak exceeded 30 seconds');
   const heavyState = await getState(page);
+  const heavyPane = requirePane(heavyState, 'tasks');
   assert(
-    requirePane(heavyState, 'tasks').outputGap === '',
-    '20,000-line output soak produced a sequence gap',
+    heavyPane.outputGap === '',
+    `20,000-line output soak produced a sequence gap: ${heavyPane.outputGap}`,
   );
 
   const tmuxValues = [`tool-tmux-present-${runToken}`, `tool-tmux-missing-${runToken}`];
@@ -1072,13 +1075,16 @@ async function runFirstLaunchChecks(
   await sendText(page, 'tasks', nvimCommand);
   const nvimResult = await waitForEitherOutput(page, 'tasks', nvimValues);
 
-  if (tmuxResult.includes('present')) {
+  if (tmuxResult.includes('present') && runGuiOnlyChecks) {
     const tmuxSession = `neoncode-${runToken}`;
     const tmuxSocket = `neoncode-${runToken}`;
-    await sendText(page, 'tasks', `tmux -f /dev/null -L '${tmuxSocket}' new-session -s '${tmuxSession}'\n`);
-    await page.waitForTimeout(500);
-    await sendText(page, 'tasks', "tmux set-option -g mouse on; tmux split-window -h; tmux select-pane -t ':0.1'\n");
-    await page.waitForTimeout(300);
+    await sendText(page, 'tasks', `tmux -f /dev/null -L '${tmuxSocket}' new-session -d -s '${tmuxSession}' \\; set-option -g mouse on \\; split-window -h \\; select-pane -t ':0.1' \\; attach-session -t '${tmuxSession}'\n`);
+    await page.waitForTimeout(1500);
+    const tmuxReadyExpected = `tmux-ready-${runToken}`;
+    const tmuxReadyCommand = `printf 'tmux-ready-%s\n' '${runToken}'\n`;
+    assertMarkerIsNotEchoed(tmuxReadyCommand, tmuxReadyExpected);
+    await sendText(page, 'tasks', tmuxReadyCommand);
+    await waitForOutput(page, 'tasks', tmuxReadyExpected);
     await verifyTmuxMouseBehavior(page, 'tasks', runToken);
     const tmuxLiveExpected = `tmux-live-${runToken}`;
     const tmuxLiveCommand = `printf 'tmux-live-%s\\n' '${runToken}'\n`;
@@ -1095,7 +1101,7 @@ async function runFirstLaunchChecks(
     await sendText(page, 'tasks', `tmux -L '${tmuxSocket}' kill-session -t '${tmuxSession}'\n`);
   }
 
-  if (nvimResult.includes('present')) {
+  if (nvimResult.includes('present') && runGuiOnlyChecks) {
     const nvimPath = `/tmp/neoncode-nvim-${runToken}.txt`;
     const nvimContent = `editor-${runToken}`;
     await sendText(page, 'tasks', `nvim -u NONE -n '${nvimPath}'\n`);
@@ -1837,7 +1843,7 @@ async function runInvalidConfigurationCheck(runToken: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  log('launch', { appRoot, endpoint });
+  log('launch', { appRoot, endpoint, suite: electronTestSuite });
   const runToken = `${Date.now()}`;
   const sessionPrefix = `electron-playwright-${runToken}`;
   const configDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-electron-config-'));

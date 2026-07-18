@@ -4,6 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
+if ! command -v cargo >/dev/null 2>&1 && [[ -f "$HOME/.cargo/env" ]]; then
+  # rustup installs cargo here, but non-interactive shells may not source it.
+  # shellcheck source=/dev/null
+  . "$HOME/.cargo/env"
+fi
+
 usage() {
   cat <<'EOF'
 NeonCode developer commands
@@ -12,23 +18,27 @@ Usage:
   ./dev <command>
 
 Daily commands:
-  ./dev app          Publish/start Electron + xterm.js app
-  ./dev publish      Build in WSL and copy app artifacts without reinstalling Electron
+  ./dev app          Build/start Electron + xterm.js app
+  ./dev publish      Build Electron artifacts (and publish to Windows when WSL bridge exists)
   ./dev hub          Run the Rust NeonCode hub
   ./dev check        Run strict TypeScript + Rust tests/fmt/check/clippy
   ./dev soak [secs]  Repeat real PTY metadata/reconnect tests (default: 300)
   ./dev cli <args>   Run authenticated NeonCode CLI (status/sessions/notify)
 
 Electron app commands:
-  ./dev electron-publish              Publish Electron app
-  ./dev electron                      Start already-published Electron app
-  ./dev electron-stop                 Force-stop only published NeonCode Electron processes
+  ./dev electron-publish              Build/publish Electron app
+  ./dev electron                      Start Electron app
+  ./dev electron-stop                 Force-stop NeonCode Electron processes when supported
   ./dev electron-bootstrap     Explicitly install/verify the stable Windows Electron runtime
   ./dev electron-runtime-status Show runtime hash/marker/signature without execution
   ./dev electron-runtime-probe  Optional direct high-integrity execution diagnostic
   ./dev electron-install       Alias for electron-bootstrap
   ./dev electron-audit         Audit the locked Electron app dependencies
-  ./dev electron-test     Run hidden-window Playwright functional tests
+  ./dev electron-test     Run headless-safe Electron functional tests on Linux SSH/Xvfb
+  ./dev electron-test-headless Run headless-safe Electron tests explicitly
+  ./dev electron-test-gui Run full GUI Electron tests including tmux/nvim mouse checks
+  ./dev electron-sandbox-fix Configure Electron's Linux chrome-sandbox helper
+  ./dev package-linux     Build native Linux alpha AppImage/tar.gz artifacts
 
 Release commands:
   ./dev release-alpha      Build, package, sign (optional), and verify Windows alpha artifacts
@@ -107,10 +117,18 @@ ensure_hub_token() {
   export NEONCODE_HUB_TOKEN="$token"
 }
 
+windows_bridge_available() {
+  command -v powershell.exe >/dev/null 2>&1
+}
+
 ps_file() {
   local script="$1"
   local bridge_env="${WSLENV:-}"
   shift
+  if ! windows_bridge_available; then
+    echo "Windows bridge is unavailable on this host; use the native Linux Electron commands." >&2
+    exit 2
+  fi
   if [[ -n "${NEONCODE_HUB_TOKEN:-}" && ":$bridge_env:" != *":NEONCODE_HUB_TOKEN:"* ]]; then
     bridge_env="${bridge_env:+$bridge_env:}NEONCODE_HUB_TOKEN"
   fi
@@ -122,13 +140,93 @@ ps_file() {
 
 publish_electron_app() {
   npm --prefix frontends/electron run build
-  ps_file 'scripts\electron-app.ps1' -Command publish "$@"
+  if windows_bridge_available; then
+    ps_file 'scripts\electron-app.ps1' -Command publish "$@"
+  else
+    echo "Built native Linux Electron app artifacts under frontends/electron/dist."
+  fi
+}
+
+electron_sandbox_path() {
+  printf '%s/frontends/electron/node_modules/electron/dist/chrome-sandbox\n' "$ROOT_DIR"
+}
+
+check_linux_electron_sandbox() {
+  if windows_bridge_available || [[ "$(uname -s)" != "Linux" ]]; then
+    return
+  fi
+  local sandbox
+  sandbox="$(electron_sandbox_path)"
+  if [[ ! -e "$sandbox" ]]; then
+    return
+  fi
+  if [[ "$(stat -c '%u:%a' "$sandbox")" == "0:4755" ]]; then
+    return
+  fi
+  cat >&2 <<EOF
+Electron's Linux sandbox helper is not configured correctly:
+  $sandbox
+
+Run this once after npm ci refreshes Electron:
+  sudo chown root:root "$sandbox"
+  sudo chmod 4755 "$sandbox"
+
+EOF
+  exit 2
+}
+
+fix_linux_electron_sandbox() {
+  local sandbox
+  sandbox="$(electron_sandbox_path)"
+  if [[ ! -e "$sandbox" ]]; then
+    echo "Electron sandbox helper is missing. Run: npm --prefix frontends/electron ci" >&2
+    exit 2
+  fi
+  sudo chown root:root "$sandbox"
+  sudo chmod 4755 "$sandbox"
+  echo "Configured Electron sandbox helper: $sandbox"
 }
 
 run_electron_app() {
   ensure_hub_token
-  ps_file 'scripts\electron-app.ps1' -Command status
-  ps_file 'scripts\electron-app.ps1' -Command start "$@"
+  if windows_bridge_available; then
+    ps_file 'scripts\electron-app.ps1' -Command status
+    ps_file 'scripts\electron-app.ps1' -Command start "$@"
+  else
+    check_linux_electron_sandbox
+    (cd frontends/electron && npm start -- "$@")
+  fi
+}
+
+run_native_electron_test() {
+  local suite="$1"
+  shift
+  ensure_hub_token
+  npm --prefix frontends/electron run build
+  check_linux_electron_sandbox
+  if [[ "$suite" != "headless" && "$suite" != "gui" ]]; then
+    echo "Electron test suite must be 'headless' or 'gui'" >&2
+    exit 2
+  fi
+  if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
+    if command -v xvfb-run >/dev/null 2>&1; then
+      (cd frontends/electron && NEONCODE_ELECTRON_TEST_SUITE="$suite" xvfb-run -a --server-args='-screen 0 1600x1200x24' npm test -- "$@")
+    else
+      echo "No DISPLAY/WAYLAND_DISPLAY detected. Install xvfb and retry, or run from a graphical session." >&2
+      exit 2
+    fi
+  else
+    (cd frontends/electron && NEONCODE_ELECTRON_TEST_SUITE="$suite" npm test -- "$@")
+  fi
+}
+
+build_linux_package() {
+  cargo build -p neoncode-hub --release
+  mkdir -p frontends/electron/resources/hub/linux-x64
+  cp target/release/neoncode-hub frontends/electron/resources/hub/linux-x64/neoncode-hub
+  chmod 700 frontends/electron/resources/hub/linux-x64/neoncode-hub
+  npm --prefix frontends/electron run build
+  npm --prefix frontends/electron run package:linux
 }
 
 command="${1:-help}"
@@ -155,7 +253,11 @@ case "$command" in
     ;;
 
   electron-stop)
-    ps_file 'scripts\electron-app.ps1' -Command stop
+    if windows_bridge_available; then
+      ps_file 'scripts\electron-app.ps1' -Command stop
+    else
+      pkill -f 'frontends/electron/node_modules/electron/dist/electron' 2>/dev/null || true
+    fi
     ;;
 
   electron-bootstrap|electron-install)
@@ -172,6 +274,14 @@ case "$command" in
 
   electron-audit)
     (cd frontends/electron && npm audit --package-lock-only)
+    ;;
+
+  electron-sandbox-fix)
+    fix_linux_electron_sandbox
+    ;;
+
+  package-linux)
+    build_linux_package "$@"
     ;;
 
   hub)
@@ -219,10 +329,24 @@ case "$command" in
     cargo clippy --all-targets -- -D warnings
     ;;
 
-  electron-test)
-    ensure_hub_token
-    ps_file 'scripts\electron-app.ps1' -Command status
-    ps_file 'scripts\electron-test.ps1' "$@"
+  electron-test|electron-test-headless)
+    if windows_bridge_available; then
+      ensure_hub_token
+      ps_file 'scripts\electron-app.ps1' -Command status
+      ps_file 'scripts\electron-test.ps1' "$@"
+    else
+      run_native_electron_test headless "$@"
+    fi
+    ;;
+
+  electron-test-gui)
+    if windows_bridge_available; then
+      ensure_hub_token
+      ps_file 'scripts\electron-app.ps1' -Command status
+      ps_file 'scripts\electron-test.ps1' "$@"
+    else
+      run_native_electron_test gui "$@"
+    fi
     ;;
 
   release-alpha)
@@ -275,6 +399,7 @@ Useful commands:
 
 Release output:
   Windows alpha: release\windows-alpha
+  Linux alpha:   release/linux-alpha
 EOF
     ;;
 
