@@ -268,6 +268,7 @@ fn run_command_execute(arguments: &[String]) -> Result<()> {
 }
 
 fn app_control_execute_command(id: &str, args: Option<Value>) -> Result<Value> {
+    app_control_require_command(id)?;
     let command = if let Some(args) = args {
         json!({ "id": id, "args": args })
     } else {
@@ -279,6 +280,23 @@ fn app_control_execute_command(id: &str, args: Option<Value>) -> Result<Value> {
         Some(json!({ "command": command })),
     )?;
     Ok(response["result"].clone())
+}
+
+fn app_control_require_command(id: &str) -> Result<()> {
+    let response = app_control_request("GET", "/v1/capabilities", None)?;
+    if response["protocolVersion"] != 1 {
+        bail!("unsupported app-control protocol version");
+    }
+    let commands = response["commands"]
+        .as_array()
+        .ok_or_else(|| anyhow!("invalid app-control capabilities"))?;
+    if !commands
+        .iter()
+        .any(|command| command["id"].as_str() == Some(id))
+    {
+        bail!("app-control command is not advertised by the running app: {id}");
+    }
+    Ok(())
 }
 
 fn require_completed(result: &Value, action: &str) -> Result<()> {

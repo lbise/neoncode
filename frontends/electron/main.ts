@@ -371,11 +371,20 @@ function readJsonRequest(request: http.IncomingMessage, maxBytes = 16 * 1024): P
   });
 }
 
+const APP_CONTROL_FEATURES = Object.freeze([
+  'capabilities.read',
+  'workspaces.read',
+  'workspaces.open',
+  'layout.read',
+  'commands.execute',
+]);
+
 function appControlCapabilities(): unknown {
   return {
     ok: true,
     protocolVersion: 1,
     appVersion: app.getVersion(),
+    features: [...APP_CONTROL_FEATURES],
     commands: listCommandMetadata()
       .filter((command) => command.externalInvocation)
       .map(({ id, title, category, context, owningLayer }) => ({

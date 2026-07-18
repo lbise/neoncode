@@ -335,6 +335,10 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
   const { page, configDirectory } = instance;
   const capabilities = await appControlRequest(configDirectory, 'GET', '/v1/capabilities');
   assert(capabilities.ok === true, 'app-control capabilities did not succeed');
+  const features = capabilities.features;
+  assert(Array.isArray(features), 'app-control capabilities omitted features');
+  assert(features.includes('layout.read'), 'app-control capabilities omitted layout feature');
+  assert(features.includes('commands.execute'), 'app-control capabilities omitted command execution feature');
   const commands = capabilities.commands;
   assert(Array.isArray(commands), 'app-control capabilities omitted commands');
   assert(
