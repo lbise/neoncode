@@ -503,8 +503,8 @@ export class NeonCodeApp {
     this.commandRegistry = new CommandRegistry({
       'palette.open': () => this.commandPalette.open(),
       'palette.close': () => this.commandPalette.close(),
-      'settings.open': () => this.settingsView.open(),
-      'settings.close': () => this.settingsView.close(),
+      'settings.open': () => this.openSettingsSurface(),
+      'settings.close': () => this.closeSettingsSurface(),
       'workspace.create': (args) => this.createWorkspace(args),
       'workspace.rename': (args) => this.renameWorkspace(args),
       'workspace.delete': (args) => this.deleteWorkspace(args),
@@ -613,6 +613,9 @@ export class NeonCodeApp {
       loadSettings: () => this.window.neoncodeDesktop.getSettings(),
       saveSettings: (snapshot) => this.window.neoncodeDesktop.saveSettings(snapshot),
       onSaved: (snapshot) => this.applySavedSettings(snapshot.settings),
+      onClosed: () => {
+        if (this.activeWorkspaceId) this.renderWorkspaceTabs(this.activeWorkspaceId);
+      },
       closeCommand: () => { void this.dispatchCommand({ id: 'settings.close' }); },
       restoreActivePaneFocus: () => this.applyActivePaneFocus(),
     });
@@ -697,6 +700,16 @@ export class NeonCodeApp {
 
   listCommands(): CommandMetadata[] {
     return this.commandRegistry.list();
+  }
+
+  async openSettingsSurface(): Promise<void> {
+    await this.settingsView.open();
+    if (this.activeWorkspaceId) this.renderWorkspaceTabs(this.activeWorkspaceId);
+  }
+
+  closeSettingsSurface(): void {
+    this.settingsView.close();
+    if (this.activeWorkspaceId) this.renderWorkspaceTabs(this.activeWorkspaceId);
   }
 
   syncPublicConfiguration(): void {
@@ -2662,7 +2675,7 @@ export class NeonCodeApp {
       const row = this.document.createElement('div');
       row.className = 'workspace-tab-row';
       const button = this.document.createElement('button');
-      const active = tab.tabId === layout.activeTabId;
+      const active = !this.settingsView.isOpen && tab.tabId === layout.activeTabId;
       button.type = 'button';
       button.className = 'workspace-tab';
       button.id = `workspace-tab-${workspaceId}-${tab.tabId}`;
@@ -2702,6 +2715,36 @@ export class NeonCodeApp {
             if (result.status === 'completed') return this.dispatchCommand({ id: 'tab.closeDialog' });
             return result;
           });
+      });
+      row.append(button, close);
+      tabHost.append(row);
+    }
+    if (this.settingsView.isOpen) {
+      const row = this.document.createElement('div');
+      row.className = 'workspace-tab-row workspace-tab-row-app';
+      const button = this.document.createElement('button');
+      button.type = 'button';
+      button.className = 'workspace-tab';
+      button.dataset.workspaceId = workspaceId;
+      button.dataset.tabId = '__settings';
+      button.dataset.testid = 'workspace-tab-settings';
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', 'true');
+      button.setAttribute('aria-controls', 'settings-overlay');
+      button.tabIndex = 0;
+      button.textContent = 'Settings';
+      button.addEventListener('click', () => {
+        this.settingsView.open();
+      });
+      const close = this.document.createElement('button');
+      close.type = 'button';
+      close.className = 'workspace-tab-close';
+      close.textContent = '×';
+      close.dataset.testid = 'workspace-tab-close-settings';
+      close.setAttribute('aria-label', 'Close Settings');
+      close.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void this.dispatchCommand({ id: 'settings.close' });
       });
       row.append(button, close);
       tabHost.append(row);

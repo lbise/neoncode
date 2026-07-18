@@ -27,6 +27,7 @@ interface SettingsViewOptions {
   loadSettings: () => Promise<SettingsSnapshot>;
   saveSettings: (snapshot: SettingsSnapshot) => Promise<SettingsSnapshot>;
   onSaved: (snapshot: SettingsSnapshot) => void;
+  onClosed: () => void;
   closeCommand: () => void;
   restoreActivePaneFocus: () => void;
 }
@@ -62,6 +63,7 @@ export class SettingsView {
   private readonly loadSettings: () => Promise<SettingsSnapshot>;
   private readonly saveSettings: (snapshot: SettingsSnapshot) => Promise<SettingsSnapshot>;
   private readonly onSaved: (snapshot: SettingsSnapshot) => void;
+  private readonly onClosed: () => void;
   private readonly closeCommand: () => void;
   private readonly restoreActivePaneFocus: () => void;
   private readonly overlay: HTMLElement;
@@ -105,6 +107,7 @@ export class SettingsView {
     loadSettings,
     saveSettings,
     onSaved,
+    onClosed,
     closeCommand,
     restoreActivePaneFocus,
   }: SettingsViewOptions) {
@@ -115,6 +118,7 @@ export class SettingsView {
     this.loadSettings = loadSettings;
     this.saveSettings = saveSettings;
     this.onSaved = onSaved;
+    this.onClosed = onClosed;
     this.closeCommand = closeCommand;
     this.restoreActivePaneFocus = restoreActivePaneFocus;
     this.overlay = requiredElement(documentRef, 'settings-overlay');
@@ -197,6 +201,7 @@ export class SettingsView {
     this.overlay.hidden = true;
     this.triggerButton.setAttribute('aria-expanded', 'false');
     this.clearError();
+    this.onClosed();
     this.restoreActivePaneFocus();
   }
 

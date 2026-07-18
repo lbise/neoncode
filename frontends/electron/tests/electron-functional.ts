@@ -350,10 +350,15 @@ async function verifySettingsUi(page: Page): Promise<void> {
 
   await settingsButton.click();
   assert(await overlay.isVisible(), 'Settings button did not open Settings');
+  assert(
+    await page.getByTestId('workspace-tab-settings').getAttribute('aria-selected') === 'true',
+    'Settings did not render as the active workspace tab',
+  );
   assert(await page.getByTestId('settings-general-tab').getAttribute('aria-selected') === 'true', 'General section was not selected');
   assert((await page.locator('.restart-badge').allTextContents()).every((text) => text === 'Restart required'), 'General restart labels were incomplete');
   await page.keyboard.press('Escape');
   assert(await overlay.isHidden(), 'Escape did not close button-opened Settings');
+  assert(await page.getByTestId('workspace-tab-settings').count() === 0, 'Settings workspace tab did not close');
   await waitForActivePane(page, 'default', 'tasks');
 
   await page.keyboard.press('Control+Shift+P');
