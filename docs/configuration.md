@@ -11,7 +11,7 @@ NeonCode stores user-level Electron configuration and app-owned window state und
 
 Electron main owns all filesystem access. The sandboxed renderer receives only a validated bootstrap object through the preload bridge. The hub capability token is never written to these files.
 
-Configuration is read at startup. The keyboard-accessible Settings dialog edits the supported General and Keyboard fields through validated main-process IPC. The workspace dialog creates, renames, and deletes durable workspace definitions without a restart. Keybinding overrides, close-confirmation toggles, and app theme colors apply immediately after Save; xterm terminal appearance is explicitly restart-required in this slice. Endpoint, session prefix, and app-window close policy remain JSON-only advanced settings rather than primary UI controls.
+Configuration is read at startup and watched for external `config.json` edits. Valid external edits are reloaded through the same validation, backup, migration, and recovery path, then pushed to the renderer with visible diagnostics; simple settings such as workspace names, keybindings, close-confirmation toggles, and app theme colors apply without restarting active terminals. Topology changes reconcile layouts and remount only the affected active workspace. The keyboard-accessible Settings surface edits the supported General and Keyboard fields through validated main-process IPC. The workspace dialog creates, renames, and deletes durable workspace definitions without a restart. xterm terminal appearance remains restart-required in this slice. Endpoint, session prefix, and app-window close policy remain JSON-only advanced settings rather than primary UI controls.
 
 ## Version 8 schema
 
@@ -139,7 +139,7 @@ Open Settings with the title-bar cog or run **Open Settings** from the command p
 }
 ```
 
-An override replaces or unbinds the default for that exact command invocation. Defaults are `Ctrl+Shift+P` for Commands, `Alt+1` through `Alt+9` for configured workspaces, `Ctrl+Shift+T` for a new default-profile tab, `Ctrl+PageDown`/`Ctrl+PageUp` for tab traversal, `Alt+Shift+=` for a side-by-side (`horizontal`) split, `Alt+Shift+-` for a stacked (`vertical`) split, `Alt+Shift+Arrow` for directional border resize, and `F6`/`Shift+F6` for depth-first traversal within the active tab. Pane close, detach, kill, and restart have no default binding. The Keyboard section shows current and default values and provides Record, Unbind, and Reset controls. Save validates the complete effective map and applies it live; Cancel or Escape discards the draft.
+An override replaces or unbinds the default for that exact command invocation. Defaults are `Ctrl+Shift+P` for Commands, `Alt+1` through `Alt+0` for workspace slots 1–10, `Alt+Shift+1` through `Alt+Shift+8` for active-tab pane slots 1–8, `Ctrl+Shift+T` for a new default-profile tab, `Ctrl+PageDown`/`Ctrl+PageUp` for tab traversal, `Alt+Shift+=` for a side-by-side (`horizontal`) split, `Alt+Shift+-` for a stacked (`vertical`) split, `Alt+Shift+Arrow` for directional border resize, and `F6`/`Shift+F6` for depth-first traversal within the active tab. Pane close, kill, and restart have no default binding. The Keyboard section shows current and default values and provides Record, Unbind, and Reset controls. Save validates the complete effective map and applies it live; Cancel or Escape discards the draft.
 
 Bindings reject unknown fields/codes/commands, malformed concrete workspace/pane arguments, duplicate command overrides, duplicate active combinations, modifier-only and unsafe bare printable global keys, Ctrl+Alt/AltGraph semantics, and protected terminal conventions including Ctrl+C/D/Z/Space/L/R/A/E/K/U/W, Ctrl+Shift+C/V, and Shift+Insert. A syntactically valid override whose workspace or pane was removed no longer invalidates the whole configuration: it is ignored by the effective router. Workspace deletion transactionally removes overrides that target the deleted workspace or its configured panes.
 
@@ -269,6 +269,8 @@ On every valid load, NeonCode updates `config.json.bak`. If `config.json` later 
 1. preserves it as `config.json.invalid-<timestamp>`;
 2. restores the last valid backup;
 3. shows a warning in the app header.
+
+The same recovery behavior runs while the app is open. An invalid external edit is preserved/restored when possible and reported in the header; if recovery is impossible, already-running terminals are left alone while the renderer reports the configuration error and blocks new configuration-dependent operations.
 
 An unsupported future schema is preserved and is not downgraded automatically. If neither the primary nor backup is usable, NeonCode opens with a visible configuration error and launches no terminal sessions.
 

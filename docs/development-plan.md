@@ -35,7 +35,7 @@ Goal: on native Linux hosts without WSL/PowerShell, developers can build, run, t
 - [x] Add Linux app-managed bundled hub startup for packaged artifacts.
 - [x] Add Linux electron-builder configuration and `./dev package-linux` for alpha development artifacts.
 - [x] Document native Linux setup, commands, token location, and limitations in `docs/linux-development.md`.
-- [ ] Run native Linux `./dev check` once Rust and npm dependencies are available on this host.
+- [x] Run native Linux `./dev check` once Rust and npm dependencies are available on this host.
 - [x] Run native Linux headless `./dev electron-test` against a live hub over SSH/Xvfb.
 - [ ] Run native Linux full `./dev electron-test-gui` from a real graphical desktop or GUI CI worker.
 
@@ -85,7 +85,7 @@ Design direction: Hallmark minimal/system redesign. Preserve keyboard-first beha
 
 ### Priority 4: dynamic configuration and keybinding targets
 
-- [ ] Dynamically reload `config.json` after external edits with validation, backup/recovery behavior, and visible diagnostics. Avoid disrupting active terminals unless topology changes require a controlled reconciliation.
+- [x] Dynamically reload `config.json` after external edits with validation, backup/recovery behavior, and visible diagnostics. Avoid disrupting active terminals unless topology changes require a controlled reconciliation.
 - [x] Add stable index-based commands/keybindings for workspace slots `0..9` even when the target workspace does not exist yet.
 - [x] Add stable index-based pane focus commands/keybindings for pane slots even when a pane does not currently exist; missing targets should be disabled, not invalid configuration.
 - [x] Keep generated per-ID bindings for explicit targets where useful, but make index slots the default user-facing binding model.

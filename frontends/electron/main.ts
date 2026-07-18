@@ -118,7 +118,10 @@ let allowWindowClose = false;
 let closeRequestInFlight = false;
 let closeTimeout: ReturnType<typeof setTimeout> | undefined;
 let stateSaveTimeout: ReturnType<typeof setTimeout> | undefined;
+let configReloadTimeout: ReturnType<typeof setTimeout> | undefined;
+let configWatcher: fs.FSWatcher | undefined;
 let configRevision = 1;
+let lastAcceptedConfigText: string | null = null;
 
 function processIntegrityLevel(): string {
   const result = spawnSync('whoami.exe', ['/groups'], { encoding: 'utf8', windowsHide: true });
@@ -208,6 +211,87 @@ ipcMain.on('neoncode:get-renderer-config', (event) => {
   event.returnValue = rendererConfig();
 });
 
+function readCurrentConfigText(): string | null {
+  if (!configStore) return null;
+  try {
+    return fs.readFileSync(configStore.configPath, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function rememberAcceptedConfigText(): void {
+  lastAcceptedConfigText = readCurrentConfigText();
+}
+
+function sendRendererConfigChanged(reason: string): void {
+  const window = mainWindow;
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) return;
+  window.webContents.send('neoncode:config-changed', rendererConfig());
+  log('config.changed-notified', { reason, revision: configRevision });
+}
+
+function reloadConfigFromDisk(reason: string): void {
+  if (!configStore) return;
+  const currentText = readCurrentConfigText();
+  if (currentText !== null && currentText === lastAcceptedConfigText) return;
+  const previousHubStatus = bootstrapResult.diagnostics.hubStatus;
+  const previousHubDiagnostics = bootstrapResult.diagnostics.errors.filter((error) => error.startsWith('hub token setup failed:'));
+  try {
+    const reloaded = configStore.load(process.env);
+    bootstrapResult = reloaded;
+    desktopState = reloaded.state;
+    if (previousHubStatus !== undefined) {
+      bootstrapResult.diagnostics.hubStatus = previousHubStatus;
+    }
+    if (hubTokenError && !previousHubDiagnostics.length) {
+      bootstrapResult.diagnostics.errors.push(`hub token setup failed: ${hubTokenError}`);
+    }
+    for (const error of previousHubDiagnostics) addDiagnosticError(error);
+    configRevision += 1;
+    rememberAcceptedConfigText();
+    log('config.reloaded', {
+      reason,
+      revision: configRevision,
+      status: bootstrapResult.diagnostics.configStatus,
+      valid: Boolean(bootstrapResult.config),
+    });
+    sendRendererConfigChanged(reason);
+  } catch (error) {
+    addDiagnosticError(`configuration reload failed: ${errorMessage(error)}`);
+    configRevision += 1;
+    log('config.reload-failed', { reason, revision: configRevision, message: errorMessage(error) });
+    sendRendererConfigChanged(reason);
+  }
+}
+
+function scheduleConfigReload(reason: string): void {
+  if (configReloadTimeout) clearTimeout(configReloadTimeout);
+  configReloadTimeout = setTimeout(() => {
+    configReloadTimeout = undefined;
+    reloadConfigFromDisk(reason);
+  }, 150);
+}
+
+function startConfigWatcher(): void {
+  if (!configStore || configWatcher) return;
+  rememberAcceptedConfigText();
+  try {
+    configWatcher = fs.watch(configStore.directory, { persistent: false }, (_eventType, filename) => {
+      const name = filename ? String(filename) : '';
+      if (name !== 'config.json') return;
+      scheduleConfigReload('config.json changed');
+    });
+    configWatcher.on('error', (error) => {
+      addDiagnosticWarning(`config watcher stopped: ${errorMessage(error)}`);
+      log('config.watch-error', { message: errorMessage(error) });
+      sendRendererConfigChanged('config watcher stopped');
+    });
+  } catch (error) {
+    addDiagnosticWarning(`config watcher could not start: ${errorMessage(error)}`);
+  }
+}
+
 function addDiagnosticWarning(warning: string): void {
   if (!bootstrapResult.diagnostics.warnings.includes(warning)) {
     bootstrapResult.diagnostics.warnings.push(warning);
@@ -288,6 +372,7 @@ ipcMain.handle('neoncode:save-settings', (event, request: unknown): SettingsSnap
     config: effective,
   };
   configRevision += 1;
+  rememberAcceptedConfigText();
   log('settings.saved', { revision: configRevision });
   return {
     revision: configRevision,
@@ -322,6 +407,7 @@ ipcMain.handle('neoncode:save-workspace-catalog', (event, request: unknown): Wor
   const effective = applyEnvironmentOverrides(saved, process.env);
   bootstrapResult = { ...bootstrapResult, config: effective };
   configRevision += 1;
+  rememberAcceptedConfigText();
 
   const workspaceIds = new Set(saved.workspaces.map((workspace) => workspace.id));
   const reconciledState: DesktopState = {
@@ -598,9 +684,14 @@ if (!hasSingleInstanceLock) {
     configureSessionSecurity();
     await prepareManagedHubLifecycle();
     createWindow();
+    startConfigWatcher();
   });
 
   app.on('window-all-closed', () => {
+    configWatcher?.close();
+    configWatcher = undefined;
+    if (configReloadTimeout) clearTimeout(configReloadTimeout);
+    configReloadTimeout = undefined;
     app.quit();
   });
 }

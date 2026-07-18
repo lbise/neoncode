@@ -468,6 +468,7 @@ export interface RendererTestApi {
 }
 
 export type PrepareCloseCallback = () => void | Promise<void>;
+export type ConfigChangedCallback = (config: RendererBootstrapConfig) => void | Promise<void>;
 
 export interface NeoncodeDesktopApi {
   readonly config: unknown;
@@ -479,6 +480,7 @@ export interface NeoncodeDesktopApi {
   saveSettings(request: SaveSettingsRequest): Promise<SettingsSnapshot>;
   getWorkspaceCatalog(): Promise<WorkspaceCatalogSnapshot>;
   saveWorkspaceCatalog(request: SaveWorkspaceCatalogRequest): Promise<WorkspaceCatalogSnapshot>;
+  onConfigChanged(callback: ConfigChangedCallback): () => void;
   onPrepareClose(callback: PrepareCloseCallback): void;
 }
 

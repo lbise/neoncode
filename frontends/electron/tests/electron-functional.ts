@@ -27,6 +27,7 @@ interface FunctionalConfiguration extends PublicConfiguration {
   terminal: TerminalAppearance;
   workspaces: Array<{
     id: string;
+    name: string;
     sessions: Array<{ launchProfile: DesktopLaunchProfile }>;
   }>;
 }
@@ -414,6 +415,40 @@ async function verifySettingsUi(page: Page): Promise<void> {
   await page.keyboard.press('Escape');
   await overlay.waitFor({ state: 'hidden', timeout });
   await waitForActivePane(page, 'default', 'tasks');
+}
+
+async function verifyDynamicConfigReload(instance: ElectronTestInstance): Promise<void> {
+  const { page, configDirectory } = instance;
+  const before = await getState(page);
+  const shellInstanceId = requirePane(before, 'shell').sessionInstanceId;
+  const tasksInstanceId = requirePane(before, 'tasks').sessionInstanceId;
+  const configPath = path.join(configDirectory, 'config.json');
+  const config = parseJson<DesktopConfig>(fs.readFileSync(configPath, 'utf8'), 'dynamic reload config');
+  const defaultWorkspace = config.workspaces.find((workspace) => workspace.id === 'default');
+  assert(defaultWorkspace, 'dynamic reload config omitted default workspace');
+  defaultWorkspace.name = 'Development Reloaded';
+  config.appTheme.accent = '#44eeaa';
+  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+
+  await page.waitForFunction(() => {
+    const state = window.neoncodeTest.getState() as FunctionalState;
+    return state.configuration.appTheme?.accent === '#44eeaa'
+      && state.configuration.workspaces.some((workspace) => (
+        workspace.id === 'default' && workspace.name === 'Development Reloaded'
+      ));
+  }, null, { timeout });
+
+  assert(
+    await page.getByTestId('workspace-default').locator('.workspace-name').textContent() === 'Development Reloaded',
+    'external workspace rename was not rendered',
+  );
+  assert(
+    await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--nc-accent').trim()) === '#44eeaa',
+    'external theme change was not applied',
+  );
+  const after = await getState(page);
+  assert(requirePane(after, 'shell').sessionInstanceId === shellInstanceId, 'theme/name reload restarted the shell pane');
+  assert(requirePane(after, 'tasks').sessionInstanceId === tasksInstanceId, 'theme/name reload restarted the tasks pane');
 }
 
 async function verifyPersistedSettingsShortcut(page: Page): Promise<void> {
@@ -845,7 +880,7 @@ async function runFirstLaunchChecks(
   assert(rendererSecurity.openedWindow === false, 'renderer opened an external window');
   assert(rendererSecurity.permission === 'denied', `notification permission was ${rendererSecurity.permission}`);
   assert(
-    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'getSettings', 'getWorkspaceCatalog', 'onPrepareClose', 'readClipboardText', 'saveSettings', 'saveWorkspaceCatalog', 'saveWorkspaceLayout', 'setActiveWorkspace', 'writeClipboardText']),
+    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'getSettings', 'getWorkspaceCatalog', 'onConfigChanged', 'onPrepareClose', 'readClipboardText', 'saveSettings', 'saveWorkspaceCatalog', 'saveWorkspaceLayout', 'setActiveWorkspace', 'writeClipboardText']),
     `unexpected preload API surface: ${rendererSecurity.desktopKeys.join(',')}`,
   );
 
@@ -966,6 +1001,7 @@ async function runFirstLaunchChecks(
   await verifyCockpitKeyboardNavigation(page);
   await verifyCommandPalette(page);
   await verifySettingsUi(page);
+  await verifyDynamicConfigReload(instance);
 
   await verifyExecutedCommand(page, 'shell', 'shell-command', runToken);
   await verifyExecutedCommand(page, 'tasks', 'tasks-command', runToken);

@@ -1,7 +1,8 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 
 import type { WorkspaceLayoutState } from './shared/layout-model';
 import type {
+  ConfigChangedCallback,
   NeoncodeDesktopApi,
   PrepareCloseCallback,
   SaveSettingsRequest,
@@ -21,6 +22,10 @@ function deepFreeze<T>(value: T): T {
 }
 
 function isPrepareCloseCallback(value: unknown): value is PrepareCloseCallback {
+  return typeof value === 'function';
+}
+
+function isConfigChangedCallback(value: unknown): value is ConfigChangedCallback {
   return typeof value === 'function';
 }
 
@@ -106,6 +111,17 @@ const desktopApi = Object.freeze({
       'neoncode:save-workspace-catalog',
       structuredClone(request),
     ));
+  },
+
+  onConfigChanged(callback: ConfigChangedCallback): () => void {
+    if (!isConfigChangedCallback(callback)) {
+      throw new TypeError('config-changed callback must be a function');
+    }
+    const listener = (_event: IpcRendererEvent, payload: unknown): void => {
+      void callback(deepFreeze(structuredClone(payload)) as Parameters<ConfigChangedCallback>[0]);
+    };
+    ipcRenderer.on('neoncode:config-changed', listener);
+    return () => ipcRenderer.removeListener('neoncode:config-changed', listener);
   },
 
   onPrepareClose(callback: PrepareCloseCallback): void {

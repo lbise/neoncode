@@ -9,6 +9,7 @@ import type {
   PaneDescriptor,
   PersistencePolicy,
   RendererAppConfig,
+  RendererBootstrapConfig,
   SessionLifecycle,
   TerminalAppearance,
   WorkspaceDescriptor,
@@ -411,6 +412,28 @@ export function createRuntimeWorkspaceLayouts(config: RendererAppConfig): Runtim
   return { layouts, changedWorkspaceIds };
 }
 
+function activePaneOrderForLayout(layout: WorkspaceLayoutState | undefined): string[] {
+  const activeTab = layout?.tabs.find((tab) => tab.tabId === layout.activeTabId);
+  return activeTab ? orderedPaneLeaves(activeTab.root).map((pane) => pane.paneId) : [];
+}
+
+function workspaceTopologySignature(workspace: WorkspaceDescriptor | undefined): string {
+  if (!workspace) return '';
+  return JSON.stringify({
+    id: workspace.id,
+    path: workspace.path,
+    layout: workspace.layout,
+    panes: workspace.panes.map((pane) => ({
+      paneId: pane.paneId,
+      sessionKey: pane.sessionKey,
+      title: pane.title,
+      sessionId: pane.sessionId,
+      launchProfileId: pane.launchProfileId,
+      launchProfile: pane.launchProfile,
+    })),
+  });
+}
+
 export class NeonCodeApp {
   readonly document: Document;
   readonly window: Window;
@@ -680,6 +703,9 @@ export class NeonCodeApp {
     });
     this.updateCommandsShortcutLabel();
     this.document.addEventListener('keydown', this.onDocumentKeyDown, true);
+    this.window.neoncodeDesktop.onConfigChanged((config) => {
+      void this.applyExternalConfiguration(config);
+    });
     this.applyAppTheme();
     this.syncPublicConfiguration();
     this.workspaceSessionStates = new Map(
@@ -1103,6 +1129,107 @@ export class NeonCodeApp {
     const paneCount = this.activeLayoutTab() ? orderedPaneLeaves(this.activeLayoutTab()!.root).length : 0;
     if (paneCount === 0) return 'No active pane is available';
     return paneCount === 1 ? 'No other pane is available' : null;
+  }
+
+  async applyExternalConfiguration(bootstrap: RendererBootstrapConfig): Promise<void> {
+    if (this.closed) return;
+    const next = createAppConfig(bootstrap);
+    if (!next.configurationValid) {
+      this.config.schemaVersion = next.schemaVersion;
+      this.config.configurationValid = false;
+      this.config.diagnostics = next.diagnostics;
+      this.showConfigurationDiagnostics();
+      this.syncPublicConfiguration();
+      this.setStatus(`Configuration error: ${next.diagnostics.errors.join('; ') || 'config.json is invalid'}`);
+      return;
+    }
+
+    const previousActiveWorkspaceId = this.activeWorkspaceId;
+    const previousActiveWorkspace = this.config.workspaces.find(
+      (workspace) => workspace.id === previousActiveWorkspaceId,
+    );
+    const previousActiveTopology = workspaceTopologySignature(previousActiveWorkspace);
+    const previousWorkspaceIds = new Set(this.config.workspaces.map((workspace) => workspace.id));
+    const previousSessionIds = new Set(
+      this.config.workspaces.flatMap((workspace) => workspace.panes.map((pane) => pane.sessionId)),
+    );
+
+    Object.assign(this.config, next);
+
+    const nextWorkspaceIds = new Set(next.workspaces.map((workspace) => workspace.id));
+    for (const workspaceId of previousWorkspaceIds) {
+      if (nextWorkspaceIds.has(workspaceId)) continue;
+      this.workspaceLayouts.delete(workspaceId);
+      try {
+        this.focusModel.removeWorkspace(workspaceId);
+      } catch {
+        // The focus model may already have dropped the workspace during another reconciliation.
+      }
+    }
+
+    for (const workspace of next.workspaces) {
+      const seedLayout = this.workspaceLayouts.get(workspace.id) ?? next.workspaceLayouts[workspace.id];
+      const result = reconcileWorkspaceLayout({
+        name: workspace.name,
+        layout: workspace.layout,
+        sessions: workspace.panes.map((pane) => ({ id: pane.sessionKey, title: pane.title })),
+      }, seedLayout);
+      this.workspaceLayouts.set(workspace.id, result.state);
+      if (result.changed) this.pendingInitialLayoutSaves.add(workspace.id);
+      const paneIds = activePaneOrderForLayout(result.state);
+      if (previousWorkspaceIds.has(workspace.id)) this.focusModel.updateWorkspace(workspace.id, paneIds);
+      else this.focusModel.addWorkspace(workspace.id, paneIds);
+    }
+
+    const nextSessionIds = new Set(
+      next.workspaces.flatMap((workspace) => workspace.panes.map((pane) => pane.sessionId)),
+    );
+    for (const sessionId of previousSessionIds) {
+      if (!nextSessionIds.has(sessionId)) this.workspaceSessionStates.delete(sessionId);
+    }
+    for (const workspace of next.workspaces) {
+      for (const pane of workspace.panes) {
+        if (!this.workspaceSessionStates.has(pane.sessionId)) {
+          this.workspaceSessionStates.set(pane.sessionId, {
+            workspaceId: workspace.id,
+            lifecycle: this.discoveredSessionIds.has(pane.sessionId) ? 'available' : 'idle',
+            error: '',
+            attention: null,
+          });
+        }
+      }
+    }
+
+    this.applyAppTheme();
+    this.rebuildKeybindingRouter();
+    this.showConfigurationDiagnostics();
+    this.syncPublicConfiguration();
+    this.renderWorkspaceSelector();
+    this.updateWorkspaceStatuses();
+
+    const fallbackWorkspace = next.workspaces.find((workspace) => workspace.id === next.activeWorkspaceId)
+      ?? next.workspaces[0];
+    const targetWorkspaceId = previousActiveWorkspaceId && nextWorkspaceIds.has(previousActiveWorkspaceId)
+      ? previousActiveWorkspaceId
+      : fallbackWorkspace?.id;
+    if (!targetWorkspaceId) {
+      this.setStatus('Configuration reloaded, but no workspace is configured');
+      return;
+    }
+
+    const nextActiveTopology = workspaceTopologySignature(
+      next.workspaces.find((workspace) => workspace.id === targetWorkspaceId),
+    );
+    const activeTopologyChanged = previousActiveWorkspaceId !== targetWorkspaceId
+      || previousActiveTopology !== nextActiveTopology;
+    if (activeTopologyChanged) {
+      await this.switchWorkspace(targetWorkspaceId, { force: true });
+    } else {
+      this.renderWorkspaceTabs(targetWorkspaceId);
+      this.applyActivePaneFocus();
+      this.setStatus('Configuration reloaded');
+    }
+    this.persistInitialWorkspaceLayouts();
   }
 
   defaultKeybindings(): Keybinding[] {
