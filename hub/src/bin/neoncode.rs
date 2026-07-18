@@ -322,7 +322,60 @@ fn run_workspace_command(arguments: &[String]) -> Result<()> {
             println!("opened workspace {workspace_id}");
             Ok(())
         }
-        _ => bail!("unknown workspace command {subcommand:?}; use 'neoncode workspace list|open'"),
+        "create" => {
+            if arguments.len() < 7 {
+                bail!(
+                    "usage: neoncode workspace create <workspace-id> <session-id> <launch-profile> <name> <title>"
+                );
+            }
+            let title = arguments[6..].join(" ");
+            let result = app_control_execute_command(
+                "workspace.create",
+                Some(json!({
+                    "workspaceId": arguments[2],
+                    "sessionId": arguments[3],
+                    "defaultLaunchProfile": arguments[4],
+                    "name": arguments[5],
+                    "path": null,
+                    "title": title,
+                })),
+            )?;
+            require_completed(&result, "workspace create")?;
+            println!("created workspace {}", arguments[2]);
+            Ok(())
+        }
+        "rename" => {
+            if arguments.len() < 4 {
+                bail!("usage: neoncode workspace rename <workspace-id> <name>");
+            }
+            let name = arguments[3..].join(" ");
+            let result = app_control_execute_command(
+                "workspace.rename",
+                Some(json!({ "workspaceId": arguments[2], "name": name })),
+            )?;
+            require_completed(&result, "workspace rename")?;
+            println!("renamed workspace {}", arguments[2]);
+            Ok(())
+        }
+        "delete" | "remove" => {
+            if arguments.len() < 3 || arguments.len() > 4 {
+                bail!("usage: neoncode workspace delete <workspace-id> [kill|detach]");
+            }
+            let disposition = arguments.get(3).map(String::as_str).unwrap_or("kill");
+            if disposition != "kill" && disposition != "detach" {
+                bail!("workspace delete disposition must be kill or detach");
+            }
+            let result = app_control_execute_command(
+                "workspace.delete",
+                Some(json!({ "workspaceId": arguments[2], "disposition": disposition })),
+            )?;
+            require_completed(&result, "workspace delete")?;
+            println!("deleted workspace {}", arguments[2]);
+            Ok(())
+        }
+        _ => bail!(
+            "unknown workspace command {subcommand:?}; use 'neoncode workspace list|open|create|rename|delete'"
+        ),
     }
 }
 
@@ -641,6 +694,6 @@ fn app_control_request(method: &str, path: &str, body: Option<Value>) -> Result<
 
 fn print_help() {
     println!(
-        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode tab list [workspace-id]\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane list [workspace-id]\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
+        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode workspace create <workspace-id> <session-id> <launch-profile> <name> <title>\n  neoncode workspace rename <workspace-id> <name>\n  neoncode workspace delete <workspace-id> [kill|detach]\n  neoncode tab list [workspace-id]\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane list [workspace-id]\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
     );
 }

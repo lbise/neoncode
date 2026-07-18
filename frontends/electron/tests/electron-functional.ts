@@ -432,6 +432,28 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
   await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
     command: { id: 'tab.close', args: { workspaceId: 'default', tabId: 'appctl' } },
   });
+  await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
+    command: {
+      id: 'workspace.create',
+      args: {
+        workspaceId: 'appws',
+        name: 'App Workspace',
+        path: null,
+        defaultLaunchProfile: 'default-shell',
+        sessionId: 'appws-session',
+        title: 'App Workspace Shell',
+      },
+    },
+  });
+  await waitForActivePane(page, 'appws', 'appws-session');
+  await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
+    command: { id: 'workspace.rename', args: { workspaceId: 'appws', name: 'Renamed App Workspace' } },
+  });
+  await appControlRequest(configDirectory, 'POST', '/v1/workspaces/open', { workspaceId: 'default' });
+  await waitForActivePane(page, 'default', 'shell');
+  await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
+    command: { id: 'workspace.delete', args: { workspaceId: 'appws', disposition: 'kill' } },
+  });
 }
 
 async function verifyCockpitKeyboardNavigation(page: Page): Promise<void> {
