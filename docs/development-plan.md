@@ -81,7 +81,7 @@ Design direction: Hallmark minimal/system redesign. Preserve keyboard-first beha
 - [x] Add simple theme settings: sidebar background, terminal/app background, text color, primary bright-pink accent, and up to two secondary accents.
 - [x] Apply the theme through named CSS custom properties; avoid ad hoc colors.
 - [x] Style xterm scrollbars to match the application background/theme.
-- [ ] Keep advanced/internal settings hidden by default; hub endpoint and session prefix should not be normal user-editable fields.
+- [x] Keep advanced/internal settings hidden by default; hub endpoint and session prefix should not be normal user-editable fields.
 
 ### Priority 4: dynamic configuration and keybinding targets
 

@@ -77,7 +77,6 @@ export class SettingsView {
   private readonly keybindingList: HTMLElement;
   private readonly errorElement: HTMLElement;
   private readonly statusElement: HTMLElement;
-  private readonly endpoint: HTMLInputElement;
   private readonly confirmBeforeClosingTab: HTMLInputElement;
   private readonly confirmBeforeClosingTerminal: HTMLInputElement;
   private readonly fontFamily: HTMLInputElement;
@@ -131,7 +130,6 @@ export class SettingsView {
     this.keybindingList = requiredElement(documentRef, 'settings-keybindings');
     this.errorElement = requiredElement(documentRef, 'settings-error');
     this.statusElement = requiredElement(documentRef, 'settings-status');
-    this.endpoint = requiredElement<HTMLInputElement>(documentRef, 'settings-endpoint');
     this.confirmBeforeClosingTab = requiredElement<HTMLInputElement>(documentRef, 'settings-confirm-before-closing-tab');
     this.confirmBeforeClosingTerminal = requiredElement<HTMLInputElement>(documentRef, 'settings-confirm-before-closing-terminal');
     this.fontFamily = requiredElement<HTMLInputElement>(documentRef, 'settings-font-family');
@@ -242,7 +240,6 @@ export class SettingsView {
   }
 
   private populateGeneral(settings: DesktopSettings): void {
-    this.endpoint.value = settings.hub.endpoint;
     this.confirmBeforeClosingTab.checked = settings.persistence.confirmBeforeClosingTab;
     this.confirmBeforeClosingTerminal.checked = settings.persistence.confirmBeforeClosingTerminal;
     this.fontFamily.value = settings.terminal.fontFamily;
@@ -264,7 +261,7 @@ export class SettingsView {
     if (!snapshot) throw new Error('Settings have not finished loading');
     const fontSize = Number.parseInt(this.fontSize.value, 10);
     return {
-      hub: { endpoint: this.endpoint.value },
+      hub: { endpoint: snapshot.settings.hub.endpoint },
       sessionPrefix: snapshot.settings.sessionPrefix,
       persistence: {
         onWindowClose: snapshot.settings.persistence.onWindowClose,

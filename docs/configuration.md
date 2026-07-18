@@ -11,7 +11,7 @@ NeonCode stores user-level Electron configuration and app-owned window state und
 
 Electron main owns all filesystem access. The sandboxed renderer receives only a validated bootstrap object through the preload bridge. The hub capability token is never written to these files.
 
-Configuration is read at startup. The keyboard-accessible Settings dialog edits the supported General and Keyboard fields through validated main-process IPC. The workspace dialog creates, renames, and deletes durable workspace definitions without a restart. Keybinding overrides, close-confirmation toggles, and app theme colors apply immediately after Save; endpoint and xterm terminal appearance are explicitly restart-required in this slice. Session prefix and app-window close policy remain JSON-only advanced settings rather than primary UI controls.
+Configuration is read at startup. The keyboard-accessible Settings dialog edits the supported General and Keyboard fields through validated main-process IPC. The workspace dialog creates, renames, and deletes durable workspace definitions without a restart. Keybinding overrides, close-confirmation toggles, and app theme colors apply immediately after Save; xterm terminal appearance is explicitly restart-required in this slice. Endpoint, session prefix, and app-window close policy remain JSON-only advanced settings rather than primary UI controls.
 
 ## Version 8 schema
 
@@ -115,7 +115,7 @@ Changing/removing a configured ID does not kill an already detached hub session 
 
 ## Settings and keybindings
 
-Open Settings with the title-bar cog or run **Open Settings** from the command palette; no Settings shortcut is required. The General section edits the loopback hub endpoint, optional tab/terminal close confirmations, terminal font family/size, cursor blink, xterm terminal background/foreground colors, and simple app theme colors. Close-confirmation toggles, app theme colors, and keybindings apply immediately after Save; endpoint and xterm terminal appearance take effect after restart. Session prefix and app-window close policy are advanced JSON settings preserved by Settings saves but not exposed in the primary UI. Environment overrides remain process-local and are never copied into `config.json` by a Settings save.
+Open Settings with the title-bar cog or run **Open Settings** from the command palette; no Settings shortcut is required. The General section edits optional tab/terminal close confirmations, terminal font family/size, cursor blink, xterm terminal background/foreground colors, and simple app theme colors. Close-confirmation toggles, app theme colors, and keybindings apply immediately after Save; xterm terminal appearance takes effect after restart. Endpoint, session prefix, and app-window close policy are advanced JSON settings preserved by Settings saves but not exposed in the primary UI. Environment overrides remain process-local and are never copied into `config.json` by a Settings save.
 
 `keybindings.overrides` contains at most 64 entries. Each entry identifies one exact typed command invocation and either supplies one physical `KeyboardEvent.code` combination with exact `altKey`, `ctrlKey`, `metaKey`, and `shiftKey` booleans, or uses `null` to unbind it:
 
