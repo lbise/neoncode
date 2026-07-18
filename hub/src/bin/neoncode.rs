@@ -35,6 +35,12 @@ async fn run() -> Result<()> {
     if command == "workspace" || command == "workspaces" {
         return run_workspace_command(&arguments);
     }
+    if command == "commands" {
+        return run_commands_command();
+    }
+    if command == "command" {
+        return run_command_execute(&arguments);
+    }
 
     let token =
         neoncode_hub::load_capability_token().context("load neoncode-hub capability token")?;
@@ -227,6 +233,38 @@ fn app_control_descriptor_path() -> Result<PathBuf> {
     }
 }
 
+fn run_commands_command() -> Result<()> {
+    let response = app_control_request("GET", "/v1/capabilities", None)?;
+    let commands = response["commands"]
+        .as_array()
+        .ok_or_else(|| anyhow!("invalid app-control capabilities"))?;
+    for command in commands {
+        let id = command["id"].as_str().unwrap_or("<unknown>");
+        let title = command["title"].as_str().unwrap_or(id);
+        let context = command["context"].as_str().unwrap_or("unknown");
+        println!("{id}\t{context}\t{title}");
+    }
+    Ok(())
+}
+
+fn run_command_execute(arguments: &[String]) -> Result<()> {
+    let id = arguments
+        .get(1)
+        .ok_or_else(|| anyhow!("usage: neoncode command <command-id> [json-args]"))?;
+    let command = if let Some(args) = arguments.get(2) {
+        json!({ "id": id, "args": serde_json::from_str::<Value>(args).context("parse command JSON args")? })
+    } else {
+        json!({ "id": id })
+    };
+    let response = app_control_request(
+        "POST",
+        "/v1/commands/execute",
+        Some(json!({ "command": command })),
+    )?;
+    println!("{}", serde_json::to_string_pretty(&response["result"])?);
+    Ok(())
+}
+
 fn run_workspace_command(arguments: &[String]) -> Result<()> {
     let subcommand = arguments.get(1).map(String::as_str).unwrap_or("list");
     match subcommand {
@@ -323,6 +361,6 @@ fn app_control_request(method: &str, path: &str, body: Option<Value>) -> Result<
 
 fn print_help() {
     println!(
-        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
+        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
     );
 }

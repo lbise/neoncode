@@ -309,10 +309,12 @@ Persistent sessions and sessions explicitly detached before disconnect are left 
 ./dev cli sessions
 ./dev cli workspace list
 ./dev cli workspace open default
+./dev cli commands
+./dev cli command pane.focusIndex '{"index":1}'
 ./dev cli notify shell info "Tests complete" "All checks passed"
 ```
 
-`status` prints bounded aggregate counts, `sessions` emits authenticated JSON summaries, and `notify` publishes retained generation-safe workspace attention. `workspace list/open` talks to `%APPDATA%\\NeonCode\\app-control.json` (or the platform equivalent) and asks the running Electron app to switch workspaces through its renderer command registry; the hub remains layout-agnostic.
+`status` prints bounded aggregate counts, `sessions` emits authenticated JSON summaries, and `notify` publishes retained generation-safe workspace attention. `workspace list/open`, `commands`, and `command <id> [json-args]` talk to `%APPDATA%\\NeonCode\\app-control.json` (or the platform equivalent) and ask the running Electron app to execute externally eligible renderer command-registry entries; the hub remains layout-agnostic.
 
 ## Manual smoke test
 

@@ -25,6 +25,11 @@ import {
   settingsFromConfig,
 } from './config-store';
 import { manageHubLifecycle, type ManageHubLifecycleOptions } from './hub-manager';
+import {
+  getCommandMetadata,
+  listCommandMetadata,
+  validateCommandInvocation,
+} from './shared/command-catalog';
 import { validateWorkspaceLayoutState } from './shared/layout-model';
 import type {
   DesktopBootstrapResult,
@@ -361,6 +366,23 @@ function readJsonRequest(request: http.IncomingMessage, maxBytes = 16 * 1024): P
   });
 }
 
+function appControlCapabilities(): unknown {
+  return {
+    ok: true,
+    protocolVersion: 1,
+    appVersion: app.getVersion(),
+    commands: listCommandMetadata()
+      .filter((command) => command.externalInvocation)
+      .map(({ id, title, category, context, owningLayer }) => ({
+        id,
+        title,
+        category,
+        context,
+        owningLayer,
+      })),
+  };
+}
+
 function appControlWorkspaceList(): unknown {
   const workspaces = bootstrapResult.config?.workspaces ?? [];
   return {
@@ -379,9 +401,11 @@ function appControlWorkspaceList(): unknown {
   };
 }
 
-async function dispatchAppControlWorkspaceOpen(workspaceId: string): Promise<unknown> {
-  if (!bootstrapResult.config?.workspaces.some((workspace) => workspace.id === workspaceId)) {
-    throw new Error(`unknown workspace: ${workspaceId}`);
+async function dispatchAppControlCommand(command: unknown): Promise<unknown> {
+  const invocation = validateCommandInvocation(command);
+  const metadata = getCommandMetadata(invocation.id);
+  if (!metadata.externalInvocation) {
+    throw new Error(`command is not externally invocable: ${invocation.id}`);
   }
   const window = mainWindow;
   if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
@@ -394,12 +418,16 @@ async function dispatchAppControlWorkspaceOpen(workspaceId: string): Promise<unk
       reject(new Error('app-control command timed out'));
     }, 5000);
     appControlPending.set(requestId, { resolve, reject, timeout });
-    window.webContents.send('neoncode:app-control-command', {
-      requestId,
-      command: { id: 'workspace.open', args: { workspaceId } },
-    });
+    window.webContents.send('neoncode:app-control-command', { requestId, command: invocation });
   });
   return { ok: true, result };
+}
+
+async function dispatchAppControlWorkspaceOpen(workspaceId: string): Promise<unknown> {
+  if (!bootstrapResult.config?.workspaces.some((workspace) => workspace.id === workspaceId)) {
+    throw new Error(`unknown workspace: ${workspaceId}`);
+  }
+  return dispatchAppControlCommand({ id: 'workspace.open', args: { workspaceId } });
 }
 
 function validWorkspaceId(value: unknown): value is string {
@@ -422,11 +450,7 @@ async function handleAppControlRequest(
   }
   try {
     if (request.method === 'GET' && request.url === '/v1/capabilities') {
-      writeJsonResponse(response, 200, {
-        ok: true,
-        protocolVersion: 1,
-        commands: ['workspace.list', 'workspace.open'],
-      });
+      writeJsonResponse(response, 200, appControlCapabilities());
       return;
     }
     if (request.method === 'GET' && request.url === '/v1/workspaces') {
@@ -442,6 +466,14 @@ async function handleAppControlRequest(
         throw new Error('workspaceId must be a bounded workspace identifier');
       }
       writeJsonResponse(response, 200, await dispatchAppControlWorkspaceOpen(workspaceId));
+      return;
+    }
+    if (request.method === 'POST' && request.url === '/v1/commands/execute') {
+      const body = await readJsonRequest(request);
+      const command = body && typeof body === 'object' && !Array.isArray(body)
+        ? (body as { command?: unknown }).command
+        : undefined;
+      writeJsonResponse(response, 200, await dispatchAppControlCommand(command));
       return;
     }
     writeJsonResponse(response, 404, { ok: false, error: 'unknown app-control endpoint' });

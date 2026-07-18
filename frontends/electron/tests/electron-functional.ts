@@ -333,6 +333,17 @@ async function waitForActivePane(page: Page, workspaceId: string, paneId: string
 
 async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Promise<void> {
   const { page, configDirectory } = instance;
+  const capabilities = await appControlRequest(configDirectory, 'GET', '/v1/capabilities');
+  assert(capabilities.ok === true, 'app-control capabilities did not succeed');
+  const commands = capabilities.commands;
+  assert(Array.isArray(commands), 'app-control capabilities omitted commands');
+  assert(
+    commands.some((command) => (
+      command && typeof command === 'object' && (command as { id?: unknown }).id === 'pane.focusIndex'
+    )),
+    'app-control capabilities omitted externally eligible pane focus command',
+  );
+
   const list = await appControlRequest(configDirectory, 'GET', '/v1/workspaces');
   assert(list.ok === true, 'app-control workspace list did not succeed');
   const workspaces = list.workspaces;
@@ -347,6 +358,14 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
   assert(open.ok === true, 'app-control workspace open did not succeed');
   await waitForActivePane(page, 'review', 'review-shell');
   await appControlRequest(configDirectory, 'POST', '/v1/workspaces/open', { workspaceId: 'default' });
+  await waitForActivePane(page, 'default', 'shell');
+  await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
+    command: { id: 'pane.focusIndex', args: { index: 1 } },
+  });
+  await waitForActivePane(page, 'default', 'tasks');
+  await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
+    command: { id: 'pane.focusIndex', args: { index: 0 } },
+  });
   await waitForActivePane(page, 'default', 'shell');
 }
 
