@@ -68,8 +68,8 @@ Design direction: Hallmark minimal/system redesign. Preserve keyboard-first beha
 - [x] Move Settings access into the window/title bar as a compact cog icon.
 - [x] Replace the Commands button with a title-bar command/search field that opens the command palette.
 - [x] Remove the extra app header copy: `Workspace/Session cockpit`, standalone Commands/Settings buttons, and `Connected to ...` endpoint text.
-- [ ] Move tabs under their workspace in the sidebar; remove the horizontal tab strip above terminals and remove the `+ Tab` button from that area.
-- [ ] Simplify workspace rows to show the workspace name and a compact tab count only; remove WSL path, Git, and lifecycle status text from the default collapsed row.
+- [x] Move tabs under their workspace in the sidebar; remove the horizontal tab strip above terminals and remove the `+ Tab` button from that area.
+- [x] Simplify workspace rows to show the workspace name and a compact tab count only; remove WSL path, Git, and lifecycle status text from the default collapsed row.
 - [ ] Add a left-click workspace action menu for rename workspace, delete workspace, create tab, and related actions.
 - [ ] Remove terminal pane borders/header bars/status pills/split-close-more button rows. Terminal content should occupy the space; sidebar tab entries should carry the tab name and close `×`.
 - [ ] Keep all actions accessible from keyboard and command palette after removing visible buttons.

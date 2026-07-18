@@ -30,10 +30,7 @@
       <nav id="workspace-list" class="workspace-list" data-testid="workspace-list"></nav>
     </aside>
     <main class="terminal-workspace" aria-label="Terminal workspace">
-      <div class="tab-toolbar">
-        <div id="workspace-tabs" class="workspace-tabs" role="tablist" aria-label="Workspace tabs" data-testid="workspace-tabs"></div>
-        <button id="tab-create-button" class="tab-create-button" type="button" aria-label="Create tab" title="New tab (Ctrl+Shift+T)" data-testid="tab-create-button">+ Tab</button>
-      </div>
+      <button id="tab-create-button" class="visually-hidden" type="button" aria-label="Create tab" title="New tab (Ctrl+Shift+T)" data-testid="tab-create-button" tabindex="-1">+ Tab</button>
       <div id="terminal-grid" aria-label="xterm terminal region" data-testid="terminal-grid"></div>
     </main>
   </div>

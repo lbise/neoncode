@@ -401,7 +401,6 @@ export class NeonCodeApp {
   readonly statusElement: HTMLElement;
   readonly configurationStatusElement: HTMLElement;
   readonly workspaceList: HTMLElement;
-  readonly workspaceTabs: HTMLElement;
   readonly terminalGrid: HTMLElement;
   readonly sessionModel: SessionModel;
   readonly focusModel: PaneFocusModel;
@@ -473,7 +472,6 @@ export class NeonCodeApp {
     this.statusElement = requiredElement(this.document, 'status');
     this.configurationStatusElement = requiredElement(this.document, 'configuration-status');
     this.workspaceList = requiredElement(this.document, 'workspace-list');
-    this.workspaceTabs = requiredElement(this.document, 'workspace-tabs');
     this.terminalGrid = requiredElement(this.document, 'terminal-grid');
     const runtimeLayouts = createRuntimeWorkspaceLayouts(this.config);
     this.workspaceLayouts = runtimeLayouts.layouts;
@@ -2103,15 +2101,24 @@ export class NeonCodeApp {
       const location = entry?.querySelector<HTMLElement>('.workspace-location');
       const git = entry?.querySelector<HTMLElement>('.workspace-git');
       const acknowledge = entry?.querySelector<HTMLButtonElement>('.workspace-attention-button');
-      if (!button || !status || !location || !git || !acknowledge) continue;
+      if (!button || !acknowledge) continue;
+      const tabCount = entry?.querySelector<HTMLElement>('.workspace-tab-count');
+      const layout = this.workspaceLayouts.get(summary.id);
       button.dataset.state = summary.state;
       button.title = `${summary.location} — ${summary.detail}`;
-      location.textContent = summary.location;
-      location.dataset.source = summary.locationSource;
-      git.textContent = summary.git ?? '';
-      git.hidden = summary.git === null;
-      status.dataset.state = summary.state;
-      status.textContent = summary.label;
+      if (tabCount) tabCount.textContent = `${layout?.tabs.length ?? 0} tab${layout?.tabs.length === 1 ? '' : 's'}`;
+      if (location) {
+        location.textContent = summary.location;
+        location.dataset.source = summary.locationSource;
+      }
+      if (git) {
+        git.textContent = summary.git ?? '';
+        git.hidden = summary.git === null;
+      }
+      if (status) {
+        status.dataset.state = summary.state;
+        status.textContent = summary.label;
+      }
       acknowledge.hidden = summary.state !== 'attention';
     }
   }
@@ -2221,11 +2228,14 @@ export class NeonCodeApp {
       const location = this.document.createElement('span');
       location.className = 'workspace-location';
       location.textContent = this.workspaceLocation(workspace).label;
-      identity.append(name, location);
       const git = this.document.createElement('span');
       git.className = 'workspace-git';
       git.hidden = true;
-      identity.append(git);
+      const count = this.document.createElement('span');
+      count.className = 'workspace-tab-count';
+      const layout = this.workspaceLayouts.get(workspace.id);
+      count.textContent = `${layout?.tabs.length ?? 0} tab${layout?.tabs.length === 1 ? '' : 's'}`;
+      identity.append(name, count, location, git);
       const status = this.document.createElement('span');
       status.className = 'workspace-status';
       status.dataset.testid = `workspace-status-${workspace.id}`;
@@ -2250,7 +2260,12 @@ export class NeonCodeApp {
           acknowledge.disabled = false;
         });
       });
-      entry.append(button, acknowledge);
+      const tabHost = this.document.createElement('div');
+      tabHost.className = 'workspace-tabs workspace-entry-tabs';
+      tabHost.setAttribute('role', 'tablist');
+      tabHost.setAttribute('aria-label', `${workspace.name} tabs`);
+      tabHost.hidden = workspace.id !== this.activeWorkspaceId;
+      entry.append(button, tabHost, acknowledge);
       this.workspaceList.append(entry);
     }
     this.updateWorkspaceStatuses();
@@ -2260,6 +2275,17 @@ export class NeonCodeApp {
     for (const button of this.workspaceList.querySelectorAll<HTMLButtonElement>('.workspace-button')) {
       button.setAttribute('aria-current', button.dataset.workspaceId === this.activeWorkspaceId ? 'true' : 'false');
       button.disabled = this.switching;
+    }
+    for (const host of this.workspaceList.querySelectorAll<HTMLElement>('.workspace-entry-tabs')) {
+      const active = host.closest<HTMLElement>('.workspace-entry')?.dataset.workspaceId === this.activeWorkspaceId;
+      host.hidden = !active;
+      if (active) {
+        host.id = 'workspace-tabs';
+        host.dataset.testid = 'workspace-tabs';
+      } else {
+        host.removeAttribute('id');
+        delete host.dataset.testid;
+      }
     }
   }
 
@@ -2348,6 +2374,7 @@ export class NeonCodeApp {
             this.workspaceSessionStates.set(session.sessionId, { ...current, attention });
           }
           this.renderWorkspaceSelector();
+          if (this.activeWorkspaceId) this.renderWorkspaceTabs(this.activeWorkspaceId);
           this.updateWorkspaceStatuses();
         })
         .finally(() => {
@@ -2526,8 +2553,16 @@ export class NeonCodeApp {
 
   renderWorkspaceTabs(workspaceId: string): void {
     const layout = this.workspaceLayouts.get(workspaceId);
-    this.workspaceTabs.replaceChildren();
-    if (!layout) return;
+    for (const host of this.workspaceList.querySelectorAll<HTMLElement>('.workspace-entry-tabs')) {
+      host.replaceChildren();
+    }
+    this.updateWorkspaceSelector();
+    const tabHost = this.workspaceList.querySelector<HTMLElement>(
+      `.workspace-entry[data-workspace-id="${workspaceId}"] .workspace-entry-tabs`,
+    );
+    if (!layout || !tabHost) return;
+    const count = tabHost.closest<HTMLElement>('.workspace-entry')?.querySelector<HTMLElement>('.workspace-tab-count');
+    if (count) count.textContent = `${layout.tabs.length} tab${layout.tabs.length === 1 ? '' : 's'}`;
     for (const [index, tab] of layout.tabs.entries()) {
       const button = this.document.createElement('button');
       const active = tab.tabId === layout.activeTabId;
@@ -2556,7 +2591,7 @@ export class NeonCodeApp {
         event.preventDefault();
         void this.dispatchCommand({ id: 'tab.open', args: { workspaceId, tabId: target.tabId } });
       });
-      this.workspaceTabs.append(button);
+      tabHost.append(button);
     }
     requiredElement<HTMLButtonElement>(this.document, 'tab-create-button').disabled = (
       this.createDefaultTabDisabledReason() !== null
