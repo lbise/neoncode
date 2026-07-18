@@ -24,6 +24,7 @@ import {
   type CommandMetadata,
   type CommandOperationResult,
   type PaneCloseCommandArgs,
+  type PaneFocusIndexCommandArgs,
   type PaneSplitCommandArgs,
   type PaneTargetCommandArgs,
   type SplitResizeCommandArgs,
@@ -34,6 +35,7 @@ import {
   type TabRenameCommandArgs,
   type WorkspaceCreateCommandArgs,
   type WorkspaceDeleteCommandArgs,
+  type WorkspaceOpenIndexCommandArgs,
   type WorkspaceRenameCommandArgs,
 } from '../shared/command-catalog';
 import {
@@ -512,6 +514,7 @@ export class NeonCodeApp {
       'workspace.renameDialog': () => this.workspaceDialog.open('rename'),
       'workspace.deleteDialog': () => this.workspaceDialog.open('delete'),
       'workspace.open': ({ workspaceId }) => this.switchWorkspace(workspaceId),
+      'workspace.openIndex': (args) => this.switchWorkspaceByIndex(args),
       'workspace.next': () => this.switchRelativeWorkspace(1),
       'workspace.previous': () => this.switchRelativeWorkspace(-1),
       'workspace.dismissAttention': ({ workspaceId }) => this.acknowledgeWorkspaceAttention(workspaceId),
@@ -526,6 +529,7 @@ export class NeonCodeApp {
       'tab.renameDialog': () => this.tabDialog.open('rename'),
       'tab.closeDialog': () => this.requestActiveTabClose(),
       'pane.focus': ({ paneId }) => this.focusPane(paneId),
+      'pane.focusIndex': (args) => this.focusPaneByIndex(args),
       'pane.split': (args) => this.splitPane(args),
       'split.resize': (args) => this.resizeSplit(args),
       'pane.close': (args) => this.closePane(args),
@@ -562,6 +566,7 @@ export class NeonCodeApp {
       'workspace.renameDialog': () => this.workspaceDialogDisabledReason('rename'),
       'workspace.deleteDialog': () => this.workspaceDialogDisabledReason('delete'),
       'workspace.open': ({ workspaceId }) => this.workspaceCommandDisabledReason(workspaceId),
+      'workspace.openIndex': (args) => this.workspaceIndexCommandDisabledReason(args),
       'workspace.next': () => this.relativeWorkspaceCommandDisabledReason(),
       'workspace.previous': () => this.relativeWorkspaceCommandDisabledReason(),
       'workspace.dismissAttention': ({ workspaceId }) => this.dismissAttentionDisabledReason(workspaceId),
@@ -576,6 +581,7 @@ export class NeonCodeApp {
       'tab.renameDialog': () => this.tabDialogDisabledReason('rename'),
       'tab.closeDialog': () => this.tabDialogDisabledReason('close'),
       'pane.focus': ({ paneId }) => this.paneCommandDisabledReason(paneId),
+      'pane.focusIndex': (args) => this.paneIndexCommandDisabledReason(args),
       'pane.split': (args) => this.splitPaneDisabledReason(args),
       'split.resize': (args) => this.resizeSplitDisabledReason(args),
       'pane.close': (args) => this.closePaneDisabledReason(args),
@@ -816,6 +822,11 @@ export class NeonCodeApp {
     return null;
   }
 
+  workspaceIndexCommandDisabledReason({ index }: WorkspaceOpenIndexCommandArgs): CommandDisabledReason | null {
+    const workspace = this.config.workspaces[index];
+    return workspace ? this.workspaceCommandDisabledReason(workspace.id) : 'Workspace is unavailable';
+  }
+
   relativeWorkspaceCommandDisabledReason(): CommandDisabledReason | null {
     if (this.closed) return 'Application is closing';
     if (this.config.workspaces.length === 0) return 'No configured workspace is available';
@@ -955,6 +966,12 @@ export class NeonCodeApp {
       return 'Pane is unavailable';
     }
     return null;
+  }
+
+  paneIndexCommandDisabledReason({ index }: PaneFocusIndexCommandArgs): CommandDisabledReason | null {
+    const activeTab = this.activeLayoutTab();
+    const pane = activeTab ? orderedPaneLeaves(activeTab.root)[index] : undefined;
+    return pane ? this.paneCommandDisabledReason(pane.paneId) : 'Pane is unavailable';
   }
 
   paneTargetDisabledReason(args: PaneTargetCommandArgs): CommandDisabledReason | null {
@@ -1157,6 +1174,10 @@ export class NeonCodeApp {
       { invocation: { id: 'workspace.deleteDialog' }, title: getCommandMetadata('workspace.deleteDialog').title },
       { invocation: { id: 'workspace.next' }, title: getCommandMetadata('workspace.next').title },
       { invocation: { id: 'workspace.previous' }, title: getCommandMetadata('workspace.previous').title },
+      ...Array.from({ length: 10 }, (_value, index): BindableCommandEntry => ({
+        invocation: { id: 'workspace.openIndex', args: { index } },
+        title: `Open Workspace Slot ${index + 1}`,
+      })),
       { invocation: { id: 'tab.createDefault' }, title: getCommandMetadata('tab.createDefault').title },
       { invocation: { id: 'tab.next' }, title: getCommandMetadata('tab.next').title },
       { invocation: { id: 'tab.previous' }, title: getCommandMetadata('tab.previous').title },
@@ -1169,6 +1190,10 @@ export class NeonCodeApp {
       { invocation: { id: 'pane.resizeUp' }, title: getCommandMetadata('pane.resizeUp').title },
       { invocation: { id: 'pane.resizeDown' }, title: getCommandMetadata('pane.resizeDown').title },
       { invocation: { id: 'pane.closeDialog' }, title: getCommandMetadata('pane.closeDialog').title },
+      ...Array.from({ length: 8 }, (_value, index): BindableCommandEntry => ({
+        invocation: { id: 'pane.focusIndex', args: { index } },
+        title: `Focus Pane Slot ${index + 1}`,
+      })),
     ];
     for (const workspace of this.config.workspaces) {
       entries.push({
@@ -1959,6 +1984,11 @@ export class NeonCodeApp {
     return target ? this.switchWorkspace(target.id) : Promise.resolve();
   }
 
+  switchWorkspaceByIndex({ index }: WorkspaceOpenIndexCommandArgs): Promise<void> {
+    const target = this.config.workspaces[index];
+    return target ? this.switchWorkspace(target.id) : Promise.resolve();
+  }
+
   focusPane(paneId: string): void {
     const workspaceId = this.activeWorkspaceId;
     const layout = workspaceId ? this.workspaceLayouts.get(workspaceId) : undefined;
@@ -1973,6 +2003,12 @@ export class NeonCodeApp {
     }
     this.focusModel.focusPane(paneId);
     this.applyActivePaneFocus();
+  }
+
+  focusPaneByIndex({ index }: PaneFocusIndexCommandArgs): void {
+    const tab = this.activeLayoutTab();
+    const target = tab ? orderedPaneLeaves(tab.root)[index] : undefined;
+    if (target) this.focusPane(target.paneId);
   }
 
   focusNextPane(): void {

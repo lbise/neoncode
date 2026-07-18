@@ -35,6 +35,7 @@ export type {
   CommandResultMap,
   PaneCloseCommandArgs,
   PaneFocusCommandArgs,
+  PaneFocusIndexCommandArgs,
   PaneSplitCommandArgs,
   PaneTargetCommandArgs,
   SplitResizeCommandArgs,
@@ -47,6 +48,7 @@ export type {
   WorkspaceDeleteCommandArgs,
   WorkspaceDismissAttentionCommandArgs,
   WorkspaceOpenCommandArgs,
+  WorkspaceOpenIndexCommandArgs,
   WorkspaceRenameCommandArgs,
 } from './command-catalog';
 

@@ -26,6 +26,7 @@ const validInvocations: CommandInvocation[] = [
   { id: 'workspace.renameDialog' },
   { id: 'workspace.deleteDialog' },
   { id: 'workspace.open', args: { workspaceId: 'review' } },
+  { id: 'workspace.openIndex', args: { index: 1 } },
   { id: 'workspace.next' },
   { id: 'workspace.previous' },
   { id: 'workspace.dismissAttention', args: { workspaceId: 'review' } },
@@ -46,6 +47,7 @@ const validInvocations: CommandInvocation[] = [
   { id: 'tab.renameDialog' },
   { id: 'tab.closeDialog' },
   { id: 'pane.focus', args: { paneId: 'tasks' } },
+  { id: 'pane.focusIndex', args: { index: 1 } },
   { id: 'pane.split', args: {
     workspaceId: 'review', paneId: 'tasks', sessionId: 'review-agent', splitId: 'split-agent',
     title: 'Agent', launchProfile: 'default-shell', direction: 'horizontal', position: 'after',
@@ -101,6 +103,7 @@ for (const invalid of [
   { id: 'palette.open', args: {} },
   { id: 'workspace.next', extra: true },
   { id: 'workspace.open' },
+  { id: 'workspace.openIndex', args: { index: 10 } },
   { id: 'workspace.create' },
   { id: 'workspace.create', args: {
     workspaceId: 'new', name: 'New', path: 'bad\npath', defaultLaunchProfile: 'default-shell',
@@ -124,6 +127,7 @@ for (const invalid of [
   { id: 'tab.close', args: { workspaceId: 'review', tabId: 'tab', disposition: 'later' } },
   { id: 'pane.focus', args: { paneId: 'bad\nvalue' } },
   { id: 'pane.focus', args: { paneId: 'x'.repeat(129) } },
+  { id: 'pane.focusIndex', args: { index: 8 } },
   { id: 'pane.splitHorizontal', args: {} },
   { id: 'pane.split', args: {
     workspaceId: 'review', paneId: 'tasks', sessionId: 'new', splitId: 'split', title: 'New',

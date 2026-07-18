@@ -11,6 +11,7 @@ import {
   type CommandOperationResult,
   type PaneCloseCommandArgs,
   type PaneFocusCommandArgs,
+  type PaneFocusIndexCommandArgs,
   type PaneSplitCommandArgs,
   type PaneTargetCommandArgs,
   type SplitResizeCommandArgs,
@@ -23,6 +24,7 @@ import {
   type WorkspaceDeleteCommandArgs,
   type WorkspaceDismissAttentionCommandArgs,
   type WorkspaceOpenCommandArgs,
+  type WorkspaceOpenIndexCommandArgs,
   type WorkspaceRenameCommandArgs,
 } from '../shared/command-catalog';
 
@@ -38,6 +40,7 @@ export interface CommandHandlers {
   'workspace.renameDialog': () => void | Promise<void>;
   'workspace.deleteDialog': () => void | Promise<void>;
   'workspace.open': (args: WorkspaceOpenCommandArgs) => void | Promise<void>;
+  'workspace.openIndex': (args: WorkspaceOpenIndexCommandArgs) => void | Promise<void>;
   'workspace.next': () => void | Promise<void>;
   'workspace.previous': () => void | Promise<void>;
   'workspace.dismissAttention': (args: WorkspaceDismissAttentionCommandArgs) => void | Promise<void>;
@@ -52,6 +55,7 @@ export interface CommandHandlers {
   'tab.renameDialog': () => void | Promise<void>;
   'tab.closeDialog': () => void | Promise<void>;
   'pane.focus': (args: PaneFocusCommandArgs) => void | Promise<void>;
+  'pane.focusIndex': (args: PaneFocusIndexCommandArgs) => void | Promise<void>;
   'pane.split': (args: PaneSplitCommandArgs) => void | Promise<void>;
   'split.resize': (args: SplitResizeCommandArgs) => void | Promise<void>;
   'pane.close': (args: PaneCloseCommandArgs) => void | Promise<void>;
@@ -80,6 +84,7 @@ export interface CommandEnablement {
   'workspace.renameDialog'?: () => CommandDisabledReason | null;
   'workspace.deleteDialog'?: () => CommandDisabledReason | null;
   'workspace.open'?:  (args: WorkspaceOpenCommandArgs) => CommandDisabledReason | null;
+  'workspace.openIndex'?: (args: WorkspaceOpenIndexCommandArgs) => CommandDisabledReason | null;
   'workspace.next'?: () => CommandDisabledReason | null;
   'workspace.previous'?: () => CommandDisabledReason | null;
   'workspace.dismissAttention'?: (
@@ -96,6 +101,7 @@ export interface CommandEnablement {
   'tab.renameDialog'?: () => CommandDisabledReason | null;
   'tab.closeDialog'?: () => CommandDisabledReason | null;
   'pane.focus'?: (args: PaneFocusCommandArgs) => CommandDisabledReason | null;
+  'pane.focusIndex'?: (args: PaneFocusIndexCommandArgs) => CommandDisabledReason | null;
   'pane.split'?: (args: PaneSplitCommandArgs) => CommandDisabledReason | null;
   'split.resize'?: (args: SplitResizeCommandArgs) => CommandDisabledReason | null;
   'pane.close'?: (args: PaneCloseCommandArgs) => CommandDisabledReason | null;
@@ -191,6 +197,9 @@ export class CommandRegistry {
       case 'workspace.open':
         await this.handlers['workspace.open'](invocation.args);
         return completed();
+      case 'workspace.openIndex':
+        await this.handlers['workspace.openIndex'](invocation.args);
+        return completed();
       case 'workspace.next':
         await this.handlers['workspace.next']();
         return completed();
@@ -232,6 +241,9 @@ export class CommandRegistry {
         return completed();
       case 'pane.focus':
         await this.handlers['pane.focus'](invocation.args);
+        return completed();
+      case 'pane.focusIndex':
+        await this.handlers['pane.focusIndex'](invocation.args);
         return completed();
       case 'pane.split':
         await this.handlers['pane.split'](invocation.args);
@@ -302,6 +314,8 @@ export class CommandRegistry {
         return this.enablement['workspace.deleteDialog']?.() ?? null;
       case 'workspace.open':
         return this.enablement['workspace.open']?.(command.args) ?? null;
+      case 'workspace.openIndex':
+        return this.enablement['workspace.openIndex']?.(command.args) ?? null;
       case 'workspace.next':
         return this.enablement['workspace.next']?.() ?? null;
       case 'workspace.previous':
@@ -330,6 +344,8 @@ export class CommandRegistry {
         return this.enablement['tab.closeDialog']?.() ?? null;
       case 'pane.focus':
         return this.enablement['pane.focus']?.(command.args) ?? null;
+      case 'pane.focusIndex':
+        return this.enablement['pane.focusIndex']?.(command.args) ?? null;
       case 'pane.split':
         return this.enablement['pane.split']?.(command.args) ?? null;
       case 'split.resize':

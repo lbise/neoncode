@@ -86,9 +86,9 @@ Design direction: Hallmark minimal/system redesign. Preserve keyboard-first beha
 ### Priority 4: dynamic configuration and keybinding targets
 
 - [ ] Dynamically reload `config.json` after external edits with validation, backup/recovery behavior, and visible diagnostics. Avoid disrupting active terminals unless topology changes require a controlled reconciliation.
-- [ ] Add stable index-based commands/keybindings for workspace slots `0..9` even when the target workspace does not exist yet.
-- [ ] Add stable index-based pane focus commands/keybindings for pane slots even when a pane does not currently exist; missing targets should be disabled, not invalid configuration.
-- [ ] Keep generated per-ID bindings for explicit targets where useful, but make index slots the default user-facing binding model.
+- [x] Add stable index-based commands/keybindings for workspace slots `0..9` even when the target workspace does not exist yet.
+- [x] Add stable index-based pane focus commands/keybindings for pane slots even when a pane does not currently exist; missing targets should be disabled, not invalid configuration.
+- [x] Keep generated per-ID bindings for explicit targets where useful, but make index slots the default user-facing binding model.
 
 ## Recently completed
 

@@ -20,6 +20,7 @@ async function run(): Promise<void> {
     'workspace.renameDialog': () => { calls.push('workspace.renameDialog'); },
     'workspace.deleteDialog': () => { calls.push('workspace.deleteDialog'); },
     'workspace.open': ({ workspaceId }) => { calls.push(`workspace.open:${workspaceId}`); },
+    'workspace.openIndex': ({ index }) => { calls.push(`workspace.openIndex:${index}`); },
     'workspace.next': () => { calls.push('workspace.next'); },
     'workspace.previous': () => { calls.push('workspace.previous'); },
     'workspace.dismissAttention': ({ workspaceId }) => {
@@ -36,6 +37,7 @@ async function run(): Promise<void> {
     'tab.renameDialog': () => { calls.push('tab.renameDialog'); },
     'tab.closeDialog': () => { calls.push('tab.closeDialog'); },
     'pane.focus': ({ paneId }) => { calls.push(`pane.focus:${paneId}`); },
+    'pane.focusIndex': ({ index }) => { calls.push(`pane.focusIndex:${index}`); },
     'pane.split': ({ splitId }) => { calls.push(`pane.split:${splitId}`); },
     'split.resize': ({ delta }) => { calls.push(`split.resize:${delta}`); },
     'pane.close': ({ paneId }) => { calls.push(`pane.close:${paneId}`); },
@@ -72,6 +74,7 @@ async function run(): Promise<void> {
       'workspace.renameDialog',
       'workspace.deleteDialog',
       'workspace.open',
+      'workspace.openIndex',
       'workspace.next',
       'workspace.previous',
       'workspace.dismissAttention',
@@ -86,6 +89,7 @@ async function run(): Promise<void> {
       'tab.renameDialog',
       'tab.closeDialog',
       'pane.focus',
+      'pane.focusIndex',
       'pane.split',
       'split.resize',
       'pane.close',
@@ -154,6 +158,7 @@ async function run(): Promise<void> {
   await registry.execute('workspace.renameDialog');
   await registry.execute('workspace.deleteDialog');
   await registry.execute('workspace.open', { workspaceId: 'review' });
+  await registry.execute('workspace.openIndex', { index: 1 });
   await registry.execute('workspace.next');
   await registry.execute('workspace.previous');
   await registry.execute('workspace.dismissAttention', { workspaceId: 'review' });
@@ -171,6 +176,7 @@ async function run(): Promise<void> {
   await registry.execute('tab.renameDialog');
   await registry.execute('tab.closeDialog');
   await registry.execute('pane.focus', { paneId: 'tasks' });
+  await registry.execute('pane.focusIndex', { index: 1 });
   await registry.execute('pane.split', {
     workspaceId: 'review', paneId: 'tasks', sessionId: 'agent', splitId: 'split-agent',
     title: 'Agent', launchProfile: 'shell', direction: 'horizontal', position: 'after',
@@ -202,6 +208,7 @@ async function run(): Promise<void> {
     'workspace.renameDialog',
     'workspace.deleteDialog',
     'workspace.open:review',
+    'workspace.openIndex:1',
     'workspace.next',
     'workspace.previous',
     'workspace.dismissAttention:review',
@@ -216,6 +223,7 @@ async function run(): Promise<void> {
     'tab.renameDialog',
     'tab.closeDialog',
     'pane.focus:tasks',
+    'pane.focusIndex:1',
     'pane.split:split-agent',
     'split.resize:0.05',
     'pane.close:tasks',
@@ -249,6 +257,7 @@ async function run(): Promise<void> {
     'workspace.renameDialog': () => {},
     'workspace.deleteDialog': () => {},
     'workspace.open': () => {},
+    'workspace.openIndex': () => {},
     'workspace.next': () => {},
     'workspace.previous': () => {},
     'workspace.dismissAttention': () => {},
@@ -263,6 +272,7 @@ async function run(): Promise<void> {
     'tab.renameDialog': () => {},
     'tab.closeDialog': () => {},
     'pane.focus': () => {},
+    'pane.focusIndex': () => {},
     'pane.split': () => {},
     'split.resize': () => {},
     'pane.close': () => {},

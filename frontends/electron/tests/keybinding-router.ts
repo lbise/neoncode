@@ -29,8 +29,9 @@ assert.deepEqual(
   bindings.map((binding) => binding.code),
   [
     'KeyP', 'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7',
-    'Digit8', 'Digit9', 'KeyT', 'PageDown', 'PageUp', 'Equal', 'Minus',
-    'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'F6', 'F6',
+    'Digit8', 'Digit9', 'Digit0', 'Digit1', 'Digit2', 'Digit3', 'Digit4',
+    'Digit5', 'Digit6', 'Digit7', 'Digit8', 'KeyT', 'PageDown', 'PageUp',
+    'Equal', 'Minus', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'F6', 'F6',
   ],
   'default bindings contained an unexpected shortcut',
 );
@@ -40,14 +41,16 @@ assert.deepEqual(
   { claimed: true, execute: true, command: { id: 'palette.open' } },
 );
 assert.equal(router.shortcutFor({ id: 'palette.open' }), 'Ctrl+Shift+P');
-assert.equal(router.shortcutFor({ id: 'workspace.open', args: { workspaceId: 'two' } }), 'Alt+2');
+assert.equal(router.shortcutFor({ id: 'workspace.openIndex', args: { index: 1 } }), 'Alt+2');
+assert.equal(router.shortcutFor({ id: 'workspace.open', args: { workspaceId: 'two' } }), null);
+assert.equal(router.shortcutFor({ id: 'pane.focusIndex', args: { index: 1 } }), 'Alt+Shift+2');
 assert.equal(router.shortcutFor({ id: 'pane.focus', args: { paneId: 'tasks' } }), null);
 assert.deepEqual(
   router.resolve(key({ code: 'Digit2', altKey: true })),
   {
     claimed: true,
     execute: true,
-    command: { id: 'workspace.open', args: { workspaceId: 'two' } },
+    command: { id: 'workspace.openIndex', args: { index: 1 } },
   },
 );
 assert.deepEqual(
@@ -83,13 +86,19 @@ assert.deepEqual(
   { claimed: true, execute: false },
   'a repeated claimed shortcut was not consumed without execution',
 );
+assert.deepEqual(
+  router.resolve(key({ code: 'Digit2', altKey: true, shiftKey: true })),
+  { claimed: true, execute: true, command: { id: 'pane.focusIndex', args: { index: 1 } } },
+);
+assert.deepEqual(
+  router.resolve(key({ code: 'Digit0', altKey: true })),
+  { claimed: true, execute: true, command: { id: 'workspace.openIndex', args: { index: 9 } } },
+);
 
 for (const input of [
   key({ code: 'Digit2', altKey: true, defaultPrevented: true }),
-  key({ code: 'Digit2', altKey: true, shiftKey: true }),
   key({ code: 'Digit2', altKey: true, ctrlKey: true }),
   key({ code: 'Digit2', altKey: true, altGraphKey: true }),
-  key({ code: 'Digit0', altKey: true }),
   key({ code: 'Digit2', metaKey: true, altKey: true }),
   key({ code: 'KeyP', ctrlKey: true, shiftKey: true, altKey: true }),
   key({ code: 'KeyP', ctrlKey: true }),

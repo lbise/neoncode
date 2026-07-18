@@ -64,6 +64,8 @@ export function commandInvocationSignature(command: CommandInvocation): string {
     case 'workspace.open':
     case 'workspace.dismissAttention':
       return `${command.id}:${command.args.workspaceId}`;
+    case 'workspace.openIndex':
+      return `${command.id}:${command.args.index}`;
     case 'tab.create':
     case 'tab.rename':
     case 'tab.move':
@@ -73,6 +75,8 @@ export function commandInvocationSignature(command: CommandInvocation): string {
       return `${command.id}:${command.args.workspaceId}:${command.args.tabId}`;
     case 'pane.focus':
       return `${command.id}:${command.args.paneId}`;
+    case 'pane.focusIndex':
+      return `${command.id}:${command.args.index}`;
     case 'pane.split':
     case 'split.resize':
     case 'pane.close':
@@ -191,6 +195,7 @@ export function createConcreteCommandInvocations(
     { id: 'workspace.createDialog' },
     { id: 'workspace.renameDialog' },
     { id: 'workspace.deleteDialog' },
+    ...Array.from({ length: 10 }, (_value, index): CommandInvocation => ({ id: 'workspace.openIndex', args: { index } })),
     { id: 'workspace.next' },
     { id: 'workspace.previous' },
     { id: 'tab.createDefault' },
@@ -205,6 +210,7 @@ export function createConcreteCommandInvocations(
     { id: 'pane.resizeUp' },
     { id: 'pane.resizeDown' },
     { id: 'pane.closeDialog' },
+    ...Array.from({ length: 8 }, (_value, index): CommandInvocation => ({ id: 'pane.focusIndex', args: { index } })),
     { id: 'pane.next' },
     { id: 'pane.previous' },
     ...workspaceIds.flatMap((workspaceId): CommandInvocation[] => [
@@ -215,14 +221,22 @@ export function createConcreteCommandInvocations(
   ];
 }
 
-export function createDefaultKeybindings(workspaceIds: readonly string[]): Keybinding[] {
-  const workspaceBindings = workspaceIds.slice(0, 9).map((workspaceId, index): Keybinding => ({
-    code: `Digit${index + 1}`,
+export function createDefaultKeybindings(_workspaceIds: readonly string[]): Keybinding[] {
+  const workspaceBindings = Array.from({ length: 10 }, (_value, index): Keybinding => ({
+    code: `Digit${index === 9 ? 0 : index + 1}`,
     altKey: true,
     ctrlKey: false,
     metaKey: false,
     shiftKey: false,
-    command: { id: 'workspace.open', args: { workspaceId } },
+    command: { id: 'workspace.openIndex', args: { index } },
+  }));
+  const paneBindings = Array.from({ length: 8 }, (_value, index): Keybinding => ({
+    code: `Digit${index + 1}`,
+    altKey: true,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: true,
+    command: { id: 'pane.focusIndex', args: { index } },
   }));
   return [
     {
@@ -234,6 +248,7 @@ export function createDefaultKeybindings(workspaceIds: readonly string[]): Keybi
       command: { id: 'palette.open' },
     },
     ...workspaceBindings,
+    ...paneBindings,
     {
       code: 'KeyT',
       altKey: false,

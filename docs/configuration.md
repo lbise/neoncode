@@ -117,7 +117,7 @@ Changing/removing a configured ID does not kill an already detached hub session 
 
 Open Settings with the title-bar cog or run **Open Settings** from the command palette; no Settings shortcut is required. Settings appears as an app-owned workspace tab in the active workspace rather than a full-window modal. The General section edits optional tab/terminal close confirmations, terminal font family/size, cursor blink, xterm terminal background/foreground colors, and simple app theme colors. Close-confirmation toggles, app theme colors, and keybindings apply immediately after Save; xterm terminal appearance takes effect after restart. Endpoint, session prefix, and app-window close policy are advanced JSON settings preserved by Settings saves but not exposed in the primary UI. Environment overrides remain process-local and are never copied into `config.json` by a Settings save.
 
-`keybindings.overrides` contains at most 64 entries. Each entry identifies one exact typed command invocation and either supplies one physical `KeyboardEvent.code` combination with exact `altKey`, `ctrlKey`, `metaKey`, and `shiftKey` booleans, or uses `null` to unbind it:
+`keybindings.overrides` contains at most 64 entries. Default user-facing workspace and pane shortcuts target stable numeric slots (`workspace.openIndex`, `pane.focusIndex`) so bindings survive workspace/session renames. Per-ID commands remain available for explicit advanced targets. Each entry identifies one exact typed command invocation and either supplies one physical `KeyboardEvent.code` combination with exact `altKey`, `ctrlKey`, `metaKey`, and `shiftKey` booleans, or uses `null` to unbind it:
 
 ```json
 {

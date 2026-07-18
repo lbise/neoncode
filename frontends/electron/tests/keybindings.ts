@@ -32,6 +32,8 @@ const allowed = createConcreteCommandInvocations(['default', 'review'], ['shell'
 assert.equal(formatKeyCombination(combination('KeyP', { ctrlKey: true, shiftKey: true })), 'Ctrl+Shift+P');
 assert.equal(formatKeyCombination(combination('Digit2', { altKey: true })), 'Alt+2');
 assert.equal(formatKeyCombination(combination('NumpadAdd', { metaKey: true })), 'Meta+Numpad Add');
+assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'workspace.openIndex', args: { index: 1 } })!), 'Alt+2');
+assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'pane.focusIndex', args: { index: 1 } })!), 'Alt+Shift+2');
 assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'tab.createDefault' })!), 'Ctrl+Shift+T');
 assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'tab.next' })!), 'Ctrl+PageDown');
 assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'tab.previous' })!), 'Ctrl+PageUp');
@@ -44,6 +46,8 @@ assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'pane.resize
 assert.equal(formatKeyCombination(bindingForCommand(defaults, { id: 'pane.resizeDown' })!), 'Alt+Shift+Down');
 assert.equal(bindingForCommand(defaults, { id: 'pane.closeDialog' }), null);
 assert(allowed.some((command) => command.id === 'tab.renameDialog'));
+assert(allowed.some((command) => command.id === 'workspace.openIndex'));
+assert(allowed.some((command) => command.id === 'pane.focusIndex'));
 assert(allowed.some((command) => command.id === 'pane.closeDialog'));
 
 const overrides: KeybindingOverride[] = [
@@ -67,8 +71,9 @@ assert.equal(
 );
 assert.equal(bindingForCommand(effective, { id: 'pane.next' }), null);
 assert.equal(formatKeyCombination(bindingForCommand(effective, {
-  id: 'workspace.open', args: { workspaceId: 'default' },
+  id: 'workspace.openIndex', args: { index: 0 },
 })!), 'Alt+1');
+assert.equal(bindingForCommand(effective, { id: 'workspace.open', args: { workspaceId: 'default' } }), null);
 assert.equal(formatKeyCombination(bindingForCommand(effective, {
   id: 'pane.focus', args: { paneId: 'tasks' },
 })!), 'F8');

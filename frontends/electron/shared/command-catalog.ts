@@ -10,6 +10,7 @@ export const COMMAND_IDS = Object.freeze([
   'workspace.renameDialog',
   'workspace.deleteDialog',
   'workspace.open',
+  'workspace.openIndex',
   'workspace.next',
   'workspace.previous',
   'workspace.dismissAttention',
@@ -24,6 +25,7 @@ export const COMMAND_IDS = Object.freeze([
   'tab.renameDialog',
   'tab.closeDialog',
   'pane.focus',
+  'pane.focusIndex',
   'pane.split',
   'split.resize',
   'pane.close',
@@ -70,6 +72,10 @@ export interface WorkspaceOpenCommandArgs {
   workspaceId: string;
 }
 
+export interface WorkspaceOpenIndexCommandArgs {
+  index: number;
+}
+
 export interface WorkspaceDismissAttentionCommandArgs {
   workspaceId: string;
 }
@@ -99,6 +105,10 @@ export interface TabCloseCommandArgs extends TabOpenCommandArgs {}
 
 export interface PaneFocusCommandArgs {
   paneId: string;
+}
+
+export interface PaneFocusIndexCommandArgs {
+  index: number;
 }
 
 export interface PaneTargetCommandArgs {
@@ -135,6 +145,7 @@ export interface CommandArgumentMap {
   'workspace.renameDialog': undefined;
   'workspace.deleteDialog': undefined;
   'workspace.open': WorkspaceOpenCommandArgs;
+  'workspace.openIndex': WorkspaceOpenIndexCommandArgs;
   'workspace.next': undefined;
   'workspace.previous': undefined;
   'workspace.dismissAttention': WorkspaceDismissAttentionCommandArgs;
@@ -149,6 +160,7 @@ export interface CommandArgumentMap {
   'tab.renameDialog': undefined;
   'tab.closeDialog': undefined;
   'pane.focus': PaneFocusCommandArgs;
+  'pane.focusIndex': PaneFocusIndexCommandArgs;
   'pane.split': PaneSplitCommandArgs;
   'split.resize': SplitResizeCommandArgs;
   'pane.close': PaneCloseCommandArgs;
@@ -224,6 +236,7 @@ export interface CommandResultMap {
   'workspace.renameDialog': CommandOperationResult;
   'workspace.deleteDialog': CommandOperationResult;
   'workspace.open': CommandOperationResult;
+  'workspace.openIndex': CommandOperationResult;
   'workspace.next': CommandOperationResult;
   'workspace.previous': CommandOperationResult;
   'workspace.dismissAttention': CommandOperationResult;
@@ -238,6 +251,7 @@ export interface CommandResultMap {
   'tab.renameDialog': CommandOperationResult;
   'tab.closeDialog': CommandOperationResult;
   'pane.focus': CommandOperationResult;
+  'pane.focusIndex': CommandOperationResult;
   'pane.split': CommandOperationResult;
   'split.resize': CommandOperationResult;
   'pane.close': CommandOperationResult;
@@ -386,6 +400,15 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     owningLayer: 'renderer',
     externalInvocation: true,
   }),
+  'workspace.openIndex': Object.freeze({
+    id: 'workspace.openIndex',
+    title: 'Open Workspace by Position',
+    category: 'Workspace',
+    context: 'workspace',
+    searchTerms: ['switch', 'project', 'slot', 'number'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
   'workspace.next': Object.freeze({
     id: 'workspace.next',
     title: 'Next Workspace',
@@ -509,6 +532,15 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     category: 'Pane',
     context: 'pane',
     searchTerms: ['terminal', 'select', 'activate'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'pane.focusIndex': Object.freeze({
+    id: 'pane.focusIndex',
+    title: 'Focus Pane by Position',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'select', 'activate', 'slot', 'number'],
     owningLayer: 'renderer',
     externalInvocation: true,
   }),
@@ -689,6 +721,18 @@ function validateTargetArgs(value: unknown, key: 'workspaceId' | 'paneId'): Reco
   return { [key]: value[key] } as Record<typeof key, string>;
 }
 
+function validateIndexArgs(value: unknown, maxExclusive: number): { index: number } {
+  if (!isRecord(value)
+      || !hasExactKeys(value, ['index'])
+      || typeof value.index !== 'number'
+      || !Number.isInteger(value.index)
+      || value.index < 0
+      || value.index >= maxExclusive) {
+    throw new Error(`Invalid command arguments: expected an index between 0 and ${maxExclusive - 1}`);
+  }
+  return { index: value.index };
+}
+
 export function validateCommandInvocation(value: unknown): CommandInvocation {
   if (!isRecord(value) || typeof value.id !== 'string') {
     throw new Error('Invalid command invocation');
@@ -770,6 +814,10 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
       const args = validateTargetArgs(value.args, 'workspaceId');
       return { id: value.id, args };
     }
+    case 'workspace.openIndex': {
+      if (!hasExactKeys(value, ['id', 'args'])) throw new Error('Invalid workspace.openIndex command invocation');
+      return { id: value.id, args: validateIndexArgs(value.args, 10) };
+    }
     case 'workspace.dismissAttention': {
       if (!hasExactKeys(value, ['id', 'args'])) {
         throw new Error('Invalid workspace.dismissAttention command invocation');
@@ -847,6 +895,10 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
       if (!hasExactKeys(value, ['id', 'args'])) throw new Error('Invalid pane.focus command invocation');
       const args = validateTargetArgs(value.args, 'paneId');
       return { id: value.id, args };
+    }
+    case 'pane.focusIndex': {
+      if (!hasExactKeys(value, ['id', 'args'])) throw new Error('Invalid pane.focusIndex command invocation');
+      return { id: value.id, args: validateIndexArgs(value.args, 8) };
     }
     case 'pane.split': {
       if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
