@@ -10,6 +10,7 @@ import {
   type KeybindingOverride,
 } from '../shared/keybindings';
 import type {
+  AppTheme,
   DesktopSettings,
   SettingsSnapshot,
 } from '../shared/types';
@@ -44,6 +45,68 @@ function errorMessage(error: unknown): string {
 
 function cloneSettings(settings: DesktopSettings): DesktopSettings {
   return structuredClone(settings);
+}
+
+interface AppThemePreset {
+  id: string;
+  name: string;
+  theme: AppTheme;
+}
+
+const APP_THEME_PRESETS: AppThemePreset[] = [
+  {
+    id: 'graphite',
+    name: 'Graphite',
+    theme: {
+      sidebarBackground: '#111111',
+      appBackground: '#0b0b0c',
+      terminalBackground: '#050505',
+      textColor: '#d6d6d6',
+      accent: '#6f7782',
+      secondaryAccent: '#32363d',
+      tertiaryAccent: '#1a1b1e',
+    },
+  },
+  {
+    id: 'one-dark',
+    name: 'One Dark',
+    theme: {
+      sidebarBackground: '#1f2128',
+      appBackground: '#17191f',
+      terminalBackground: '#0f1117',
+      textColor: '#dcdee6',
+      accent: '#7f848e',
+      secondaryAccent: '#3b4048',
+      tertiaryAccent: '#282c34',
+    },
+  },
+  {
+    id: 'tokyo-night',
+    name: 'Tokyo Night',
+    theme: {
+      sidebarBackground: '#16161e',
+      appBackground: '#0f0f14',
+      terminalBackground: '#09090d',
+      textColor: '#c0caf5',
+      accent: '#7aa2f7',
+      secondaryAccent: '#2f3549',
+      tertiaryAccent: '#1f2335',
+    },
+  },
+];
+
+function normalizeColor(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function themeMatchesPreset(theme: AppTheme, preset: AppThemePreset): boolean {
+  return Object.entries(preset.theme).every(([key, value]) => (
+    normalizeColor(theme[key as keyof AppTheme]) === normalizeColor(value)
+  ));
+}
+
+function matchingPresetId(theme: AppTheme): string {
+  return APP_THEME_PRESETS.find((preset) => themeMatchesPreset(theme, preset))?.id ?? 'custom';
 }
 
 function button(documentRef: Document, text: string, testId: string): HTMLButtonElement {
@@ -86,6 +149,7 @@ export class SettingsView {
   private readonly cursorBlink: HTMLInputElement;
   private readonly background: HTMLInputElement;
   private readonly foreground: HTMLInputElement;
+  private readonly themePreset: HTMLSelectElement;
   private readonly sidebarBackground: HTMLInputElement;
   private readonly appBackground: HTMLInputElement;
   private readonly terminalBackground: HTMLInputElement;
@@ -141,6 +205,7 @@ export class SettingsView {
     this.cursorBlink = requiredElement<HTMLInputElement>(documentRef, 'settings-cursor-blink');
     this.background = requiredElement<HTMLInputElement>(documentRef, 'settings-background');
     this.foreground = requiredElement<HTMLInputElement>(documentRef, 'settings-foreground');
+    this.themePreset = requiredElement<HTMLSelectElement>(documentRef, 'settings-theme-preset');
     this.sidebarBackground = requiredElement<HTMLInputElement>(documentRef, 'settings-sidebar-background');
     this.appBackground = requiredElement<HTMLInputElement>(documentRef, 'settings-app-background');
     this.terminalBackground = requiredElement<HTMLInputElement>(documentRef, 'settings-terminal-background');
@@ -149,6 +214,19 @@ export class SettingsView {
     this.secondaryAccent = requiredElement<HTMLInputElement>(documentRef, 'settings-secondary-accent');
     this.tertiaryAccent = requiredElement<HTMLInputElement>(documentRef, 'settings-tertiary-accent');
 
+    this.populateThemePresetOptions();
+    this.themePreset.addEventListener('change', () => this.applySelectedThemePreset());
+    for (const input of [
+      this.sidebarBackground,
+      this.appBackground,
+      this.terminalBackground,
+      this.textColor,
+      this.accent,
+      this.secondaryAccent,
+      this.tertiaryAccent,
+    ]) {
+      input.addEventListener('input', () => this.syncThemePresetSelection());
+    }
     this.generalTab.addEventListener('click', () => this.showPanel('general'));
     this.keyboardTab.addEventListener('click', () => this.showPanel('keyboard'));
     this.closeButton.addEventListener('click', () => this.closeCommand());
@@ -244,6 +322,48 @@ export class SettingsView {
     this.keyboardPanel.hidden = general;
   }
 
+  private populateThemePresetOptions(): void {
+    this.themePreset.replaceChildren();
+    for (const preset of APP_THEME_PRESETS) {
+      const option = this.document.createElement('option');
+      option.value = preset.id;
+      option.textContent = preset.name;
+      this.themePreset.append(option);
+    }
+    const custom = this.document.createElement('option');
+    custom.value = 'custom';
+    custom.textContent = 'Custom';
+    this.themePreset.append(custom);
+  }
+
+  private currentAppThemeDraft(): AppTheme {
+    return {
+      sidebarBackground: this.sidebarBackground.value,
+      appBackground: this.appBackground.value,
+      terminalBackground: this.terminalBackground.value,
+      textColor: this.textColor.value,
+      accent: this.accent.value,
+      secondaryAccent: this.secondaryAccent.value,
+      tertiaryAccent: this.tertiaryAccent.value,
+    };
+  }
+
+  private applySelectedThemePreset(): void {
+    const preset = APP_THEME_PRESETS.find((candidate) => candidate.id === this.themePreset.value);
+    if (!preset) return;
+    this.sidebarBackground.value = preset.theme.sidebarBackground;
+    this.appBackground.value = preset.theme.appBackground;
+    this.terminalBackground.value = preset.theme.terminalBackground;
+    this.textColor.value = preset.theme.textColor;
+    this.accent.value = preset.theme.accent;
+    this.secondaryAccent.value = preset.theme.secondaryAccent;
+    this.tertiaryAccent.value = preset.theme.tertiaryAccent;
+  }
+
+  private syncThemePresetSelection(): void {
+    this.themePreset.value = matchingPresetId(this.currentAppThemeDraft());
+  }
+
   private populateGeneral(settings: DesktopSettings): void {
     this.confirmBeforeClosingTab.checked = settings.persistence.confirmBeforeClosingTab;
     this.confirmBeforeClosingTerminal.checked = settings.persistence.confirmBeforeClosingTerminal;
@@ -259,6 +379,7 @@ export class SettingsView {
     this.accent.value = settings.appTheme.accent;
     this.secondaryAccent.value = settings.appTheme.secondaryAccent;
     this.tertiaryAccent.value = settings.appTheme.tertiaryAccent;
+    this.syncThemePresetSelection();
   }
 
   private currentSettings(): DesktopSettings {
@@ -284,15 +405,7 @@ export class SettingsView {
           foreground: this.foreground.value,
         },
       },
-      appTheme: {
-        sidebarBackground: this.sidebarBackground.value,
-        appBackground: this.appBackground.value,
-        terminalBackground: this.terminalBackground.value,
-        textColor: this.textColor.value,
-        accent: this.accent.value,
-        secondaryAccent: this.secondaryAccent.value,
-        tertiaryAccent: this.tertiaryAccent.value,
-      },
+      appTheme: this.currentAppThemeDraft(),
       keybindings: { overrides: structuredClone(this.draftOverrides) },
     };
   }

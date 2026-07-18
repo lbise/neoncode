@@ -26,7 +26,7 @@ import type {
   AppTheme,
 } from './shared/types';
 
-export const CONFIG_SCHEMA_VERSION = 8;
+export const CONFIG_SCHEMA_VERSION = 9;
 export const STATE_SCHEMA_VERSION = 3;
 const MAX_CONFIG_BYTES = 64 * 1024;
 const MAX_STATE_BYTES = 64 * 1024;
@@ -61,7 +61,8 @@ type MigrationSource =
   | 'schema_4'
   | 'schema_5'
   | 'schema_6'
-  | 'schema_7';
+  | 'schema_7'
+  | 'schema_8';
 
 interface ConfigMigrationResult {
   document: unknown;
@@ -109,13 +110,13 @@ function cloneJson<T>(value: T): T {
 
 export function defaultAppTheme(): AppTheme {
   return {
-    sidebarBackground: '#0f172a',
-    appBackground: '#0b1020',
-    terminalBackground: '#0c0c0c',
-    textColor: '#d1d5db',
-    accent: '#ff4fd8',
-    secondaryAccent: '#8a2c72',
-    tertiaryAccent: '#3a173f',
+    sidebarBackground: '#111111',
+    appBackground: '#0b0b0c',
+    terminalBackground: '#050505',
+    textColor: '#d6d6d6',
+    accent: '#6f7782',
+    secondaryAccent: '#32363d',
+    tertiaryAccent: '#1a1b1e',
   };
 }
 
@@ -441,13 +442,44 @@ function migrateSchemaSevenConfig(document: UnknownRecord): UnknownRecord {
   );
   return {
     ...document,
-    schemaVersion: CONFIG_SCHEMA_VERSION,
+    schemaVersion: 8,
     appTheme: defaultAppTheme(),
   };
 }
 
+function migrateSchemaEightAppTheme(raw: unknown): AppTheme {
+  if (!isPlainObject(raw)) return defaultAppTheme();
+  const oldDefaultOrBrandAccent = raw.sidebarBackground === '#0f172a'
+    || raw.appBackground === '#0b1020'
+    || raw.accent === '#ff4fd8'
+    || raw.accent === '#ff66dd';
+  if (oldDefaultOrBrandAccent) return defaultAppTheme();
+  return {
+    sidebarBackground: String(raw.sidebarBackground ?? defaultAppTheme().sidebarBackground),
+    appBackground: String(raw.appBackground ?? defaultAppTheme().appBackground),
+    terminalBackground: String(raw.terminalBackground ?? defaultAppTheme().terminalBackground),
+    textColor: String(raw.textColor ?? defaultAppTheme().textColor),
+    accent: String(raw.accent ?? defaultAppTheme().accent),
+    secondaryAccent: String(raw.secondaryAccent ?? defaultAppTheme().secondaryAccent),
+    tertiaryAccent: String(raw.tertiaryAccent ?? defaultAppTheme().tertiaryAccent),
+  };
+}
+
+function migrateSchemaEightConfig(document: UnknownRecord): UnknownRecord {
+  requireExactKeys(
+    document,
+    ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'terminal', 'appTheme', 'keybindings', 'launchProfiles', 'workspaces'],
+    'schema 8 config',
+  );
+  return {
+    ...document,
+    schemaVersion: CONFIG_SCHEMA_VERSION,
+    appTheme: migrateSchemaEightAppTheme(document.appTheme),
+  };
+}
+
 function migrateToCurrentConfig(document: UnknownRecord): UnknownRecord {
-  return migrateSchemaSevenConfig(document);
+  return migrateSchemaEightConfig(migrateSchemaSevenConfig(document));
 }
 
 function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigrationResult {
@@ -455,9 +487,16 @@ function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigr
   if (document.schemaVersion === CONFIG_SCHEMA_VERSION) {
     return { document, migrated: false, migrationSource: null };
   }
+  if (document.schemaVersion === 8) {
+    return {
+      document: migrateSchemaEightConfig(document),
+      migrated: true,
+      migrationSource: 'schema_8',
+    };
+  }
   if (document.schemaVersion === 7) {
     return {
-      document: migrateSchemaSevenConfig(document),
+      document: migrateToCurrentConfig(document),
       migrated: true,
       migrationSource: 'schema_7',
     };
@@ -536,7 +575,7 @@ function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigr
     );
   }
   if (document.schemaVersion !== 0) {
-    throw new ConfigurationError('config.schemaVersion must be 0, 1, 2, 3, 4, 5, 6, 7, or 8');
+    throw new ConfigurationError('config.schemaVersion must be 0, 1, 2, 3, 4, 5, 6, 7, 8, or 9');
   }
 
   requireExactKeys(

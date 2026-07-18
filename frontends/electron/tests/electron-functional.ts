@@ -370,7 +370,10 @@ async function verifySettingsUi(page: Page): Promise<void> {
 
   const generalTab = page.getByTestId('settings-general-tab');
   assert(await generalTab.evaluate((element) => element === document.activeElement), 'Settings did not receive keyboard focus');
-  await page.getByTestId('settings-accent').fill('#ff66dd');
+  assert(await page.getByTestId('settings-theme-preset').inputValue() === 'graphite', 'default theme preset was not selected');
+  await page.getByTestId('settings-theme-preset').selectOption('tokyo-night');
+  assert(await page.getByTestId('settings-terminal-background').inputValue() === '#09090d', 'theme preset did not populate color fields');
+  await page.getByTestId('settings-accent').fill('#8b949e');
   await generalTab.focus();
   await page.keyboard.press('Tab');
   await page.keyboard.press('Enter');
@@ -405,7 +408,7 @@ async function verifySettingsUi(page: Page): Promise<void> {
   await page.keyboard.press('Enter');
   await overlay.waitFor({ state: 'hidden', timeout });
   assert(
-    await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--nc-accent').trim()) === '#ff66dd',
+    await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--nc-accent').trim()) === '#8b949e',
     'saved app theme accent was not applied immediately',
   );
   await waitForActivePane(page, 'default', 'tasks');

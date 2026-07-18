@@ -63,7 +63,7 @@ Goal: users open tabs and close tabs. Closing kills the terminal/session. Detach
 
 Goal: reclaim vertical space and make the UI feel like a terminal-first workspace, not a status dashboard.
 
-Design direction: Hallmark minimal/system redesign. Preserve keyboard-first behavior and all command-registry routing, but remove redundant chrome. Use restraint: one sidebar background, one terminal background, text color, bright pink accent, and at most two secondary accent colors.
+Design direction: Hallmark minimal/system redesign. Preserve keyboard-first behavior and all command-registry routing, but remove redundant chrome. Use restraint: true dark neutral surfaces, one terminal background, text color, muted focus/border colors, and a fixed bright-pink NeonCode wordmark only.
 
 - [x] Move Settings access into the window/title bar as a compact cog icon.
 - [x] Replace the Commands button with a title-bar command/search field that opens the command palette.
@@ -73,12 +73,12 @@ Design direction: Hallmark minimal/system redesign. Preserve keyboard-first beha
 - [x] Add a left-click workspace action menu for rename workspace, delete workspace, create tab, and related actions.
 - [x] Remove terminal pane borders/header bars/status pills/split-close-more button rows. Terminal content should occupy the space; sidebar tab entries should carry the tab name and close `×`.
 - [x] Keep all actions accessible from keyboard and command palette after removing visible buttons.
-- [x] Replace the current cyan accent with a bright pink NeonCode accent and verify contrast/focus states.
+- [x] Replace the current cyan accent with a bright pink NeonCode wordmark and keep app chrome/focus states neutral.
 
 ### Priority 3: settings as workspace + simple themes
 
 - [x] Replace modal Settings with a special app-owned Settings workspace/tab surface so settings behaves like normal workspace content instead of blocking the terminal.
-- [x] Add simple theme settings: sidebar background, terminal/app background, text color, primary bright-pink accent, and up to two secondary accents.
+- [x] Add simple theme settings: preset dropdown plus sidebar background, terminal/app background, text color, focus color, border/hover color, and selected surface color.
 - [x] Apply the theme through named CSS custom properties; avoid ad hoc colors.
 - [x] Style xterm scrollbars to match the application background/theme.
 - [x] Keep advanced/internal settings hidden by default; hub endpoint and session prefix should not be normal user-editable fields.
