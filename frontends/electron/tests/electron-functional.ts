@@ -851,7 +851,7 @@ async function runFirstLaunchChecks(
   assert(initialState.configuration.confirmBeforeClosingTerminal === false, 'terminal close confirmation should default off');
   assert(initialState.workspace.activeWorkspaceId === 'default', 'default workspace was not activated');
   assert(initialState.configuration.workspaces.length === 2, 'configured workspaces were not exposed');
-  assert(await page.getByTestId('workspace-list').getByRole('button').count() === 2, 'workspace selector was not rendered');
+  assert(await page.getByTestId('workspace-list').locator('.workspace-button').count() === 2, 'workspace selector was not rendered');
   assert(
     await page.getByTestId('workspace-default').getAttribute('aria-current') === 'true',
     'default workspace was not visibly selected',

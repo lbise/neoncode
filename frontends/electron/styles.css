@@ -337,24 +337,43 @@ main {
   display: none;
 }
 
-.workspace-tab {
+.workspace-tab-row {
   min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.workspace-tab,
+.workspace-tab-close {
   min-height: 24px;
-  padding: 4px 8px;
   color: #94a3b8;
   font: inherit;
   font-size: 12px;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 4px;
   cursor: pointer;
 }
 
-.workspace-tab:hover {
+.workspace-tab {
+  min-width: 0;
+  padding: 4px 8px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace-tab-close {
+  width: 24px;
+  padding: 0;
+  color: #64748b;
+}
+
+.workspace-tab:hover,
+.workspace-tab-close:hover:not(:disabled) {
   color: #e2e8f0;
   background: #172033;
 }
@@ -365,9 +384,15 @@ main {
   border-color: #8a2c72;
 }
 
-.workspace-tab:focus-visible {
+.workspace-tab:focus-visible,
+.workspace-tab-close:focus-visible {
   outline: 2px solid #ff4fd8;
   outline-offset: 1px;
+}
+
+.workspace-tab-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
 }
 
 #terminal-grid {
@@ -443,39 +468,34 @@ main {
 }
 
 .terminal-pane {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: 28px 1fr;
+  grid-template-rows: minmax(0, 1fr);
   background: #0c0c0c;
-  border: 1px solid #27272a;
+  border: 0;
 }
 
 .terminal-pane[data-active="true"] {
-  border-color: #ff4fd8;
-  box-shadow: 0 0 0 1px #ff4fd8;
+  box-shadow: inset 0 0 0 1px #ff4fd8;
 }
 
 .terminal-pane[data-active="true"] .pane-title {
   color: #fff1fb;
-  background: #3a173f;
 }
 
 .pane-title {
-  position: relative;
-  box-sizing: border-box;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 2px 4px 2px 8px;
-  color: #9ca3af;
-  font-size: 12px;
-  background: #18181b;
-  border-bottom: 1px solid #27272a;
-  user-select: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .pane-identity {
@@ -584,7 +604,7 @@ main {
 .terminal {
   min-width: 0;
   min-height: 0;
-  padding: 4px;
+  padding: 2px;
 }
 
 .xterm {

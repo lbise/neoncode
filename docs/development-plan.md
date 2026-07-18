@@ -71,7 +71,7 @@ Design direction: Hallmark minimal/system redesign. Preserve keyboard-first beha
 - [x] Move tabs under their workspace in the sidebar; remove the horizontal tab strip above terminals and remove the `+ Tab` button from that area.
 - [x] Simplify workspace rows to show the workspace name and a compact tab count only; remove WSL path, Git, and lifecycle status text from the default collapsed row.
 - [ ] Add a left-click workspace action menu for rename workspace, delete workspace, create tab, and related actions.
-- [ ] Remove terminal pane borders/header bars/status pills/split-close-more button rows. Terminal content should occupy the space; sidebar tab entries should carry the tab name and close `×`.
+- [x] Remove terminal pane borders/header bars/status pills/split-close-more button rows. Terminal content should occupy the space; sidebar tab entries should carry the tab name and close `×`.
 - [ ] Keep all actions accessible from keyboard and command palette after removing visible buttons.
 - [x] Replace the current cyan accent with a bright pink NeonCode accent and verify contrast/focus states.
 

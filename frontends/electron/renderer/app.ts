@@ -2564,6 +2564,8 @@ export class NeonCodeApp {
     const count = tabHost.closest<HTMLElement>('.workspace-entry')?.querySelector<HTMLElement>('.workspace-tab-count');
     if (count) count.textContent = `${layout.tabs.length} tab${layout.tabs.length === 1 ? '' : 's'}`;
     for (const [index, tab] of layout.tabs.entries()) {
+      const row = this.document.createElement('div');
+      row.className = 'workspace-tab-row';
       const button = this.document.createElement('button');
       const active = tab.tabId === layout.activeTabId;
       button.type = 'button';
@@ -2591,7 +2593,23 @@ export class NeonCodeApp {
         event.preventDefault();
         void this.dispatchCommand({ id: 'tab.open', args: { workspaceId, tabId: target.tabId } });
       });
-      tabHost.append(button);
+      const close = this.document.createElement('button');
+      close.type = 'button';
+      close.className = 'workspace-tab-close';
+      close.textContent = '×';
+      close.dataset.testid = `workspace-tab-close-${tab.tabId}`;
+      close.setAttribute('aria-label', `Close ${tab.title}`);
+      close.disabled = layout.tabs.length <= 1;
+      close.addEventListener('click', (event) => {
+        event.stopPropagation();
+        void this.dispatchCommand({ id: 'tab.open', args: { workspaceId, tabId: tab.tabId } })
+          .then((result) => {
+            if (result.status === 'completed') return this.dispatchCommand({ id: 'tab.closeDialog' });
+            return result;
+          });
+      });
+      row.append(button, close);
+      tabHost.append(row);
     }
     requiredElement<HTMLButtonElement>(this.document, 'tab-create-button').disabled = (
       this.createDefaultTabDisabledReason() !== null
