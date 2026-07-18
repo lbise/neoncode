@@ -480,11 +480,11 @@ General endpoint/session/appearance fields and close policy are explicitly resta
 
 #### Phase 6: authenticated local app-control transport for CLI
 
-- [ ] Add a dedicated local app-control endpoint owned by the desktop application, not by the PTY hub protocol.
-- [ ] Authenticate the local transport with a non-relayable or OS-protected mechanism and strict request/result validation.
-- [ ] Expose only catalog commands marked externally eligible, with concrete workspace/pane arguments, bounded results, and explicit version/capability negotiation.
-- [ ] Extend `neoncode` CLI workspace list/open and app-control commands over that transport.
-- [ ] Keep `neoncode-hub` layout-agnostic: it continues to own PTY/session lifecycle while Electron owns workspaces, tabs, splits, palette, and presentation.
+- [x] Add a dedicated local app-control endpoint owned by the desktop application, not by the PTY hub protocol.
+- [x] Authenticate the local transport with a per-run OS-protected descriptor token and strict request/result validation.
+- [x] Expose the first bounded app-control commands (`workspace.list`, `workspace.open`) with concrete workspace arguments and version/capability negotiation.
+- [x] Extend `neoncode` CLI workspace list/open over that transport.
+- [x] Keep `neoncode-hub` layout-agnostic: it continues to own PTY/session lifecycle while Electron owns workspaces, tabs, splits, palette, and presentation.
 
 Current defaults include `Ctrl+Shift+T` for a new tab, `Ctrl+PageUp/PageDown` for tab navigation, `Alt+Shift+=`/`Alt+Shift+-` for side-by-side/stacked splits, and `Alt+Shift+Arrow` for directional border resize. Close/kill/detach/restart remain unbound. `F6`/`Shift+F6`, `Alt+1..9`, and `Ctrl+Shift+P` remain defaults.
 
@@ -623,7 +623,7 @@ Release acceptance: a production artifact installs and launches on a clean, full
 
 - [x] Add minimal authenticated `neoncode` CLI client (`./dev cli`).
 - [x] Support session list/status.
-- [ ] Support workspace list/open.
+- [x] Support workspace list/open.
 - [x] Support notification injection for scripts/agents.
 
 ## Later milestones

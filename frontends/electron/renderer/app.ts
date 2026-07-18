@@ -706,6 +706,9 @@ export class NeonCodeApp {
     this.window.neoncodeDesktop.onConfigChanged((config) => {
       void this.applyExternalConfiguration(config);
     });
+    this.window.neoncodeDesktop.onAppControlCommand((request) => {
+      void this.handleAppControlCommand(request.requestId, request.command);
+    });
     this.applyAppTheme();
     this.syncPublicConfiguration();
     this.workspaceSessionStates = new Map(
@@ -774,6 +777,11 @@ export class NeonCodeApp {
         })),
       })),
     });
+  }
+
+  async handleAppControlCommand(requestId: string, command: CommandInvocation): Promise<void> {
+    const result = await this.dispatchCommand(command);
+    this.window.neoncodeDesktop.completeAppControlCommand({ requestId, result });
   }
 
   async dispatchCommand(command: CommandInvocation): Promise<CommandDispatchResult> {

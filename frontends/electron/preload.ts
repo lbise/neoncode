@@ -2,6 +2,8 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 
 import type { WorkspaceLayoutState } from './shared/layout-model';
 import type {
+  AppControlCommandCallback,
+  AppControlCommandResponse,
   ConfigChangedCallback,
   NeoncodeDesktopApi,
   PrepareCloseCallback,
@@ -26,6 +28,10 @@ function isPrepareCloseCallback(value: unknown): value is PrepareCloseCallback {
 }
 
 function isConfigChangedCallback(value: unknown): value is ConfigChangedCallback {
+  return typeof value === 'function';
+}
+
+function isAppControlCommandCallback(value: unknown): value is AppControlCommandCallback {
   return typeof value === 'function';
 }
 
@@ -122,6 +128,21 @@ const desktopApi = Object.freeze({
     };
     ipcRenderer.on('neoncode:config-changed', listener);
     return () => ipcRenderer.removeListener('neoncode:config-changed', listener);
+  },
+
+  onAppControlCommand(callback: AppControlCommandCallback): () => void {
+    if (!isAppControlCommandCallback(callback)) {
+      throw new TypeError('app-control callback must be a function');
+    }
+    const listener = (_event: IpcRendererEvent, payload: unknown): void => {
+      void callback(structuredClone(payload) as Parameters<AppControlCommandCallback>[0]);
+    };
+    ipcRenderer.on('neoncode:app-control-command', listener);
+    return () => ipcRenderer.removeListener('neoncode:app-control-command', listener);
+  },
+
+  completeAppControlCommand(response: AppControlCommandResponse): void {
+    ipcRenderer.send('neoncode:app-control-result', structuredClone(response));
   },
 
   onPrepareClose(callback: PrepareCloseCallback): void {

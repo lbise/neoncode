@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
+import crypto = require('node:crypto');
 import fs = require('node:fs');
+import http = require('node:http');
 import path = require('node:path');
 import { pathToFileURL } from 'node:url';
 
@@ -35,6 +37,7 @@ import type {
   TerminalAppearance,
   AppTheme,
   WorkspaceCatalogSnapshot,
+  AppControlCommandResponse,
 } from './shared/types';
 import type { WorkspaceLayoutState } from './shared/layout-model';
 import { loadHubToken, type HubTokenResult } from './token-loader';
@@ -122,6 +125,13 @@ let configReloadTimeout: ReturnType<typeof setTimeout> | undefined;
 let configWatcher: fs.FSWatcher | undefined;
 let configRevision = 1;
 let lastAcceptedConfigText: string | null = null;
+let appControlServer: http.Server | undefined;
+let appControlToken = '';
+const appControlPending = new Map<string, {
+  resolve: (result: unknown) => void;
+  reject: (error: Error) => void;
+  timeout: ReturnType<typeof setTimeout>;
+}>();
 
 function processIntegrityLevel(): string {
   const result = spawnSync('whoami.exe', ['/groups'], { encoding: 'utf8', windowsHide: true });
@@ -290,6 +300,194 @@ function startConfigWatcher(): void {
   } catch (error) {
     addDiagnosticWarning(`config watcher could not start: ${errorMessage(error)}`);
   }
+}
+
+function appControlDescriptorPath(): string {
+  return path.join(configDirectory, 'app-control.json');
+}
+
+function writeJsonResponse(response: http.ServerResponse, statusCode: number, payload: unknown): void {
+  const body = `${JSON.stringify(payload)}\n`;
+  response.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-store',
+  });
+  response.end(body);
+}
+
+function unauthorized(response: http.ServerResponse): void {
+  writeJsonResponse(response, 401, { ok: false, error: 'unauthorized' });
+}
+
+function requestToken(request: http.IncomingMessage): string {
+  const bearer = request.headers.authorization;
+  if (typeof bearer === 'string' && bearer.startsWith('Bearer ')) return bearer.slice('Bearer '.length);
+  const token = request.headers['x-neoncode-app-control-token'];
+  return Array.isArray(token) ? token[0] ?? '' : token ?? '';
+}
+
+function appControlAuthenticated(request: http.IncomingMessage): boolean {
+  const supplied = requestToken(request);
+  if (!supplied || !appControlToken) return false;
+  const suppliedBuffer = Buffer.from(supplied, 'utf8');
+  const expectedBuffer = Buffer.from(appControlToken, 'utf8');
+  return suppliedBuffer.length === expectedBuffer.length
+    && crypto.timingSafeEqual(suppliedBuffer, expectedBuffer);
+}
+
+function readJsonRequest(request: http.IncomingMessage, maxBytes = 16 * 1024): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks: Buffer[] = [];
+    request.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        reject(new Error('request body is too large'));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on('end', () => {
+      try {
+        const text = Buffer.concat(chunks).toString('utf8');
+        resolve(text ? JSON.parse(text) : {});
+      } catch (error) {
+        reject(new Error(`invalid JSON request: ${errorMessage(error)}`));
+      }
+    });
+    request.on('error', (error) => reject(error));
+  });
+}
+
+function appControlWorkspaceList(): unknown {
+  const workspaces = bootstrapResult.config?.workspaces ?? [];
+  return {
+    ok: true,
+    protocolVersion: 1,
+    appVersion: app.getVersion(),
+    configRevision,
+    activeWorkspaceId: desktopState.activeWorkspaceId,
+    workspaces: workspaces.map((workspace) => ({
+      id: workspace.id,
+      name: workspace.name,
+      path: workspace.path,
+      sessions: workspace.sessions.length,
+      tabs: desktopState.workspaceLayouts[workspace.id]?.tabs.length ?? null,
+    })),
+  };
+}
+
+async function dispatchAppControlWorkspaceOpen(workspaceId: string): Promise<unknown> {
+  if (!bootstrapResult.config?.workspaces.some((workspace) => workspace.id === workspaceId)) {
+    throw new Error(`unknown workspace: ${workspaceId}`);
+  }
+  const window = mainWindow;
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
+    throw new Error('NeonCode renderer is not available');
+  }
+  const requestId = crypto.randomUUID();
+  const result = await new Promise<unknown>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      appControlPending.delete(requestId);
+      reject(new Error('app-control command timed out'));
+    }, 5000);
+    appControlPending.set(requestId, { resolve, reject, timeout });
+    window.webContents.send('neoncode:app-control-command', {
+      requestId,
+      command: { id: 'workspace.open', args: { workspaceId } },
+    });
+  });
+  return { ok: true, result };
+}
+
+function validWorkspaceId(value: unknown): value is string {
+  return typeof value === 'string'
+    && /^[a-zA-Z0-9._:-]{1,64}$/.test(value)
+    && !value.includes('..');
+}
+
+async function handleAppControlRequest(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+): Promise<void> {
+  if (request.socket.remoteAddress !== '127.0.0.1' && request.socket.remoteAddress !== '::1') {
+    unauthorized(response);
+    return;
+  }
+  if (!appControlAuthenticated(request)) {
+    unauthorized(response);
+    return;
+  }
+  try {
+    if (request.method === 'GET' && request.url === '/v1/capabilities') {
+      writeJsonResponse(response, 200, {
+        ok: true,
+        protocolVersion: 1,
+        commands: ['workspace.list', 'workspace.open'],
+      });
+      return;
+    }
+    if (request.method === 'GET' && request.url === '/v1/workspaces') {
+      writeJsonResponse(response, 200, appControlWorkspaceList());
+      return;
+    }
+    if (request.method === 'POST' && request.url === '/v1/workspaces/open') {
+      const body = await readJsonRequest(request);
+      const workspaceId = body && typeof body === 'object' && !Array.isArray(body)
+        ? (body as { workspaceId?: unknown }).workspaceId
+        : undefined;
+      if (!validWorkspaceId(workspaceId)) {
+        throw new Error('workspaceId must be a bounded workspace identifier');
+      }
+      writeJsonResponse(response, 200, await dispatchAppControlWorkspaceOpen(workspaceId));
+      return;
+    }
+    writeJsonResponse(response, 404, { ok: false, error: 'unknown app-control endpoint' });
+  } catch (error) {
+    writeJsonResponse(response, 400, { ok: false, error: errorMessage(error) });
+  }
+}
+
+function startAppControlServer(): void {
+  if (appControlServer) return;
+  appControlToken = crypto.randomBytes(32).toString('hex');
+  appControlServer = http.createServer((request, response) => {
+    void handleAppControlRequest(request, response);
+  });
+  appControlServer.listen(0, '127.0.0.1', () => {
+    const address = appControlServer?.address();
+    if (!address || typeof address === 'string') return;
+    const descriptor = {
+      schemaVersion: 1,
+      protocolVersion: 1,
+      pid: process.pid,
+      endpoint: `http://127.0.0.1:${address.port}`,
+      token: appControlToken,
+    };
+    fs.rmSync(appControlDescriptorPath(), { force: true });
+    fs.writeFileSync(appControlDescriptorPath(), `${JSON.stringify(descriptor, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    log('app-control.started', { port: address.port });
+  });
+  appControlServer.on('error', (error) => {
+    addDiagnosticWarning(`app-control server failed: ${errorMessage(error)}`);
+    log('app-control.error', { message: errorMessage(error) });
+  });
+}
+
+function stopAppControlServer(): void {
+  for (const [requestId, pending] of appControlPending) {
+    clearTimeout(pending.timeout);
+    pending.reject(new Error('app-control server stopped'));
+    appControlPending.delete(requestId);
+  }
+  appControlServer?.close();
+  appControlServer = undefined;
+  appControlToken = '';
+  fs.rmSync(appControlDescriptorPath(), { force: true });
 }
 
 function addDiagnosticWarning(warning: string): void {
@@ -552,6 +750,18 @@ function finishWindowClose(sender?: WebContents): void {
   window.close();
 }
 
+ipcMain.on('neoncode:app-control-result', (event, response: unknown) => {
+  requireCurrentRenderer(event.sender);
+  if (response === null || typeof response !== 'object' || Array.isArray(response)) return;
+  const document = response as Partial<AppControlCommandResponse>;
+  if (typeof document.requestId !== 'string') return;
+  const pending = appControlPending.get(document.requestId);
+  if (!pending) return;
+  clearTimeout(pending.timeout);
+  appControlPending.delete(document.requestId);
+  pending.resolve(document.result ?? { status: 'failed', message: 'renderer returned no result' });
+});
+
 ipcMain.on('neoncode:close-ready', (event) => {
   finishWindowClose(event.sender);
 });
@@ -685,9 +895,11 @@ if (!hasSingleInstanceLock) {
     await prepareManagedHubLifecycle();
     createWindow();
     startConfigWatcher();
+    startAppControlServer();
   });
 
   app.on('window-all-closed', () => {
+    stopAppControlServer();
     configWatcher?.close();
     configWatcher = undefined;
     if (configReloadTimeout) clearTimeout(configReloadTimeout);

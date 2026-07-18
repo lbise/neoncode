@@ -1,4 +1,9 @@
-use std::env;
+use std::{
+    env, fs,
+    io::{Read, Write},
+    net::TcpStream,
+    path::PathBuf,
+};
 
 use anyhow::{Context, Result, anyhow, bail};
 use futures_util::{SinkExt, StreamExt};
@@ -27,6 +32,10 @@ async fn run() -> Result<()> {
         print_help();
         return Ok(());
     }
+    if command == "workspace" || command == "workspaces" {
+        return run_workspace_command(&arguments);
+    }
+
     let token =
         neoncode_hub::load_capability_token().context("load neoncode-hub capability token")?;
     let token = hex::decode(&token).context("hub capability token must be hexadecimal")?;
@@ -185,8 +194,135 @@ where
     }
 }
 
+fn app_control_descriptor_path() -> Result<PathBuf> {
+    if let Ok(path) = env::var("NEONCODE_APP_CONTROL_DESCRIPTOR") {
+        return Ok(PathBuf::from(path));
+    }
+    if let Ok(path) = env::var("NEONCODE_TEST_CONFIG_DIR") {
+        return Ok(PathBuf::from(path).join("app-control.json"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let appdata = env::var("APPDATA").context("APPDATA is not set")?;
+        return Ok(PathBuf::from(appdata)
+            .join("NeonCode")
+            .join("app-control.json"));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let home = env::var("HOME").context("HOME is not set")?;
+        return Ok(PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("NeonCode")
+            .join("app-control.json"));
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let base = env::var("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|_| env::var("HOME").map(|home| PathBuf::from(home).join(".config")))
+            .context("XDG_CONFIG_HOME and HOME are not set")?;
+        Ok(base.join("NeonCode").join("app-control.json"))
+    }
+}
+
+fn run_workspace_command(arguments: &[String]) -> Result<()> {
+    let subcommand = arguments.get(1).map(String::as_str).unwrap_or("list");
+    match subcommand {
+        "list" | "ls" => {
+            let response = app_control_request("GET", "/v1/workspaces", None)?;
+            let active = response["activeWorkspaceId"].as_str().unwrap_or("");
+            let workspaces = response["workspaces"]
+                .as_array()
+                .ok_or_else(|| anyhow!("invalid app-control workspace list"))?;
+            for workspace in workspaces {
+                let id = workspace["id"].as_str().unwrap_or("<unknown>");
+                let name = workspace["name"].as_str().unwrap_or(id);
+                let marker = if id == active { "*" } else { " " };
+                println!("{marker} {id}\t{name}");
+            }
+            Ok(())
+        }
+        "open" => {
+            let workspace_id = arguments
+                .get(2)
+                .ok_or_else(|| anyhow!("usage: neoncode workspace open <workspace-id>"))?;
+            let response = app_control_request(
+                "POST",
+                "/v1/workspaces/open",
+                Some(json!({ "workspaceId": workspace_id })),
+            )?;
+            let status = response["result"]["status"].as_str().unwrap_or("unknown");
+            if status != "completed" {
+                bail!(
+                    "workspace open failed: {}",
+                    response["result"]["message"].as_str().unwrap_or(status)
+                );
+            }
+            println!("opened workspace {workspace_id}");
+            Ok(())
+        }
+        _ => bail!("unknown workspace command {subcommand:?}; use 'neoncode workspace list|open'"),
+    }
+}
+
+fn app_control_request(method: &str, path: &str, body: Option<Value>) -> Result<Value> {
+    let descriptor_path = app_control_descriptor_path()?;
+    let descriptor: Value =
+        serde_json::from_str(&fs::read_to_string(&descriptor_path).with_context(|| {
+            format!(
+                "read app-control descriptor at {}",
+                descriptor_path.display()
+            )
+        })?)
+        .context("parse app-control descriptor")?;
+    if descriptor["protocolVersion"] != 1 {
+        bail!("unsupported app-control protocol version");
+    }
+    let endpoint = descriptor["endpoint"]
+        .as_str()
+        .ok_or_else(|| anyhow!("app-control descriptor is missing endpoint"))?;
+    let token = descriptor["token"]
+        .as_str()
+        .ok_or_else(|| anyhow!("app-control descriptor is missing token"))?;
+    let port = endpoint
+        .strip_prefix("http://127.0.0.1:")
+        .and_then(|suffix| suffix.parse::<u16>().ok())
+        .ok_or_else(|| anyhow!("unsupported app-control endpoint: {endpoint}"))?;
+    let body_text = body.map(|value| value.to_string()).unwrap_or_default();
+    let mut stream =
+        TcpStream::connect(("127.0.0.1", port)).context("connect to NeonCode app-control")?;
+    write!(
+        stream,
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body_text.len(),
+        body_text
+    )?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response)?;
+    let (head, body) = response
+        .split_once("\r\n\r\n")
+        .ok_or_else(|| anyhow!("invalid app-control HTTP response"))?;
+    if !head.starts_with("HTTP/1.1 200 ") {
+        let error = serde_json::from_str::<Value>(body)
+            .ok()
+            .and_then(|value| value["error"].as_str().map(str::to_string))
+            .unwrap_or_else(|| head.lines().next().unwrap_or("HTTP error").to_string());
+        bail!("app-control request failed: {error}");
+    }
+    let value: Value = serde_json::from_str(body).context("parse app-control response")?;
+    if value["ok"] != true {
+        bail!(
+            "app-control request failed: {}",
+            value["error"].as_str().unwrap_or("unknown error")
+        );
+    }
+    Ok(value)
+}
+
 fn print_help() {
     println!(
-        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
+        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
     );
 }

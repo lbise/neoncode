@@ -200,7 +200,7 @@ nodeIntegration: false
 sandbox: true
 ```
 
-The browser-world renderer is bundled with `esbuild-wasm` and receives only a narrow preload API for validated bootstrap configuration (including the local hub capability), dynamic validated config-change notifications, revisioned Settings and workspace-catalog get/save, bounded clipboard reads/writes, layout/state saves, and graceful-close coordination. Settings and catalog IPC accept only the current BrowserWindow sender and share one monotonic revision. Main rereads disk config, validates the complete request, preserves fields outside the requested boundary, and atomically writes the backup and replacement without persisting process-local environment overrides. The sandbox preload stays self-contained and exposes no arbitrary filesystem or command primitive. The app applies a restrictive CSP and denies unexpected navigation, new windows, webviews, and permission requests.
+The browser-world renderer is bundled with `esbuild-wasm` and receives only a narrow preload API for validated bootstrap configuration (including the local hub capability), dynamic validated config-change notifications, app-control command completion, revisioned Settings and workspace-catalog get/save, bounded clipboard reads/writes, layout/state saves, and graceful-close coordination. Settings and catalog IPC accept only the current BrowserWindow sender and share one monotonic revision. Main rereads disk config, validates the complete request, preserves fields outside the requested boundary, and atomically writes the backup and replacement without persisting process-local environment overrides. The sandbox preload stays self-contained and exposes no arbitrary filesystem or command primitive. The app applies a restrictive CSP and denies unexpected navigation, new windows, webviews, and permission requests.
 
 Playwright asserts the effective BrowserWindow preferences, absence of renderer `process`/`require`, exact preload API keys, deeply frozen bootstrap configuration, denied window creation, and denied notification permission.
 
@@ -216,7 +216,7 @@ See [configuration.md](configuration.md) for the schema and manual workflow.
 
 `./dev` manages a per-user 256-bit token in a mode-0600 WSL state file and passes it to the hub and Electron through process environments without copying it into publish output. The hub strips the token from PTY child environments. Electron WebSockets offer only `neoncode.v1`; the hub and renderer then exchange independent nonces and verify domain-separated HMAC-SHA256 proofs within five seconds. Renderer authentication/welcome deadlines close silent or half-authenticated transports, and late handshake traffic is connection guarded. The token never crosses the socket, so an impostor cannot capture a reusable bearer, although the plaintext channel does not resist an active local relay. The hub also requires `Origin: file://`, caps WebSocket connections, and rejects non-loopback bind addresses.
 
-This boundary protects against browser cross-origin access, accidental LAN exposure, and clients that cannot complete the capability exchange. Hostile native local processes/accounts capable of binding and relaying loopback traffic are out of scope. Hostile multi-user or remote access will require pinned TLS, OS-protected IPC, or per-message authenticated encryption.
+This boundary protects against browser cross-origin access, accidental LAN exposure, and clients that cannot complete the capability exchange. Electron also owns a separate loopback app-control endpoint for workspace list/open. It writes a per-run descriptor/token under the app configuration directory with restrictive file mode and validates every request before dispatching to the renderer command registry; the PTY hub never sees app workspace commands. Hostile native local processes/accounts capable of reading user files or binding and relaying loopback traffic are out of scope. Hostile multi-user or remote access will require pinned TLS, OS-protected IPC, or per-message authenticated encryption.
 
 ## Validation commands
 
@@ -323,9 +323,9 @@ The frontend should own:
 - sidebar/status presentation;
 - notifications/attention UI;
 - browser/external surfaces;
-- a future authenticated local app-control transport for externally eligible CLI commands. The shared command contract is ready for that transport, but this slice does not add one.
+- the authenticated local app-control transport for workspace list/open and future externally eligible app commands.
 
-The PTY hub remains layout-agnostic. CLI control of app-owned workspaces/tabs/splits must use the future desktop app-control transport rather than extending the hub with frontend layout state.
+The PTY hub remains layout-agnostic. CLI control of app-owned workspaces/tabs/splits uses the desktop app-control transport rather than extending the hub with frontend layout state.
 
 ## Remote direction
 

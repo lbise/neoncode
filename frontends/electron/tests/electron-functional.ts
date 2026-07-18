@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import fs = require('node:fs');
+import http = require('node:http');
 import os = require('node:os');
 import path = require('node:path');
 import {
@@ -218,6 +219,58 @@ async function launchApp(
   }
 }
 
+async function appControlRequest(
+  configDirectory: string,
+  method: 'GET' | 'POST',
+  requestPath: string,
+  body?: unknown,
+): Promise<Record<string, unknown>> {
+  const descriptor = parseJson<{
+    endpoint: string;
+    token: string;
+    protocolVersion: number;
+  }>(
+    fs.readFileSync(path.join(configDirectory, 'app-control.json'), 'utf8'),
+    'app-control descriptor',
+  );
+  assert(descriptor.protocolVersion === 1, 'app-control descriptor protocol version was unexpected');
+  const endpoint = new URL(descriptor.endpoint);
+  const payload = body === undefined ? '' : JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const request = http.request({
+      hostname: endpoint.hostname,
+      port: endpoint.port,
+      path: requestPath,
+      method,
+      headers: {
+        Authorization: `Bearer ${descriptor.token}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk: Buffer) => chunks.push(chunk));
+      response.on('end', () => {
+        try {
+          const parsed = parseJson<Record<string, unknown>>(
+            Buffer.concat(chunks).toString('utf8'),
+            `app-control ${requestPath} response`,
+          );
+          if (response.statusCode !== 200) {
+            reject(new Error(`app-control ${requestPath} failed: ${parsed.error ?? response.statusCode}`));
+            return;
+          }
+          resolve(parsed);
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    request.on('error', reject);
+    request.end(payload);
+  });
+}
+
 async function getState(page: Page): Promise<FunctionalState> {
   return page.evaluate(() => {
     const testApi: unknown = window.neoncodeTest;
@@ -276,6 +329,25 @@ async function waitForActivePane(page: Page, workspaceId: string, paneId: string
   const surface = page.getByTestId(`terminal-pane-${paneId}`);
   assert(await surface.getAttribute('data-active') === 'true', `${paneId} did not expose active pane data`);
   assert(await surface.getAttribute('aria-current') === 'true', `${paneId} did not expose active pane ARIA state`);
+}
+
+async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Promise<void> {
+  const { page, configDirectory } = instance;
+  const list = await appControlRequest(configDirectory, 'GET', '/v1/workspaces');
+  assert(list.ok === true, 'app-control workspace list did not succeed');
+  const workspaces = list.workspaces;
+  assert(Array.isArray(workspaces), 'app-control workspace list omitted workspaces');
+  assert(
+    workspaces.some((workspace) => (
+      workspace && typeof workspace === 'object' && (workspace as { id?: unknown }).id === 'review'
+    )),
+    'app-control workspace list omitted review workspace',
+  );
+  const open = await appControlRequest(configDirectory, 'POST', '/v1/workspaces/open', { workspaceId: 'review' });
+  assert(open.ok === true, 'app-control workspace open did not succeed');
+  await waitForActivePane(page, 'review', 'review-shell');
+  await appControlRequest(configDirectory, 'POST', '/v1/workspaces/open', { workspaceId: 'default' });
+  await waitForActivePane(page, 'default', 'shell');
 }
 
 async function verifyCockpitKeyboardNavigation(page: Page): Promise<void> {
@@ -883,7 +955,7 @@ async function runFirstLaunchChecks(
   assert(rendererSecurity.openedWindow === false, 'renderer opened an external window');
   assert(rendererSecurity.permission === 'denied', `notification permission was ${rendererSecurity.permission}`);
   assert(
-    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['config', 'getSettings', 'getWorkspaceCatalog', 'onConfigChanged', 'onPrepareClose', 'readClipboardText', 'saveSettings', 'saveWorkspaceCatalog', 'saveWorkspaceLayout', 'setActiveWorkspace', 'writeClipboardText']),
+    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['completeAppControlCommand', 'config', 'getSettings', 'getWorkspaceCatalog', 'onAppControlCommand', 'onConfigChanged', 'onPrepareClose', 'readClipboardText', 'saveSettings', 'saveWorkspaceCatalog', 'saveWorkspaceLayout', 'setActiveWorkspace', 'writeClipboardText']),
     `unexpected preload API surface: ${rendererSecurity.desktopKeys.join(',')}`,
   );
 
@@ -1001,6 +1073,7 @@ async function runFirstLaunchChecks(
     await page.getByTestId('pane-title-tasks').textContent() === 'Configured Tasks',
     'configured tasks title was not rendered',
   );
+  await verifyAppControlWorkspaceApi(instance);
   await verifyCockpitKeyboardNavigation(page);
   await verifyCommandPalette(page);
   await verifySettingsUi(page);

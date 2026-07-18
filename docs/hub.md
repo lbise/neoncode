@@ -302,15 +302,17 @@ Persistent sessions and sessions explicitly detached before disconnect are left 
 
 ## CLI automation
 
-`./dev cli` loads the managed hub token through the environment and performs the same mutual WebSocket authentication as Electron. It never places the token on the command line.
+`./dev cli status`, `sessions`, and `notify` load the managed hub token through the environment and perform the same mutual WebSocket authentication as Electron. They never place the token on the command line. Workspace commands use the Electron-owned app-control endpoint instead of the PTY hub protocol.
 
 ```bash
 ./dev cli status
 ./dev cli sessions
+./dev cli workspace list
+./dev cli workspace open default
 ./dev cli notify shell info "Tests complete" "All checks passed"
 ```
 
-`status` prints bounded aggregate counts, `sessions` emits authenticated JSON summaries, and `notify` publishes retained generation-safe workspace attention. Workspace open/switch commands remain future work.
+`status` prints bounded aggregate counts, `sessions` emits authenticated JSON summaries, and `notify` publishes retained generation-safe workspace attention. `workspace list/open` talks to `%APPDATA%\\NeonCode\\app-control.json` (or the platform equivalent) and asks the running Electron app to switch workspaces through its renderer command registry; the hub remains layout-agnostic.
 
 ## Manual smoke test
 

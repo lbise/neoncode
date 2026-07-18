@@ -4,7 +4,9 @@ import type { Terminal } from '@xterm/xterm';
 import type { WorkspaceLayoutState } from './layout-model';
 import type { KeybindingOverride, KeybindingSettings } from './keybindings';
 import type {
+  CommandDispatchResult,
   CommandExecutionArguments,
+  CommandInvocation,
   CommandMetadata,
   CommandOperationResult,
 } from './command-catalog';
@@ -470,6 +472,18 @@ export interface RendererTestApi {
 export type PrepareCloseCallback = () => void | Promise<void>;
 export type ConfigChangedCallback = (config: RendererBootstrapConfig) => void | Promise<void>;
 
+export interface AppControlCommandRequest {
+  requestId: string;
+  command: CommandInvocation;
+}
+
+export interface AppControlCommandResponse {
+  requestId: string;
+  result: CommandDispatchResult;
+}
+
+export type AppControlCommandCallback = (request: AppControlCommandRequest) => void | Promise<void>;
+
 export interface NeoncodeDesktopApi {
   readonly config: unknown;
   readClipboardText(): Promise<string>;
@@ -481,6 +495,8 @@ export interface NeoncodeDesktopApi {
   getWorkspaceCatalog(): Promise<WorkspaceCatalogSnapshot>;
   saveWorkspaceCatalog(request: SaveWorkspaceCatalogRequest): Promise<WorkspaceCatalogSnapshot>;
   onConfigChanged(callback: ConfigChangedCallback): () => void;
+  onAppControlCommand(callback: AppControlCommandCallback): () => void;
+  completeAppControlCommand(response: AppControlCommandResponse): void;
   onPrepareClose(callback: PrepareCloseCallback): void;
 }
 
