@@ -1,5 +1,6 @@
 import type {
   DesktopLaunchProfile,
+  DesktopSettings,
   DesktopWorkspaceConfig,
   ExitSummary,
   LaunchProfile,
@@ -332,6 +333,8 @@ export function createAppConfig(bootstrap: unknown = {}): RendererAppConfig {
   const source = isRecord(bootstrap) ? bootstrap : {};
   const diagnostics = isRecord(source.diagnostics) ? source.diagnostics : {};
   const persistencePolicy: PersistencePolicy = source.persistencePolicy === 'kill' ? 'kill' : 'detach';
+  const confirmBeforeClosingTab = source.confirmBeforeClosingTab === true;
+  const confirmBeforeClosingTerminal = source.confirmBeforeClosingTerminal === true;
   const workspaces = createWorkspaceDescriptors(source);
   const allowedInvocations = createConcreteCommandInvocations(
     workspaces.map((workspace) => workspace.id),
@@ -350,6 +353,8 @@ export function createAppConfig(bootstrap: unknown = {}): RendererAppConfig {
     capabilityToken: stringOr(source.capabilityToken, ''),
     sessionPrefix: stringOr(source.sessionPrefix, ''),
     persistencePolicy,
+    confirmBeforeClosingTab,
+    confirmBeforeClosingTerminal,
     terminal: source.terminal ? parseTerminalAppearance(source.terminal) : null,
     keybindingOverrides,
     testMode: source.testMode === true,
@@ -506,7 +511,7 @@ export class NeonCodeApp {
       'tab.next': () => this.openRelativeTab(1),
       'tab.previous': () => this.openRelativeTab(-1),
       'tab.renameDialog': () => this.tabDialog.open('rename'),
-      'tab.closeDialog': () => this.tabDialog.open('close'),
+      'tab.closeDialog': () => this.requestActiveTabClose(),
       'pane.focus': ({ paneId }) => this.focusPane(paneId),
       'pane.split': (args) => this.splitPane(args),
       'split.resize': (args) => this.resizeSplit(args),
@@ -519,7 +524,7 @@ export class NeonCodeApp {
       'pane.resizeRight': () => this.resizeActivePane('right'),
       'pane.resizeUp': () => this.resizeActivePane('up'),
       'pane.resizeDown': () => this.resizeActivePane('down'),
-      'pane.closeDialog': () => this.paneDialog.open(),
+      'pane.closeDialog': () => this.requestActivePaneClose(),
       'pane.next': () => this.focusNextPane(),
       'pane.previous': () => this.focusPreviousPane(),
     }, {
@@ -594,7 +599,7 @@ export class NeonCodeApp {
       getAllowedInvocations: () => this.allowedKeybindingInvocations(),
       loadSettings: () => this.window.neoncodeDesktop.getSettings(),
       saveSettings: (snapshot) => this.window.neoncodeDesktop.saveSettings(snapshot),
-      onSaved: (snapshot) => this.applySavedKeybindings(snapshot.settings.keybindings.overrides),
+      onSaved: (snapshot) => this.applySavedSettings(snapshot.settings),
       closeCommand: () => { void this.dispatchCommand({ id: 'settings.close' }); },
       restoreActivePaneFocus: () => this.applyActivePaneFocus(),
     });
@@ -688,6 +693,8 @@ export class NeonCodeApp {
       errors: this.config.diagnostics.errors,
       hubStatus: this.config.diagnostics.hubStatus,
       persistencePolicy: this.config.persistencePolicy,
+      confirmBeforeClosingTab: this.config.confirmBeforeClosingTab,
+      confirmBeforeClosingTerminal: this.config.confirmBeforeClosingTerminal,
       terminal: this.config.terminal,
       activeWorkspaceId: this.activeWorkspaceId ?? this.config.activeWorkspaceId,
       workspaces: this.config.workspaces.map((workspace) => ({
@@ -884,6 +891,28 @@ export class NeonCodeApp {
     return this.closed ? 'Application is closing' : null;
   }
 
+  async requestActiveTabClose(): Promise<void> {
+    if (this.config.confirmBeforeClosingTab) {
+      this.tabDialog.open('close');
+      return;
+    }
+    const workspaceId = this.activeWorkspaceId;
+    const tab = this.activeLayoutTab();
+    if (!workspaceId || !tab) throw new Error('no active tab');
+    await this.closeTab({ workspaceId, tabId: tab.tabId });
+  }
+
+  async requestActivePaneClose(): Promise<void> {
+    if (this.config.confirmBeforeClosingTerminal) {
+      this.paneDialog.open();
+      return;
+    }
+    const workspaceId = this.activeWorkspaceId;
+    const paneId = this.activeLayoutTab()?.focusedPaneId;
+    if (!workspaceId || !paneId) throw new Error('no active pane');
+    await this.closePane({ workspaceId, paneId });
+  }
+
   findSplitNode(node: LayoutNode, splitId: string): Extract<LayoutNode, { type: 'split' }> | null {
     if (node.type === 'pane') return null;
     if (node.splitId === splitId) return node;
@@ -1051,6 +1080,13 @@ export class NeonCodeApp {
       availableOverrides,
     ));
     this.updateCommandsShortcutLabel();
+  }
+
+  applySavedSettings(settings: DesktopSettings): void {
+    this.config.confirmBeforeClosingTab = settings.persistence.confirmBeforeClosingTab;
+    this.config.confirmBeforeClosingTerminal = settings.persistence.confirmBeforeClosingTerminal;
+    this.applySavedKeybindings(settings.keybindings.overrides);
+    this.syncPublicConfiguration();
   }
 
   applySavedKeybindings(overrides: readonly KeybindingOverride[]): void {
@@ -1413,12 +1449,15 @@ export class NeonCodeApp {
         const snapshot = await this.window.neoncodeDesktop.getWorkspaceCatalog();
         await this.window.neoncodeDesktop.saveWorkspaceCatalog({
           revision: snapshot.revision,
-          workspaces: snapshot.workspaces.map((candidate) => candidate.id === workspace.id
-            ? {
+          workspaces: snapshot.workspaces.map((candidate) => {
+            if (candidate.id !== workspace.id) return candidate;
+            const sessions = candidate.sessions.filter((session) => session.id !== descriptor.sessionKey);
+            return {
               ...candidate,
-              sessions: candidate.sessions.filter((session) => session.id !== descriptor.sessionKey),
-            }
-            : candidate),
+              layout: { columns: Math.min(candidate.layout.columns, sessions.length) },
+              sessions,
+            };
+          }),
         });
       } catch (error) {
         const warning = `Pane lifecycle completed, but its durable definition could not be removed: ${errorMessage(error)}. The pane was restored.`;
@@ -1430,6 +1469,7 @@ export class NeonCodeApp {
       workspace.panes = workspace.panes
         .filter((pane) => pane.sessionKey !== descriptor.sessionKey)
         .map((pane, index) => ({ ...pane, index }));
+      workspace.layout = { columns: Math.min(workspace.layout.columns, workspace.panes.length) };
       this.workspaceLayouts.set(workspace.id, removed.state);
       this.workspaceSessionStates.delete(descriptor.sessionId);
       this.visitedSessionIds.delete(descriptor.sessionId);
@@ -1648,9 +1688,15 @@ export class NeonCodeApp {
       const snapshot = await this.window.neoncodeDesktop.getWorkspaceCatalog();
       await this.window.neoncodeDesktop.saveWorkspaceCatalog({
         revision: snapshot.revision,
-        workspaces: snapshot.workspaces.map((candidate) => candidate.id === workspace.id
-          ? { ...candidate, sessions: candidate.sessions.filter((session) => !removedKeys.has(session.id)) }
-          : candidate),
+        workspaces: snapshot.workspaces.map((candidate) => {
+          if (candidate.id !== workspace.id) return candidate;
+          const sessions = candidate.sessions.filter((session) => !removedKeys.has(session.id));
+          return {
+            ...candidate,
+            layout: { columns: Math.min(candidate.layout.columns, sessions.length) },
+            sessions,
+          };
+        }),
       });
 
       if (wasVisible) {
@@ -1667,6 +1713,7 @@ export class NeonCodeApp {
       workspace.panes = workspace.panes
         .filter((pane) => !removedKeys.has(pane.sessionKey))
         .map((pane, index) => ({ ...pane, index }));
+      workspace.layout = { columns: Math.min(workspace.layout.columns, workspace.panes.length) };
       for (const descriptor of removedDescriptors) {
         this.workspaceSessionStates.delete(descriptor.sessionId);
         this.visitedSessionIds.delete(descriptor.sessionId);

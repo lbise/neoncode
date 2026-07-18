@@ -80,6 +80,8 @@ export class SettingsView {
   private readonly endpoint: HTMLInputElement;
   private readonly sessionPrefix: HTMLInputElement;
   private readonly closePolicy: HTMLSelectElement;
+  private readonly confirmBeforeClosingTab: HTMLInputElement;
+  private readonly confirmBeforeClosingTerminal: HTMLInputElement;
   private readonly fontFamily: HTMLInputElement;
   private readonly fontSize: HTMLInputElement;
   private readonly cursorBlink: HTMLInputElement;
@@ -127,6 +129,8 @@ export class SettingsView {
     this.endpoint = requiredElement<HTMLInputElement>(documentRef, 'settings-endpoint');
     this.sessionPrefix = requiredElement<HTMLInputElement>(documentRef, 'settings-session-prefix');
     this.closePolicy = requiredElement<HTMLSelectElement>(documentRef, 'settings-close-policy');
+    this.confirmBeforeClosingTab = requiredElement<HTMLInputElement>(documentRef, 'settings-confirm-before-closing-tab');
+    this.confirmBeforeClosingTerminal = requiredElement<HTMLInputElement>(documentRef, 'settings-confirm-before-closing-terminal');
     this.fontFamily = requiredElement<HTMLInputElement>(documentRef, 'settings-font-family');
     this.fontSize = requiredElement<HTMLInputElement>(documentRef, 'settings-font-size');
     this.cursorBlink = requiredElement<HTMLInputElement>(documentRef, 'settings-cursor-blink');
@@ -231,6 +235,8 @@ export class SettingsView {
     this.endpoint.value = settings.hub.endpoint;
     this.sessionPrefix.value = settings.sessionPrefix;
     this.closePolicy.value = settings.persistence.onWindowClose;
+    this.confirmBeforeClosingTab.checked = settings.persistence.confirmBeforeClosingTab;
+    this.confirmBeforeClosingTerminal.checked = settings.persistence.confirmBeforeClosingTerminal;
     this.fontFamily.value = settings.terminal.fontFamily;
     this.fontSize.value = String(settings.terminal.fontSize);
     this.cursorBlink.checked = settings.terminal.cursorBlink;
@@ -247,6 +253,8 @@ export class SettingsView {
       sessionPrefix: this.sessionPrefix.value,
       persistence: {
         onWindowClose: this.closePolicy.value === 'kill' ? 'kill' : 'detach',
+        confirmBeforeClosingTab: this.confirmBeforeClosingTab.checked,
+        confirmBeforeClosingTerminal: this.confirmBeforeClosingTerminal.checked,
       },
       terminal: {
         ...cloneSettings(snapshot.settings).terminal,

@@ -55,7 +55,7 @@ Goal: users open tabs and close tabs. Closing kills the terminal/session. Detach
 
 - [x] Remove user-facing detach choices from pane/tab close dialogs, pane header menus, palette entries, settings keybinding targets, and docs.
 - [x] Make close-tab and close-pane kill by default with no disposition prompt.
-- [ ] Add a setting `confirmBeforeClosingTerminal` / `confirmBeforeClosingTab`, disabled by default, to optionally prompt before destructive close.
+- [x] Add a setting `confirmBeforeClosingTerminal` / `confirmBeforeClosingTab`, disabled by default, to optionally prompt before destructive close.
 - [ ] Keep app/window close persistence policy internally useful, but do not expose session-prefix or backend detach mechanics in the primary UI.
 - [x] Update command catalog so future CLI/app-control semantics are explicit: `tab.close`/`pane.close` kill, while any internal detach command is non-user-facing or development-only.
 

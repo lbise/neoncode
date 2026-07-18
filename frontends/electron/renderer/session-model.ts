@@ -58,6 +58,8 @@ export class SessionModel {
         errors: [],
         hubStatus: 'idle',
         persistencePolicy: 'detach',
+        confirmBeforeClosingTab: false,
+        confirmBeforeClosingTerminal: false,
         sessions: [],
       },
       panes: [],

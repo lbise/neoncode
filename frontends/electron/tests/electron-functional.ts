@@ -847,6 +847,8 @@ async function runFirstLaunchChecks(
   assert(initialState.configuration.valid === true, 'persisted configuration was not valid');
   assert(initialState.configuration.configStatus === 'loaded', `unexpected config status ${initialState.configuration.configStatus}`);
   assert(initialState.configuration.persistencePolicy === 'detach', 'configured close policy was not applied');
+  assert(initialState.configuration.confirmBeforeClosingTab === false, 'tab close confirmation should default off');
+  assert(initialState.configuration.confirmBeforeClosingTerminal === false, 'terminal close confirmation should default off');
   assert(initialState.workspace.activeWorkspaceId === 'default', 'default workspace was not activated');
   assert(initialState.configuration.workspaces.length === 2, 'configured workspaces were not exposed');
   assert(await page.getByTestId('workspace-list').getByRole('button').count() === 2, 'workspace selector was not rendered');
@@ -1642,6 +1644,7 @@ async function runPaneLayoutCheck(runToken: string): Promise<void> {
     const config = parseJson<DesktopConfig>(fs.readFileSync(configPath, 'utf8'), 'pane layout config');
     const workspace = config.workspaces.find((candidate) => candidate.id === 'default');
     assert(workspace, 'pane layout config omitted default workspace');
+    config.persistence.confirmBeforeClosingTerminal = true;
     workspace.path = '/tmp';
     workspace.layout.columns = 1;
     workspace.sessions = [workspace.sessions[0]!];
@@ -1790,6 +1793,65 @@ async function runPaneLayoutCheck(runToken: string): Promise<void> {
   }
 }
 
+async function runCloseConfirmationCheck(runToken: string): Promise<void> {
+  const defaultDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-close-default-'));
+  const confirmDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-close-confirm-'));
+  let instance: ElectronTestInstance | undefined;
+  try {
+    writeTestConfig(defaultDirectory);
+    instance = await launchApp(`close-default-${runToken}`, defaultDirectory);
+    const createTab = await instance.page.evaluate(() => window.neoncodeTest.executeCommand('tab.createDefault'));
+    assert(createTab.status === 'completed', 'default close test could not create a second tab');
+    await instance.page.waitForFunction(() => document.querySelectorAll('#workspace-tabs [role="tab"]').length === 2, null, { timeout });
+    const tabClose = await instance.page.evaluate(() => window.neoncodeTest.executeCommand('tab.closeDialog'));
+    assert(tabClose.status === 'completed', 'default tab close command failed');
+    await instance.page.waitForFunction(() => document.querySelectorAll('#workspace-tabs [role="tab"]').length === 1, null, { timeout });
+    assert(await instance.page.getByTestId('tab-dialog-overlay').isHidden(), 'default tab close showed confirmation');
+    const paneClose = await instance.page.evaluate(() => window.neoncodeTest.executeCommand('pane.closeDialog'));
+    assert(paneClose.status === 'completed', 'default pane close command failed');
+    await instance.page.waitForFunction(() => (
+      window.neoncodeTest.getState().panes.length === 1
+        && window.neoncodeTest.getState().panes.every((pane) => pane.started)
+    ), null, { timeout });
+    assert(await instance.page.getByTestId('pane-dialog-overlay').isHidden(), 'default pane close showed confirmation');
+    await killAllPanes(instance);
+    await closeInstance(instance);
+    instance = undefined;
+
+    writeTestConfig(confirmDirectory);
+    const configPath = path.join(confirmDirectory, 'config.json');
+    const config = parseJson<DesktopConfig>(fs.readFileSync(configPath, 'utf8'), 'confirm close config');
+    config.persistence.confirmBeforeClosingTab = true;
+    config.persistence.confirmBeforeClosingTerminal = true;
+    fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+    instance = await launchApp(`close-confirm-${runToken}`, confirmDirectory);
+    const confirmPaneClose = await instance.page.evaluate(() => window.neoncodeTest.executeCommand('pane.closeDialog'));
+    assert(confirmPaneClose.status === 'completed', 'confirm pane close command failed');
+    const paneDialog = instance.page.getByTestId('pane-dialog-overlay');
+    await paneDialog.waitFor({ state: 'visible', timeout });
+    await instance.page.keyboard.press('Escape');
+    await paneDialog.waitFor({ state: 'hidden', timeout });
+    const createConfirmTab = await instance.page.evaluate(() => window.neoncodeTest.executeCommand('tab.createDefault'));
+    assert(createConfirmTab.status === 'completed', 'confirm close test could not create a second tab');
+    await instance.page.waitForFunction(() => document.querySelectorAll('#workspace-tabs [role="tab"]').length === 2, null, { timeout });
+    const confirmTabClose = await instance.page.evaluate(() => window.neoncodeTest.executeCommand('tab.closeDialog'));
+    assert(confirmTabClose.status === 'completed', 'confirm tab close command failed');
+    const tabDialog = instance.page.getByTestId('tab-dialog-overlay');
+    await tabDialog.waitFor({ state: 'visible', timeout });
+    await instance.page.keyboard.press('Escape');
+    await tabDialog.waitFor({ state: 'hidden', timeout });
+    await instance.page.waitForFunction(() => (
+      window.neoncodeTest.getState().panes.length > 0
+        && window.neoncodeTest.getState().panes.every((pane) => pane.started)
+    ), null, { timeout });
+    await killAllPanes(instance);
+  } finally {
+    await closeInstance(instance).catch(() => {});
+    fs.rmSync(defaultDirectory, { recursive: true, force: true });
+    fs.rmSync(confirmDirectory, { recursive: true, force: true });
+  }
+}
+
 async function runKillPolicyCheck(runToken: string): Promise<void> {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'neoncode-kill-policy-'));
   const sessionPrefix = `kill-policy-${runToken}`;
@@ -1899,6 +1961,7 @@ async function main(): Promise<void> {
     await runWorkspaceCatalogCheck(runToken);
     await runPersistentTabCheck(runToken);
     await runPaneLayoutCheck(runToken);
+    await runCloseConfirmationCheck(runToken);
     await runKillPolicyCheck(runToken);
     await runInvalidConfigurationCheck(runToken);
     log('passed');

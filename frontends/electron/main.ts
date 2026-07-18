@@ -179,6 +179,8 @@ function rendererConfig(): RendererBootstrapConfig {
     capabilityToken: hubCapabilityToken,
     sessionPrefix: config?.sessionPrefix || '',
     persistencePolicy: config?.persistence.onWindowClose || 'detach',
+    confirmBeforeClosingTab: config?.persistence.confirmBeforeClosingTab ?? false,
+    confirmBeforeClosingTerminal: config?.persistence.confirmBeforeClosingTerminal ?? false,
     terminal: config ? cloneTerminalAppearance(config.terminal) : null,
     keybindingOverrides: config ? structuredClone(config.keybindings.overrides) : [],
     activeWorkspaceId,

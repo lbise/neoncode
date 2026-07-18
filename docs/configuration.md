@@ -11,21 +11,23 @@ NeonCode stores user-level Electron configuration and app-owned window state und
 
 Electron main owns all filesystem access. The sandboxed renderer receives only a validated bootstrap object through the preload bridge. The hub capability token is never written to these files.
 
-Configuration is read at startup. The keyboard-accessible Settings dialog edits the supported General and Keyboard fields through validated main-process IPC. The workspace dialog creates, renames, and deletes durable workspace definitions without a restart. Keybinding overrides rebuild the renderer router immediately after Save; endpoint, session prefix, close policy, and terminal appearance are explicitly restart-required in this slice.
+Configuration is read at startup. The keyboard-accessible Settings dialog edits the supported General and Keyboard fields through validated main-process IPC. The workspace dialog creates, renames, and deletes durable workspace definitions without a restart. Keybinding overrides and close-confirmation toggles apply immediately after Save; endpoint, session prefix, app-window close policy, and terminal appearance are explicitly restart-required in this slice.
 
-## Version 6 schema
+## Version 7 schema
 
 The first launch creates:
 
 ```json
 {
-  "schemaVersion": 6,
+  "schemaVersion": 7,
   "hub": {
     "endpoint": "ws://127.0.0.1:44777/ws"
   },
   "sessionPrefix": "electron-xterm-shell",
   "persistence": {
-    "onWindowClose": "detach"
+    "onWindowClose": "detach",
+    "confirmBeforeClosingTab": false,
+    "confirmBeforeClosingTerminal": false
   },
   "terminal": {
     "fontFamily": "Cascadia Mono, FiraCode Nerd Font Mono, Consolas, monospace",
@@ -92,7 +94,7 @@ The first launch creates:
 }
 ```
 
-Version 6 supports 1–16 named workspaces and at most 64 configured sessions in total. Each workspace has 1–8 sessions and a simple grid layout whose `columns` value is between 1 and that workspace's session count. The sidebar switches workspaces immediately: the old workspace detaches, the selected workspace starts or reattaches, and the active workspace is restored after relaunch.
+Version 7 supports 1–16 named workspaces and at most 64 configured sessions in total. Each workspace has 1–8 sessions and a simple grid layout whose `columns` value is between 1 and that workspace's session count. The sidebar switches workspaces immediately: the old workspace detaches, the selected workspace starts or reattaches, and the active workspace is restored after relaunch.
 
 Session IDs are currently unique across the complete configuration. A hub session ID is:
 
@@ -104,7 +106,7 @@ Changing/removing a configured ID does not kill an already detached hub session 
 
 ## Settings and keybindings
 
-Open Settings with the visible header button or run **Open Settings** from the command palette; no Settings shortcut is required. The General section edits the loopback hub endpoint, session prefix, close policy, terminal font family/size, cursor blink, and terminal background/foreground colors. Those fields are saved atomically but take effect after restart. Environment overrides remain process-local and are never copied into `config.json` by a Settings save.
+Open Settings with the visible header button or run **Open Settings** from the command palette; no Settings shortcut is required. The General section edits the loopback hub endpoint, session prefix, app-window close policy, optional tab/terminal close confirmations, terminal font family/size, cursor blink, and terminal background/foreground colors. Close-confirmation toggles and keybindings apply immediately after Save; endpoint, session prefix, app-window close policy, and terminal appearance take effect after restart. Environment overrides remain process-local and are never copied into `config.json` by a Settings save.
 
 `keybindings.overrides` contains at most 64 entries. Each entry identifies one exact typed command invocation and either supplies one physical `KeyboardEvent.code` combination with exact `altKey`, `ctrlKey`, `metaKey`, and `shiftKey` booleans, or uses `null` to unbind it:
 
@@ -155,11 +157,11 @@ With no saved layout, three sessions and two columns deterministically seed one 
 
 Use the visible **+ Workspace** button or **Create Workspace…** in Commands to create a workspace. The same palette provides rename and delete dialogs. Delete requires an explicit Detach or Kill choice, cannot remove the last workspace, and switches an active deleted workspace to its deterministic neighbor. Detach never kills its hub sessions.
 
-The visible **+ Tab** action and `Ctrl+Shift+T` immediately create a durable session definition using the workspace default launch profile, then persist a one-pane active tab. Commands also provides next/previous, rename, and close actions. Closing requires explicit Detach or Kill, removes the tab's durable session definitions, and cannot remove the last tab.
+The visible **+ Tab** action and `Ctrl+Shift+T` immediately create a durable session definition using the workspace default launch profile, then persist a one-pane active tab. Commands also provides next/previous, rename, and close actions. Closing a tab kills its terminal sessions, removes the tab's durable session definitions, and cannot remove the last tab. If `persistence.confirmBeforeClosingTab` is true, the visible close affordance first opens a keyboard-trapped confirmation dialog.
 
 The active pane can be split side by side or stacked from its compact header controls, Commands, or the default split shortcuts. A split transaction creates stable session/split IDs, derives the new pane ID from the session ID, saves the durable definition, persists the tree, and focuses the new pane. A workspace `path` overrides the selected profile cwd for newly created tabs and panes. Directional resize moves the nearest border on that side in 0.05 steps, clamps ratios to `0.1`–`0.9`, persists state, and refits existing terminals without restarting PTYs. Accessible separators expose their split ID, orientation, and current ratio.
 
-A pane cannot be closed when it is the sole pane in its tab; use tab close instead. Pane close opens a keyboard-trapped Detach/Kill dialog, waits for exactly that acknowledgement, then removes the durable definition, target overrides, and leaf while collapsing its parent split and focusing the deterministic sibling. If catalog persistence fails after lifecycle acknowledgement, NeonCode keeps the definition/tree, restores the pane where possible, and shows a warning. Detach, Kill, and Restart lifecycle actions in Commands or the pane **More** menu leave the definition/tree in place; Restart attaches a still-running hub session or starts a replacement. Explicit pane operations currently target only panes rendered in the active tab and report a bounded disabled reason for inactive targets.
+A pane cannot be closed when it is the sole pane in its tab; use tab close instead. Pane close kills the terminal session, then removes the durable definition, target overrides, and leaf while collapsing its parent split and focusing the deterministic sibling. If `persistence.confirmBeforeClosingTerminal` is true, the visible close affordance first opens a keyboard-trapped confirmation dialog. If catalog persistence fails after lifecycle acknowledgement, NeonCode keeps the definition/tree, restores the pane where possible, and shows a warning. Detach, Kill, and Restart lifecycle actions in Commands or the pane **More** menu leave the definition/tree in place; Restart attaches a still-running hub session or starts a replacement. Explicit pane operations currently target only panes rendered in the active tab and report a bounded disabled reason for inactive targets.
 
 Switching a workspace or tab serially detaches the old visible panes so their PTYs continue running. Inactive tabs have no xterm attachment; opening one attaches or starts its leaves and requests replay. Window close still follows `persistence.onWindowClose`; `kill` also cleans up previously visited inactive workspaces.
 
@@ -227,7 +229,9 @@ User-level launch profiles are trusted configuration. Project-local configuratio
 
 ```json
 "persistence": {
-  "onWindowClose": "detach"
+  "onWindowClose": "detach",
+  "confirmBeforeClosingTab": false,
+  "confirmBeforeClosingTerminal": false
 }
 ```
 
@@ -247,7 +251,7 @@ Current validation includes:
 - control-free workspace paths of at most 4096 UTF-8 bytes;
 - 1–16 workspaces, 1–8 sessions per workspace, at most 64 sessions total, and valid grid column counts;
 - bounded commands, arguments, working directories, titles, and file sizes;
-- `detach` or `kill` close policy;
+- `detach` or `kill` app-window close policy plus boolean tab/terminal close-confirmation toggles;
 - at most 64 strict keybinding overrides, validated command invocations, physical key codes, safe modifiers, terminal-reserved combinations, and conflict-free effective bindings.
 
 On every valid load, NeonCode updates `config.json.bak`. If `config.json` later becomes malformed, NeonCode:

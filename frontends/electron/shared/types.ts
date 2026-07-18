@@ -207,7 +207,11 @@ export interface DesktopWorkspaceConfig {
 export interface DesktopSettings {
   hub: { endpoint: string };
   sessionPrefix: string;
-  persistence: { onWindowClose: PersistencePolicy };
+  persistence: {
+    onWindowClose: PersistencePolicy;
+    confirmBeforeClosingTab: boolean;
+    confirmBeforeClosingTerminal: boolean;
+  };
   terminal: TerminalAppearance;
   keybindings: KeybindingSettings;
 }
@@ -285,6 +289,8 @@ export interface RendererBootstrapConfig {
   capabilityToken: string;
   sessionPrefix: string;
   persistencePolicy: PersistencePolicy;
+  confirmBeforeClosingTab: boolean;
+  confirmBeforeClosingTerminal: boolean;
   terminal: TerminalAppearance | null;
   keybindingOverrides: KeybindingOverride[];
   activeWorkspaceId: string | null;
@@ -331,6 +337,8 @@ export interface RendererAppConfig {
   capabilityToken: string;
   sessionPrefix: string;
   persistencePolicy: PersistencePolicy;
+  confirmBeforeClosingTab: boolean;
+  confirmBeforeClosingTerminal: boolean;
   terminal: TerminalAppearance | null;
   keybindingOverrides: KeybindingOverride[];
   testMode: boolean;
@@ -371,6 +379,8 @@ export interface PublicConfiguration {
   errors: string[];
   hubStatus: string;
   persistencePolicy: string;
+  confirmBeforeClosingTab?: boolean;
+  confirmBeforeClosingTerminal?: boolean;
   sessions?: unknown[];
   activeWorkspaceId?: string | null;
   [key: string]: unknown;

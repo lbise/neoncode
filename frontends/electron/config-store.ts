@@ -25,7 +25,7 @@ import type {
   TerminalTheme,
 } from './shared/types';
 
-export const CONFIG_SCHEMA_VERSION = 6;
+export const CONFIG_SCHEMA_VERSION = 7;
 export const STATE_SCHEMA_VERSION = 3;
 const MAX_CONFIG_BYTES = 64 * 1024;
 const MAX_STATE_BYTES = 64 * 1024;
@@ -58,7 +58,8 @@ type MigrationSource =
   | 'schema_2'
   | 'schema_3'
   | 'schema_4'
-  | 'schema_5';
+  | 'schema_5'
+  | 'schema_6';
 
 interface ConfigMigrationResult {
   document: unknown;
@@ -144,6 +145,8 @@ export function defaultConfig(): DesktopConfig {
     sessionPrefix: 'electron-xterm-shell',
     persistence: {
       onWindowClose: 'detach',
+      confirmBeforeClosingTab: false,
+      confirmBeforeClosingTerminal: false,
     },
     terminal: defaultTerminalAppearance(),
     keybindings: { overrides: [] },
@@ -367,7 +370,7 @@ function migrateSchemaFiveConfig(document: UnknownRecord): UnknownRecord {
   const workspaces = Array.isArray(document.workspaces) ? document.workspaces : [];
   return {
     ...document,
-    schemaVersion: CONFIG_SCHEMA_VERSION,
+    schemaVersion: 6,
     workspaces: workspaces.map((rawWorkspace, workspaceIndex) => {
       const workspace = requireExactKeys(
         rawWorkspace,
@@ -397,21 +400,46 @@ function migrateSchemaFiveConfig(document: UnknownRecord): UnknownRecord {
   };
 }
 
+function migrateSchemaSixConfig(document: UnknownRecord): UnknownRecord {
+  requireExactKeys(
+    document,
+    ['schemaVersion', 'hub', 'sessionPrefix', 'persistence', 'terminal', 'keybindings', 'launchProfiles', 'workspaces'],
+    'schema 6 config',
+  );
+  const persistence = requireExactKeys(document.persistence, ['onWindowClose'], 'schema 6 persistence');
+  return {
+    ...document,
+    schemaVersion: CONFIG_SCHEMA_VERSION,
+    persistence: {
+      ...persistence,
+      confirmBeforeClosingTab: false,
+      confirmBeforeClosingTerminal: false,
+    },
+  };
+}
+
 function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigrationResult {
   const document = requireObject(raw, 'config');
   if (document.schemaVersion === CONFIG_SCHEMA_VERSION) {
     return { document, migrated: false, migrationSource: null };
   }
+  if (document.schemaVersion === 6) {
+    return {
+      document: migrateSchemaSixConfig(document),
+      migrated: true,
+      migrationSource: 'schema_6',
+    };
+  }
   if (document.schemaVersion === 5) {
     return {
-      document: migrateSchemaFiveConfig(document),
+      document: migrateSchemaSixConfig(migrateSchemaFiveConfig(document)),
       migrated: true,
       migrationSource: 'schema_5',
     };
   }
   if (document.schemaVersion === 4) {
     return {
-      document: migrateSchemaFiveConfig(migrateSchemaFourConfig(document)),
+      document: migrateSchemaSixConfig(migrateSchemaFiveConfig(migrateSchemaFourConfig(document))),
       migrated: true,
       migrationSource: 'schema_4',
     };
@@ -429,7 +457,7 @@ function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigr
   if (document.schemaVersion === 3) {
     requireLegacyDesktopConfigKeys(document, { terminal: true });
     return {
-      document: migrateSchemaFiveConfig(migrateSchemaFourConfig(migrateSchemaThreeConfig(document))),
+      document: migrateSchemaSixConfig(migrateSchemaFiveConfig(migrateSchemaFourConfig(migrateSchemaThreeConfig(document)))),
       migrated: true,
       migrationSource: 'schema_3',
     };
@@ -442,7 +470,7 @@ function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigr
       terminal: migrateSchemaTwoTerminal(document.terminal),
     };
     return {
-      document: migrateSchemaFiveConfig(migrateSchemaFourConfig(migrateSchemaThreeConfig(schemaThree))),
+      document: migrateSchemaSixConfig(migrateSchemaFiveConfig(migrateSchemaFourConfig(migrateSchemaThreeConfig(schemaThree)))),
       migrated: true,
       migrationSource: 'schema_2',
     };
@@ -455,7 +483,7 @@ function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigr
       terminal: legacyTerminal ? migrateLegacyTerminal(legacyTerminal) : defaultTerminalAppearance(),
     };
     return {
-      document: migrateSchemaFiveConfig(migrateSchemaFourConfig(migrateSchemaThreeConfig(schemaThree))),
+      document: migrateSchemaSixConfig(migrateSchemaFiveConfig(migrateSchemaFourConfig(migrateSchemaThreeConfig(schemaThree)))),
       migrated: true,
       migrationSource: legacyTerminal ? 'schema_1_legacy_terminal' : 'schema_1',
     };
@@ -469,7 +497,7 @@ function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigr
     );
   }
   if (document.schemaVersion !== 0) {
-    throw new ConfigurationError('config.schemaVersion must be 0, 1, 2, 3, 4, 5, or 6');
+    throw new ConfigurationError('config.schemaVersion must be 0, 1, 2, 3, 4, 5, 6, or 7');
   }
 
   requireExactKeys(
@@ -494,7 +522,11 @@ function migrateConfig(raw: unknown, legacyTerminal?: UnknownRecord): ConfigMigr
       ...defaults,
       hub: { endpoint: document.endpoint },
       sessionPrefix: document.sessionPrefix,
-      persistence: { onWindowClose: document.persistSessions ? 'detach' : 'kill' },
+      persistence: {
+        onWindowClose: document.persistSessions ? 'detach' : 'kill',
+        confirmBeforeClosingTab: false,
+        confirmBeforeClosingTerminal: false,
+      },
       workspaces: defaults.workspaces.map((workspace, index) => index === 0
         ? {
             ...workspace,
@@ -526,10 +558,20 @@ export function validateConfig(
   const endpoint = validateEndpoint(hub.endpoint);
   const sessionPrefix = requireIdentifier(document.sessionPrefix, 'config.sessionPrefix', 96);
 
-  const persistence = requireExactKeys(document.persistence, ['onWindowClose'], 'config.persistence');
+  const persistence = requireExactKeys(
+    document.persistence,
+    ['onWindowClose', 'confirmBeforeClosingTab', 'confirmBeforeClosingTerminal'],
+    'config.persistence',
+  );
   const onWindowClose = persistence.onWindowClose;
   if (onWindowClose !== 'detach' && onWindowClose !== 'kill') {
     throw new ConfigurationError('config.persistence.onWindowClose must be detach or kill');
+  }
+  if (typeof persistence.confirmBeforeClosingTab !== 'boolean') {
+    throw new ConfigurationError('config.persistence.confirmBeforeClosingTab must be boolean');
+  }
+  if (typeof persistence.confirmBeforeClosingTerminal !== 'boolean') {
+    throw new ConfigurationError('config.persistence.confirmBeforeClosingTerminal must be boolean');
   }
 
   const terminalDocument = requireExactKeys(
@@ -697,7 +739,11 @@ export function validateConfig(
       schemaVersion: CONFIG_SCHEMA_VERSION,
       hub: { endpoint },
       sessionPrefix,
-      persistence: { onWindowClose },
+      persistence: {
+        onWindowClose,
+        confirmBeforeClosingTab: persistence.confirmBeforeClosingTab,
+        confirmBeforeClosingTerminal: persistence.confirmBeforeClosingTerminal,
+      },
       terminal,
       keybindings,
       launchProfiles,
