@@ -11,20 +11,20 @@ body {
 
 body > header {
   box-sizing: border-box;
-  height: 52px;
-  display: flex;
+  height: 48px;
+  display: grid;
+  grid-template-columns: auto minmax(220px, 560px) auto;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 0 16px;
-  background: linear-gradient(90deg, #111827, #1f2937);
-  border-bottom: 1px solid #374151;
+  gap: 14px;
+  padding: 0 14px;
+  background: #0b1020;
+  border-bottom: 1px solid #1f2937;
   user-select: none;
 }
 
-body > header strong {
-  color: #67e8f9;
-  margin-right: 12px;
+.app-brand {
+  color: #ff4fd8;
+  letter-spacing: 0.01em;
 }
 
 body > header span,
@@ -39,46 +39,64 @@ body > header span,
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 14px;
+  gap: 10px;
 }
 
-.commands-button,
+.command-search-button,
 .settings-button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 8px;
-  color: #cffafe;
+  color: #d1d5db;
   font: inherit;
   font-size: 12px;
-  background: #164e63;
-  border: 1px solid #0e7490;
-  border-radius: 4px;
+  background: #111827;
+  border: 1px solid #334155;
   cursor: pointer;
 }
 
-.commands-button:hover,
-.settings-button:hover {
-  background: #155e75;
+.command-search-button {
+  width: 100%;
+  min-width: 0;
+  justify-content: space-between;
+  padding: 7px 10px;
+  text-align: left;
+  border-radius: 999px;
 }
 
-.commands-button:focus-visible,
+.settings-button {
+  width: 30px;
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+  color: #ffb4ed;
+  border-radius: 999px;
+}
+
+.command-search-button:hover,
+.settings-button:hover {
+  color: #fff1fb;
+  background: #1f2937;
+  border-color: #ff4fd8;
+}
+
+.command-search-button:focus-visible,
 .settings-button:focus-visible,
 .command-palette-close:focus-visible,
 .command-palette-input:focus-visible,
 .command-palette-option:focus-visible {
-  outline: 2px solid #22d3ee;
+  outline: 2px solid #ff4fd8;
   outline-offset: 2px;
 }
 
-.commands-button kbd {
-  padding: 1px 4px;
-  color: #a5f3fc;
+.command-search-button kbd {
+  padding: 1px 6px;
+  color: #ffb4ed;
   font: inherit;
   font-size: 10px;
-  background: #083344;
-  border: 1px solid #0e7490;
-  border-radius: 3px;
+  background: #2a1333;
+  border: 1px solid #8a2c72;
+  border-radius: 999px;
 }
 
 .header-statuses {
@@ -105,7 +123,7 @@ body > header span,
 
 .workspace-shell {
   box-sizing: border-box;
-  height: calc(100vh - 52px);
+  height: calc(100vh - 48px);
   min-width: 0;
   min-height: 0;
   display: grid;
@@ -134,21 +152,21 @@ body > header span,
   width: calc(100% - 8px);
   margin: 0 4px 8px;
   padding: 6px 8px;
-  color: #cffafe;
+  color: #fff1fb;
   font: inherit;
   font-size: 12px;
-  background: #164e63;
-  border: 1px solid #0e7490;
+  background: #3a173f;
+  border: 1px solid #8a2c72;
   border-radius: 4px;
   cursor: pointer;
 }
 
 .workspace-create-button:hover {
-  background: #155e75;
+  background: #4a1f4f;
 }
 
 .workspace-create-button:focus-visible {
-  outline: 2px solid #22d3ee;
+  outline: 2px solid #ff4fd8;
   outline-offset: 2px;
 }
 
@@ -186,14 +204,14 @@ body > header span,
 }
 
 .workspace-button:focus-visible {
-  outline: 2px solid #22d3ee;
+  outline: 2px solid #ff4fd8;
   outline-offset: 1px;
 }
 
 .workspace-button[aria-current="true"] {
-  color: #ecfeff;
-  background: #164e63;
-  border-color: #0e7490;
+  color: #fff1fb;
+  background: #3a173f;
+  border-color: #8a2c72;
 }
 
 .workspace-button:disabled {
@@ -222,7 +240,7 @@ body > header span,
 }
 
 .workspace-git {
-  color: #7dd3fc;
+  color: #ff8ee5;
 }
 
 .workspace-status {
@@ -243,7 +261,7 @@ body > header span,
 .workspace-status[data-state="detached"],
 .workspace-status[data-state="available"],
 .workspace-status[data-state="in_use"] {
-  color: #67e8f9;
+  color: #ff4fd8;
 }
 
 .workspace-status[data-state="error"],
@@ -327,14 +345,14 @@ main {
 }
 
 .workspace-tab[aria-selected="true"] {
-  color: #ecfeff;
-  background: #164e63;
-  border-color: #0e7490;
+  color: #fff1fb;
+  background: #3a173f;
+  border-color: #8a2c72;
 }
 
 .workspace-tab:focus-visible,
 .tab-create-button:focus-visible {
-  outline: 2px solid #22d3ee;
+  outline: 2px solid #ff4fd8;
   outline-offset: -2px;
 }
 
@@ -411,8 +429,8 @@ main {
 
 .layout-separator:hover,
 .layout-separator:focus-visible {
-  background: #0e7490;
-  box-shadow: inset 0 0 0 2px #22d3ee;
+  background: #8a2c72;
+  box-shadow: inset 0 0 0 2px #ff4fd8;
 }
 
 .terminal-pane {
@@ -426,13 +444,13 @@ main {
 }
 
 .terminal-pane[data-active="true"] {
-  border-color: #22d3ee;
-  box-shadow: 0 0 0 1px #22d3ee;
+  border-color: #ff4fd8;
+  box-shadow: 0 0 0 1px #ff4fd8;
 }
 
 .terminal-pane[data-active="true"] .pane-title {
-  color: #ecfeff;
-  background: #164e63;
+  color: #fff1fb;
+  background: #3a173f;
 }
 
 .pane-title {
@@ -484,12 +502,12 @@ main {
 }
 
 .pane-control:hover {
-  color: #ecfeff;
-  background: #155e75;
+  color: #fff1fb;
+  background: #4a1f4f;
 }
 
 .pane-control:focus-visible {
-  outline: 2px solid #22d3ee;
+  outline: 2px solid #ff4fd8;
   outline-offset: 1px;
 }
 
@@ -608,7 +626,7 @@ main {
 
 .command-palette-header h2 {
   margin: 0;
-  color: #ecfeff;
+  color: #fff1fb;
   font-size: 16px;
 }
 
@@ -665,8 +683,8 @@ main {
 }
 
 .command-palette-option[aria-selected="true"] {
-  background: #164e63;
-  border-color: #0e7490;
+  background: #3a173f;
+  border-color: #8a2c72;
 }
 
 .command-palette-option:disabled {
@@ -702,9 +720,9 @@ main {
 
 .command-palette-shortcut {
   padding: 2px 5px;
-  color: #a5f3fc;
-  background: #083344;
-  border: 1px solid #155e75;
+  color: #ffb4ed;
+  background: #2a1333;
+  border: 1px solid #4a1f4f;
   border-radius: 3px;
 }
 
@@ -764,7 +782,7 @@ main {
 .settings-header h2,
 .settings-panel h3 {
   margin: 0;
-  color: #ecfeff;
+  color: #fff1fb;
 }
 
 .settings-header h2 {
@@ -806,15 +824,15 @@ main {
 }
 
 .settings-tab[aria-selected="true"] {
-  color: #cffafe;
-  background: #164e63;
-  border-color: #0e7490;
+  color: #fff1fb;
+  background: #3a173f;
+  border-color: #8a2c72;
 }
 
 .settings-primary-button {
-  color: #ecfeff;
-  background: #0e7490;
-  border-color: #22d3ee;
+  color: #fff1fb;
+  background: #8a2c72;
+  border-color: #ff4fd8;
 }
 
 .settings-tab:focus-visible,
@@ -823,7 +841,7 @@ main {
 .keybinding-action:focus-visible,
 .settings-general input:focus-visible,
 .settings-general select:focus-visible {
-  outline: 2px solid #22d3ee;
+  outline: 2px solid #ff4fd8;
   outline-offset: 2px;
 }
 
@@ -917,7 +935,7 @@ main {
 
 .keybinding-current kbd,
 .keybinding-default kbd {
-  color: #a5f3fc;
+  color: #ffb4ed;
 }
 
 .keybinding-actions {
@@ -999,7 +1017,7 @@ main {
 
 .workspace-dialog-header h2 {
   margin: 0;
-  color: #ecfeff;
+  color: #fff1fb;
   font-size: 18px;
 }
 
@@ -1066,9 +1084,9 @@ main {
 }
 
 .workspace-dialog-primary {
-  color: #ecfeff;
-  background: #0e7490;
-  border-color: #22d3ee;
+  color: #fff1fb;
+  background: #8a2c72;
+  border-color: #ff4fd8;
 }
 
 .workspace-dialog-primary:disabled,
@@ -1081,7 +1099,7 @@ main {
 .workspace-dialog-secondary:focus-visible,
 .workspace-dialog-content input:focus-visible,
 .workspace-dialog-content select:focus-visible {
-  outline: 2px solid #22d3ee;
+  outline: 2px solid #ff4fd8;
   outline-offset: 2px;
 }
 

@@ -524,7 +524,7 @@ export class TerminalPane {
     console.log(`hub_connected ${this.index}`);
     this.supportsExitAttention = welcome.capabilities.includes('session_exit_attention');
     this.sessionModel.beginHubBoot(this.state, welcome.boot_id);
-    this.setStatus(`Connected to ${this.endpoint}`);
+    this.setStatus('Connected to hub');
     const recovering = this.reconnectPolicy.attempts > 0;
     this.activationFallbackUsed = false;
     this.activate(recovering ? 'attach' : this.activationMode);

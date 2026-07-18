@@ -10,19 +10,16 @@
 </head>
 <body>
   <header data-testid="app-header">
-    <div>
-      <strong>NeonCode</strong>
-      <span>Workspace/session cockpit</span>
-    </div>
+    <strong class="app-brand">NeonCode</strong>
+    <button id="commands-button" class="command-search-button" type="button" aria-haspopup="dialog" aria-controls="command-palette" aria-expanded="false" aria-label="Search commands" data-testid="commands-button">
+      <span>Search commands…</span>
+      <kbd id="commands-shortcut">Ctrl+Shift+P</kbd>
+    </button>
     <div class="header-controls">
-      <button id="commands-button" class="commands-button" type="button" aria-haspopup="dialog" aria-controls="command-palette" aria-expanded="false" data-testid="commands-button">
-        <span>Commands</span>
-        <kbd id="commands-shortcut">Ctrl+Shift+P</kbd>
-      </button>
-      <button id="settings-button" class="settings-button" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" aria-expanded="false" data-testid="settings-button">Settings</button>
+      <button id="settings-button" class="settings-button" type="button" aria-haspopup="dialog" aria-controls="settings-dialog" aria-expanded="false" aria-label="Open Settings" title="Settings" data-testid="settings-button">⚙</button>
       <div class="header-statuses">
         <div id="configuration-status" class="configuration-status" data-state="ready" data-testid="configuration-status"></div>
-        <div id="status" class="status" data-testid="hub-status">Connecting to neoncode-hub...</div>
+        <div id="status" class="status" data-testid="hub-status">Connecting to hub…</div>
       </div>
     </div>
   </header>
