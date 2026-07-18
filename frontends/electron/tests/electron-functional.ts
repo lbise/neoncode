@@ -343,6 +343,19 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
     )),
     'app-control capabilities omitted externally eligible pane focus command',
   );
+  assert(
+    !commands.some((command) => (
+      command && typeof command === 'object' && (command as { id?: unknown }).id === 'palette.open'
+    )),
+    'app-control capabilities exposed UI-only command',
+  );
+  let rejectedUiOnlyCommand = false;
+  try {
+    await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', { command: { id: 'palette.open' } });
+  } catch (error) {
+    rejectedUiOnlyCommand = String(error).includes('not externally invocable');
+  }
+  assert(rejectedUiOnlyCommand, 'app-control accepted a UI-only command');
 
   const list = await appControlRequest(configDirectory, 'GET', '/v1/workspaces');
   assert(list.ok === true, 'app-control workspace list did not succeed');
@@ -367,6 +380,29 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
     command: { id: 'pane.focusIndex', args: { index: 0 } },
   });
   await waitForActivePane(page, 'default', 'shell');
+  await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
+    command: {
+      id: 'tab.create',
+      args: {
+        workspaceId: 'default',
+        tabId: 'appctl',
+        title: 'App Control',
+        sessionId: 'appctl-session',
+        launchProfile: 'default-shell',
+      },
+    },
+  });
+  await waitForActivePane(page, 'default', 'appctl-session');
+  await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
+    command: { id: 'tab.rename', args: { workspaceId: 'default', tabId: 'appctl', title: 'Renamed App Control' } },
+  });
+  await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
+    command: { id: 'tab.open', args: { workspaceId: 'default', tabId: 'tab-Development' } },
+  });
+  await waitForActivePane(page, 'default', 'shell');
+  await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
+    command: { id: 'tab.close', args: { workspaceId: 'default', tabId: 'appctl' } },
+  });
 }
 
 async function verifyCockpitKeyboardNavigation(page: Page): Promise<void> {

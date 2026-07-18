@@ -41,6 +41,12 @@ async fn run() -> Result<()> {
     if command == "command" {
         return run_command_execute(&arguments);
     }
+    if command == "tab" || command == "tabs" {
+        return run_tab_command(&arguments);
+    }
+    if command == "pane" || command == "panes" {
+        return run_pane_command(&arguments);
+    }
 
     let token =
         neoncode_hub::load_capability_token().context("load neoncode-hub capability token")?;
@@ -251,8 +257,19 @@ fn run_command_execute(arguments: &[String]) -> Result<()> {
     let id = arguments
         .get(1)
         .ok_or_else(|| anyhow!("usage: neoncode command <command-id> [json-args]"))?;
-    let command = if let Some(args) = arguments.get(2) {
-        json!({ "id": id, "args": serde_json::from_str::<Value>(args).context("parse command JSON args")? })
+    let args = if let Some(args) = arguments.get(2) {
+        Some(serde_json::from_str::<Value>(args).context("parse command JSON args")?)
+    } else {
+        None
+    };
+    let result = app_control_execute_command(id, args)?;
+    println!("{}", serde_json::to_string_pretty(&result)?);
+    Ok(())
+}
+
+fn app_control_execute_command(id: &str, args: Option<Value>) -> Result<Value> {
+    let command = if let Some(args) = args {
+        json!({ "id": id, "args": args })
     } else {
         json!({ "id": id })
     };
@@ -261,7 +278,17 @@ fn run_command_execute(arguments: &[String]) -> Result<()> {
         "/v1/commands/execute",
         Some(json!({ "command": command })),
     )?;
-    println!("{}", serde_json::to_string_pretty(&response["result"])?);
+    Ok(response["result"].clone())
+}
+
+fn require_completed(result: &Value, action: &str) -> Result<()> {
+    let status = result["status"].as_str().unwrap_or("unknown");
+    if status != "completed" {
+        bail!(
+            "{action} failed: {}",
+            result["message"].as_str().unwrap_or(status)
+        );
+    }
     Ok(())
 }
 
@@ -291,17 +318,186 @@ fn run_workspace_command(arguments: &[String]) -> Result<()> {
                 "/v1/workspaces/open",
                 Some(json!({ "workspaceId": workspace_id })),
             )?;
-            let status = response["result"]["status"].as_str().unwrap_or("unknown");
-            if status != "completed" {
-                bail!(
-                    "workspace open failed: {}",
-                    response["result"]["message"].as_str().unwrap_or(status)
-                );
-            }
+            require_completed(&response["result"], "workspace open")?;
             println!("opened workspace {workspace_id}");
             Ok(())
         }
         _ => bail!("unknown workspace command {subcommand:?}; use 'neoncode workspace list|open'"),
+    }
+}
+
+fn run_tab_command(arguments: &[String]) -> Result<()> {
+    let subcommand = arguments.get(1).map(String::as_str).unwrap_or("help");
+    match subcommand {
+        "create" => {
+            if arguments.len() < 7 {
+                bail!(
+                    "usage: neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>"
+                );
+            }
+            let title = arguments[6..].join(" ");
+            let result = app_control_execute_command(
+                "tab.create",
+                Some(json!({
+                    "workspaceId": arguments[2],
+                    "tabId": arguments[3],
+                    "sessionId": arguments[4],
+                    "launchProfile": arguments[5],
+                    "title": title,
+                })),
+            )?;
+            require_completed(&result, "tab create")?;
+            println!("created tab {}", arguments[3]);
+            Ok(())
+        }
+        "open" => {
+            if arguments.len() != 4 {
+                bail!("usage: neoncode tab open <workspace-id> <tab-id>");
+            }
+            let result = app_control_execute_command(
+                "tab.open",
+                Some(json!({ "workspaceId": arguments[2], "tabId": arguments[3] })),
+            )?;
+            require_completed(&result, "tab open")?;
+            println!("opened tab {}", arguments[3]);
+            Ok(())
+        }
+        "rename" => {
+            if arguments.len() < 5 {
+                bail!("usage: neoncode tab rename <workspace-id> <tab-id> <title>");
+            }
+            let title = arguments[4..].join(" ");
+            let result = app_control_execute_command(
+                "tab.rename",
+                Some(json!({ "workspaceId": arguments[2], "tabId": arguments[3], "title": title })),
+            )?;
+            require_completed(&result, "tab rename")?;
+            println!("renamed tab {}", arguments[3]);
+            Ok(())
+        }
+        "move" => {
+            if arguments.len() != 5 {
+                bail!("usage: neoncode tab move <workspace-id> <tab-id> <to-index>");
+            }
+            let to_index = arguments[4]
+                .parse::<u8>()
+                .context("tab move index must be an integer")?;
+            let result = app_control_execute_command(
+                "tab.move",
+                Some(
+                    json!({ "workspaceId": arguments[2], "tabId": arguments[3], "toIndex": to_index }),
+                ),
+            )?;
+            require_completed(&result, "tab move")?;
+            println!("moved tab {}", arguments[3]);
+            Ok(())
+        }
+        "close" => {
+            if arguments.len() != 4 {
+                bail!("usage: neoncode tab close <workspace-id> <tab-id>");
+            }
+            let result = app_control_execute_command(
+                "tab.close",
+                Some(json!({ "workspaceId": arguments[2], "tabId": arguments[3] })),
+            )?;
+            require_completed(&result, "tab close")?;
+            println!("closed tab {}", arguments[3]);
+            Ok(())
+        }
+        _ => bail!(
+            "unknown tab command {subcommand:?}; use 'neoncode tab create|open|rename|move|close'"
+        ),
+    }
+}
+
+fn run_pane_command(arguments: &[String]) -> Result<()> {
+    let subcommand = arguments.get(1).map(String::as_str).unwrap_or("help");
+    match subcommand {
+        "focus" => {
+            if arguments.len() != 3 {
+                bail!("usage: neoncode pane focus <pane-id>");
+            }
+            let result =
+                app_control_execute_command("pane.focus", Some(json!({ "paneId": arguments[2] })))?;
+            require_completed(&result, "pane focus")?;
+            println!("focused pane {}", arguments[2]);
+            Ok(())
+        }
+        "focus-index" | "focusIndex" => {
+            if arguments.len() != 3 {
+                bail!("usage: neoncode pane focus-index <index>");
+            }
+            let index = arguments[2]
+                .parse::<u8>()
+                .context("pane focus index must be an integer")?;
+            let result =
+                app_control_execute_command("pane.focusIndex", Some(json!({ "index": index })))?;
+            require_completed(&result, "pane focus-index")?;
+            println!("focused pane index {index}");
+            Ok(())
+        }
+        "split" => {
+            if arguments.len() < 10 {
+                bail!(
+                    "usage: neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>"
+                );
+            }
+            let title = arguments[9..].join(" ");
+            let result = app_control_execute_command(
+                "pane.split",
+                Some(json!({
+                    "workspaceId": arguments[2],
+                    "paneId": arguments[3],
+                    "sessionId": arguments[4],
+                    "splitId": arguments[5],
+                    "direction": arguments[6],
+                    "position": arguments[7],
+                    "launchProfile": arguments[8],
+                    "title": title,
+                })),
+            )?;
+            require_completed(&result, "pane split")?;
+            println!("split pane {}", arguments[3]);
+            Ok(())
+        }
+        "resize" => {
+            if arguments.len() != 5 {
+                bail!("usage: neoncode pane resize <workspace-id> <split-id> <delta>");
+            }
+            let delta = arguments[4]
+                .parse::<f64>()
+                .context("pane resize delta must be a number")?;
+            let result = app_control_execute_command(
+                "split.resize",
+                Some(
+                    json!({ "workspaceId": arguments[2], "splitId": arguments[3], "delta": delta }),
+                ),
+            )?;
+            require_completed(&result, "pane resize")?;
+            println!("resized split {}", arguments[3]);
+            Ok(())
+        }
+        "close" | "kill" | "restart" => {
+            if arguments.len() != 4 {
+                bail!("usage: neoncode pane {subcommand} <workspace-id> <pane-id>");
+            }
+            let command_id = match subcommand {
+                "close" => "pane.close",
+                "kill" => "pane.kill",
+                "restart" => "pane.restart",
+                _ => unreachable!(),
+            };
+            let result = app_control_execute_command(
+                command_id,
+                Some(json!({ "workspaceId": arguments[2], "paneId": arguments[3] })),
+            )?;
+            require_completed(&result, &format!("pane {subcommand}"))?;
+            println!("{subcommand} pane {}", arguments[3]);
+            Ok(())
+        }
+        _ => bail!(
+            "unknown pane command {subcommand:?}; use 'neoncode pane focus|focus-index|split|resize|close|kill|restart'"
+        ),
     }
 }
 
@@ -361,6 +557,6 @@ fn app_control_request(method: &str, path: &str, body: Option<Value>) -> Result<
 
 fn print_help() {
     println!(
-        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
+        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
     );
 }
