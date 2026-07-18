@@ -68,8 +68,16 @@
           <label>Terminal font family <span class="restart-badge">Restart required</span><input id="settings-font-family" data-testid="settings-font-family" type="text" required /></label>
           <label>Terminal font size <span class="restart-badge">Restart required</span><input id="settings-font-size" data-testid="settings-font-size" type="number" min="8" max="32" step="1" required /></label>
           <label class="settings-checkbox"><input id="settings-cursor-blink" data-testid="settings-cursor-blink" type="checkbox" /> Cursor blink <span class="restart-badge">Restart required</span></label>
-          <label>Background color <span class="restart-badge">Restart required</span><input id="settings-background" data-testid="settings-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
-          <label>Foreground color <span class="restart-badge">Restart required</span><input id="settings-foreground" data-testid="settings-foreground" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
+          <label>Terminal xterm background <span class="restart-badge">Restart required</span><input id="settings-background" data-testid="settings-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
+          <label>Terminal xterm foreground <span class="restart-badge">Restart required</span><input id="settings-foreground" data-testid="settings-foreground" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
+          <h3>Theme</h3>
+          <label>Sidebar background<input id="settings-sidebar-background" data-testid="settings-sidebar-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
+          <label>App background<input id="settings-app-background" data-testid="settings-app-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
+          <label>Terminal surface background<input id="settings-terminal-background" data-testid="settings-terminal-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
+          <label>Text color<input id="settings-text-color" data-testid="settings-text-color" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
+          <label>Primary accent<input id="settings-accent" data-testid="settings-accent" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
+          <label>Secondary accent<input id="settings-secondary-accent" data-testid="settings-secondary-accent" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
+          <label>Tertiary accent<input id="settings-tertiary-accent" data-testid="settings-tertiary-accent" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
         </section>
         <section id="settings-keyboard-panel" class="settings-panel settings-keyboard" role="tabpanel" aria-labelledby="settings-keyboard-tab" hidden>
           <h3>Keyboard shortcuts</h3>

@@ -1,4 +1,5 @@
 import type {
+  AppTheme,
   DesktopLaunchProfile,
   DesktopSettings,
   DesktopWorkspaceConfig,
@@ -192,6 +193,19 @@ function parseLaunchProfiles(value: unknown): Record<string, DesktopLaunchProfil
   }));
 }
 
+function parseAppTheme(value: unknown): AppTheme {
+  const theme = requiredRecord(value, 'app theme');
+  return {
+    sidebarBackground: requiredString(theme.sidebarBackground, 'app theme sidebarBackground'),
+    appBackground: requiredString(theme.appBackground, 'app theme appBackground'),
+    terminalBackground: requiredString(theme.terminalBackground, 'app theme terminalBackground'),
+    textColor: requiredString(theme.textColor, 'app theme textColor'),
+    accent: requiredString(theme.accent, 'app theme accent'),
+    secondaryAccent: requiredString(theme.secondaryAccent, 'app theme secondaryAccent'),
+    tertiaryAccent: requiredString(theme.tertiaryAccent, 'app theme tertiaryAccent'),
+  };
+}
+
 function parseTerminalAppearance(value: unknown): TerminalAppearance {
   const appearance = requiredRecord(value, 'terminal appearance');
   const theme = requiredRecord(appearance.theme, 'terminal theme');
@@ -356,6 +370,7 @@ export function createAppConfig(bootstrap: unknown = {}): RendererAppConfig {
     confirmBeforeClosingTab,
     confirmBeforeClosingTerminal,
     terminal: source.terminal ? parseTerminalAppearance(source.terminal) : null,
+    appTheme: source.appTheme ? parseAppTheme(source.appTheme) : null,
     keybindingOverrides,
     testMode: source.testMode === true,
     activeWorkspaceId: typeof source.activeWorkspaceId === 'string' && source.activeWorkspaceId
@@ -656,6 +671,7 @@ export class NeonCodeApp {
     });
     this.updateCommandsShortcutLabel();
     this.document.addEventListener('keydown', this.onDocumentKeyDown, true);
+    this.applyAppTheme();
     this.syncPublicConfiguration();
     this.workspaceSessionStates = new Map(
       this.config.workspaces.flatMap((workspace) => workspace.panes.map((pane) => [
@@ -695,6 +711,7 @@ export class NeonCodeApp {
       confirmBeforeClosingTab: this.config.confirmBeforeClosingTab,
       confirmBeforeClosingTerminal: this.config.confirmBeforeClosingTerminal,
       terminal: this.config.terminal,
+      appTheme: this.config.appTheme,
       activeWorkspaceId: this.activeWorkspaceId ?? this.config.activeWorkspaceId,
       workspaces: this.config.workspaces.map((workspace) => ({
         id: workspace.id,
@@ -1084,8 +1101,23 @@ export class NeonCodeApp {
   applySavedSettings(settings: DesktopSettings): void {
     this.config.confirmBeforeClosingTab = settings.persistence.confirmBeforeClosingTab;
     this.config.confirmBeforeClosingTerminal = settings.persistence.confirmBeforeClosingTerminal;
+    this.config.appTheme = { ...settings.appTheme };
+    this.applyAppTheme();
     this.applySavedKeybindings(settings.keybindings.overrides);
     this.syncPublicConfiguration();
+  }
+
+  applyAppTheme(): void {
+    const theme = this.config.appTheme;
+    if (!theme) return;
+    const root = this.document.documentElement;
+    root.style.setProperty('--nc-sidebar-bg', theme.sidebarBackground);
+    root.style.setProperty('--nc-app-bg', theme.appBackground);
+    root.style.setProperty('--nc-terminal-bg', theme.terminalBackground);
+    root.style.setProperty('--nc-text', theme.textColor);
+    root.style.setProperty('--nc-accent', theme.accent);
+    root.style.setProperty('--nc-secondary-accent', theme.secondaryAccent);
+    root.style.setProperty('--nc-tertiary-accent', theme.tertiaryAccent);
   }
 
   applySavedKeybindings(overrides: readonly KeybindingOverride[]): void {

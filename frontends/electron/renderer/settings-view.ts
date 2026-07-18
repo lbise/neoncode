@@ -85,6 +85,13 @@ export class SettingsView {
   private readonly cursorBlink: HTMLInputElement;
   private readonly background: HTMLInputElement;
   private readonly foreground: HTMLInputElement;
+  private readonly sidebarBackground: HTMLInputElement;
+  private readonly appBackground: HTMLInputElement;
+  private readonly terminalBackground: HTMLInputElement;
+  private readonly textColor: HTMLInputElement;
+  private readonly accent: HTMLInputElement;
+  private readonly secondaryAccent: HTMLInputElement;
+  private readonly tertiaryAccent: HTMLInputElement;
   private snapshot: SettingsSnapshot | null = null;
   private draftOverrides: KeybindingOverride[] = [];
   private recordingCommand: CommandInvocation | null = null;
@@ -132,6 +139,13 @@ export class SettingsView {
     this.cursorBlink = requiredElement<HTMLInputElement>(documentRef, 'settings-cursor-blink');
     this.background = requiredElement<HTMLInputElement>(documentRef, 'settings-background');
     this.foreground = requiredElement<HTMLInputElement>(documentRef, 'settings-foreground');
+    this.sidebarBackground = requiredElement<HTMLInputElement>(documentRef, 'settings-sidebar-background');
+    this.appBackground = requiredElement<HTMLInputElement>(documentRef, 'settings-app-background');
+    this.terminalBackground = requiredElement<HTMLInputElement>(documentRef, 'settings-terminal-background');
+    this.textColor = requiredElement<HTMLInputElement>(documentRef, 'settings-text-color');
+    this.accent = requiredElement<HTMLInputElement>(documentRef, 'settings-accent');
+    this.secondaryAccent = requiredElement<HTMLInputElement>(documentRef, 'settings-secondary-accent');
+    this.tertiaryAccent = requiredElement<HTMLInputElement>(documentRef, 'settings-tertiary-accent');
 
     this.generalTab.addEventListener('click', () => this.showPanel('general'));
     this.keyboardTab.addEventListener('click', () => this.showPanel('keyboard'));
@@ -236,6 +250,13 @@ export class SettingsView {
     this.cursorBlink.checked = settings.terminal.cursorBlink;
     this.background.value = settings.terminal.theme.background;
     this.foreground.value = settings.terminal.theme.foreground;
+    this.sidebarBackground.value = settings.appTheme.sidebarBackground;
+    this.appBackground.value = settings.appTheme.appBackground;
+    this.terminalBackground.value = settings.appTheme.terminalBackground;
+    this.textColor.value = settings.appTheme.textColor;
+    this.accent.value = settings.appTheme.accent;
+    this.secondaryAccent.value = settings.appTheme.secondaryAccent;
+    this.tertiaryAccent.value = settings.appTheme.tertiaryAccent;
   }
 
   private currentSettings(): DesktopSettings {
@@ -260,6 +281,15 @@ export class SettingsView {
           background: this.background.value,
           foreground: this.foreground.value,
         },
+      },
+      appTheme: {
+        sidebarBackground: this.sidebarBackground.value,
+        appBackground: this.appBackground.value,
+        terminalBackground: this.terminalBackground.value,
+        textColor: this.textColor.value,
+        accent: this.accent.value,
+        secondaryAccent: this.secondaryAccent.value,
+        tertiaryAccent: this.tertiaryAccent.value,
       },
       keybindings: { overrides: structuredClone(this.draftOverrides) },
     };

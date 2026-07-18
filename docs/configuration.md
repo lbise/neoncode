@@ -11,15 +11,15 @@ NeonCode stores user-level Electron configuration and app-owned window state und
 
 Electron main owns all filesystem access. The sandboxed renderer receives only a validated bootstrap object through the preload bridge. The hub capability token is never written to these files.
 
-Configuration is read at startup. The keyboard-accessible Settings dialog edits the supported General and Keyboard fields through validated main-process IPC. The workspace dialog creates, renames, and deletes durable workspace definitions without a restart. Keybinding overrides and close-confirmation toggles apply immediately after Save; endpoint and terminal appearance are explicitly restart-required in this slice. Session prefix and app-window close policy remain JSON-only advanced settings rather than primary UI controls.
+Configuration is read at startup. The keyboard-accessible Settings dialog edits the supported General and Keyboard fields through validated main-process IPC. The workspace dialog creates, renames, and deletes durable workspace definitions without a restart. Keybinding overrides, close-confirmation toggles, and app theme colors apply immediately after Save; endpoint and xterm terminal appearance are explicitly restart-required in this slice. Session prefix and app-window close policy remain JSON-only advanced settings rather than primary UI controls.
 
-## Version 7 schema
+## Version 8 schema
 
 The first launch creates:
 
 ```json
 {
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "hub": {
     "endpoint": "ws://127.0.0.1:44777/ws"
   },
@@ -56,6 +56,15 @@ The first launch creates:
       "brightCyan": "#61d6d6",
       "brightWhite": "#f2f2f2"
     }
+  },
+  "appTheme": {
+    "sidebarBackground": "#0f172a",
+    "appBackground": "#0b1020",
+    "terminalBackground": "#0c0c0c",
+    "textColor": "#d1d5db",
+    "accent": "#ff4fd8",
+    "secondaryAccent": "#8a2c72",
+    "tertiaryAccent": "#3a173f"
   },
   "keybindings": {
     "overrides": []
@@ -94,7 +103,7 @@ The first launch creates:
 }
 ```
 
-Version 7 supports 1–16 named workspaces and at most 64 configured sessions in total. Each workspace has 1–8 sessions and a simple grid layout whose `columns` value is between 1 and that workspace's session count. The sidebar switches workspaces immediately: the old workspace detaches, the selected workspace starts or reattaches, and the active workspace is restored after relaunch.
+Version 8 supports 1–16 named workspaces and at most 64 configured sessions in total. Each workspace has 1–8 sessions and a simple grid layout whose `columns` value is between 1 and that workspace's session count. It also stores simple app theme colors for sidebar background, app background, terminal surface background, text, primary bright-pink accent, and two secondary accents. The sidebar switches workspaces immediately: the old workspace detaches, the selected workspace starts or reattaches, and the active workspace is restored after relaunch.
 
 Session IDs are currently unique across the complete configuration. A hub session ID is:
 
@@ -106,7 +115,7 @@ Changing/removing a configured ID does not kill an already detached hub session 
 
 ## Settings and keybindings
 
-Open Settings with the visible header button or run **Open Settings** from the command palette; no Settings shortcut is required. The General section edits the loopback hub endpoint, optional tab/terminal close confirmations, terminal font family/size, cursor blink, and terminal background/foreground colors. Close-confirmation toggles and keybindings apply immediately after Save; endpoint and terminal appearance take effect after restart. Session prefix and app-window close policy are advanced JSON settings preserved by Settings saves but not exposed in the primary UI. Environment overrides remain process-local and are never copied into `config.json` by a Settings save.
+Open Settings with the title-bar cog or run **Open Settings** from the command palette; no Settings shortcut is required. The General section edits the loopback hub endpoint, optional tab/terminal close confirmations, terminal font family/size, cursor blink, xterm terminal background/foreground colors, and simple app theme colors. Close-confirmation toggles, app theme colors, and keybindings apply immediately after Save; endpoint and xterm terminal appearance take effect after restart. Session prefix and app-window close policy are advanced JSON settings preserved by Settings saves but not exposed in the primary UI. Environment overrides remain process-local and are never copied into `config.json` by a Settings save.
 
 `keybindings.overrides` contains at most 64 entries. Each entry identifies one exact typed command invocation and either supplies one physical `KeyboardEvent.code` combination with exact `altKey`, `ctrlKey`, `metaKey`, and `shiftKey` booleans, or uses `null` to unbind it:
 
@@ -252,6 +261,7 @@ Current validation includes:
 - 1–16 workspaces, 1–8 sessions per workspace, at most 64 sessions total, and valid grid column counts;
 - bounded commands, arguments, working directories, titles, and file sizes;
 - `detach` or `kill` app-window close policy plus boolean tab/terminal close-confirmation toggles;
+- seven bounded app theme colors, applied through named CSS custom properties;
 - at most 64 strict keybinding overrides, validated command invocations, physical key codes, safe modifiers, terminal-reserved combinations, and conflict-free effective bindings.
 
 On every valid load, NeonCode updates `config.json.bak`. If `config.json` later becomes malformed, NeonCode:
@@ -262,7 +272,7 @@ On every valid load, NeonCode updates `config.json.bak`. If `config.json` later 
 
 An unsupported future schema is preserved and is not downgraded automatically. If neither the primary nor backup is usable, NeonCode opens with a visible configuration error and launches no terminal sessions.
 
-Known pre-schema NeonCode files containing only a `terminal` object are preserved as `config.json.pre-migration-<timestamp>` and their compatible font, cursor, and color-table settings are imported into version 6. Schema versions 0 through 5 are migrated automatically; schema 4 gains an empty keybinding override list. Schema 5 preserves workspace/session IDs, names, layouts, and profile references, derives `defaultLaunchProfile` from each workspace's first session, and derives `path` only when all referenced profiles have the same non-null `cwd`; otherwise `path` is `null`. Version 2 positional `ansi` arrays are converted losslessly to named colors; version 3 top-level sessions become the `default` workspace without changing their IDs. When a preserved terminal-only file is available, schema 1 imports its appearance while retaining current pane/profile edits; otherwise it receives the default appearance.
+Known pre-schema NeonCode files containing only a `terminal` object are preserved as `config.json.pre-migration-<timestamp>` and their compatible font, cursor, and color-table settings are imported into the current schema. Schema versions 0 through 7 are migrated automatically; schema 4 gains an empty keybinding override list. Schema 5 preserves workspace/session IDs, names, layouts, and profile references, derives `defaultLaunchProfile` from each workspace's first session, and derives `path` only when all referenced profiles have the same non-null `cwd`; otherwise `path` is `null`. Schema 6 adds close-confirmation booleans defaulting to false; schema 7 adds default app theme colors. Version 2 positional `ansi` arrays are converted losslessly to named colors; version 3 top-level sessions become the `default` workspace without changing their IDs. When a preserved terminal-only file is available, schema 1 imports its appearance while retaining current pane/profile edits; otherwise it receives the default appearance.
 
 App-owned state schema 3 stores content width/height, the active workspace ID, and a `workspaceLayouts` record. Each record value is a strict frontend-owned tab/split tree: tabs have a stable ID/title/focused pane, split branches have a stable ID/direction/ratio/two children, and pane leaves have a stable pane ID plus session key. Layout state is separate from configuration and does not redefine hub session identity.
 
@@ -303,4 +313,4 @@ For development, `./dev hub` and `./dev app` still exercise the explicit two-pro
 10. Close the created tab once with Detach and once with Kill; verify the last-tab guard.
 11. Reopen Settings and exercise Unbind, Reset, conflict feedback, recorder Escape, and dialog Escape focus restoration.
 
-External workspace files, live application of terminal appearance, font discovery, and CLI app-control transport are later milestones.
+External workspace files, live application of xterm terminal appearance, font discovery, and CLI app-control transport are later milestones.

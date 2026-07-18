@@ -78,9 +78,9 @@ Design direction: Hallmark minimal/system redesign. Preserve keyboard-first beha
 ### Priority 3: settings as workspace + simple themes
 
 - [ ] Replace modal Settings with a special app-owned Settings workspace/tab surface so settings behaves like normal workspace content instead of blocking the terminal.
-- [ ] Add simple theme settings: sidebar background, terminal/app background, text color, primary bright-pink accent, and up to two secondary accents.
-- [ ] Apply the theme through named CSS custom properties; avoid ad hoc colors.
-- [ ] Style xterm scrollbars to match the application background/theme.
+- [x] Add simple theme settings: sidebar background, terminal/app background, text color, primary bright-pink accent, and up to two secondary accents.
+- [x] Apply the theme through named CSS custom properties; avoid ad hoc colors.
+- [x] Style xterm scrollbars to match the application background/theme.
 - [ ] Keep advanced/internal settings hidden by default; hub endpoint and session prefix should not be normal user-editable fields.
 
 ### Priority 4: dynamic configuration and keybinding targets

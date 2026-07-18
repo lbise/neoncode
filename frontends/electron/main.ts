@@ -33,6 +33,7 @@ import type {
   SaveWorkspaceCatalogRequest,
   SettingsSnapshot,
   TerminalAppearance,
+  AppTheme,
   WorkspaceCatalogSnapshot,
 } from './shared/types';
 import type { WorkspaceLayoutState } from './shared/layout-model';
@@ -132,6 +133,10 @@ function cloneTerminalAppearance(appearance: TerminalAppearance): TerminalAppear
   };
 }
 
+function cloneAppTheme(theme: AppTheme): AppTheme {
+  return { ...theme };
+}
+
 function rendererWorkspaces(): RendererBootstrapWorkspace[] {
   const config = bootstrapResult.config;
   if (!config) return [];
@@ -182,6 +187,7 @@ function rendererConfig(): RendererBootstrapConfig {
     confirmBeforeClosingTab: config?.persistence.confirmBeforeClosingTab ?? false,
     confirmBeforeClosingTerminal: config?.persistence.confirmBeforeClosingTerminal ?? false,
     terminal: config ? cloneTerminalAppearance(config.terminal) : null,
+    appTheme: config ? cloneAppTheme(config.appTheme) : null,
     keybindingOverrides: config ? structuredClone(config.keybindings.overrides) : [],
     activeWorkspaceId,
     workspaceLayouts: rendererWorkspaceLayouts(),

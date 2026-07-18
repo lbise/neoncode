@@ -364,6 +364,8 @@ async function verifySettingsUi(page: Page): Promise<void> {
 
   const generalTab = page.getByTestId('settings-general-tab');
   assert(await generalTab.evaluate((element) => element === document.activeElement), 'Settings did not receive keyboard focus');
+  await page.getByTestId('settings-accent').fill('#ff66dd');
+  await generalTab.focus();
   await page.keyboard.press('Tab');
   await page.keyboard.press('Enter');
   assert(await page.getByTestId('settings-keyboard-tab').getAttribute('aria-selected') === 'true', 'Keyboard section was not keyboard selectable');
@@ -396,6 +398,10 @@ async function verifySettingsUi(page: Page): Promise<void> {
   await save.focus();
   await page.keyboard.press('Enter');
   await overlay.waitFor({ state: 'hidden', timeout });
+  assert(
+    await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--nc-accent').trim()) === '#ff66dd',
+    'saved app theme accent was not applied immediately',
+  );
   await waitForActivePane(page, 'default', 'tasks');
 
   await page.keyboard.press('F8');

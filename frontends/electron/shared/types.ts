@@ -178,6 +178,16 @@ export interface TerminalAppearance {
   theme: TerminalTheme;
 }
 
+export interface AppTheme {
+  sidebarBackground: string;
+  appBackground: string;
+  terminalBackground: string;
+  textColor: string;
+  accent: string;
+  secondaryAccent: string;
+  tertiaryAccent: string;
+}
+
 export interface LaunchProfile {
   type?: 'process';
   command: string;
@@ -213,6 +223,7 @@ export interface DesktopSettings {
     confirmBeforeClosingTerminal: boolean;
   };
   terminal: TerminalAppearance;
+  appTheme: AppTheme;
   keybindings: KeybindingSettings;
 }
 
@@ -292,6 +303,7 @@ export interface RendererBootstrapConfig {
   confirmBeforeClosingTab: boolean;
   confirmBeforeClosingTerminal: boolean;
   terminal: TerminalAppearance | null;
+  appTheme: AppTheme | null;
   keybindingOverrides: KeybindingOverride[];
   activeWorkspaceId: string | null;
   workspaceLayouts: Record<string, WorkspaceLayoutState>;
@@ -340,6 +352,7 @@ export interface RendererAppConfig {
   confirmBeforeClosingTab: boolean;
   confirmBeforeClosingTerminal: boolean;
   terminal: TerminalAppearance | null;
+  appTheme: AppTheme | null;
   keybindingOverrides: KeybindingOverride[];
   testMode: boolean;
   activeWorkspaceId: string | null;
@@ -381,6 +394,7 @@ export interface PublicConfiguration {
   persistencePolicy: string;
   confirmBeforeClosingTab?: boolean;
   confirmBeforeClosingTerminal?: boolean;
+  appTheme?: AppTheme | null;
   sessions?: unknown[];
   activeWorkspaceId?: string | null;
   [key: string]: unknown;

@@ -119,9 +119,10 @@ function nestedWorkspaceLayout(depth: number): WorkspaceLayoutState {
 function schemaThreeConfig(): LegacyConfigFixture {
   const current = defaultConfig();
   const workspace = workspaceAt(current);
-  const { workspaces, keybindings, ...legacy } = current;
+  const { workspaces, keybindings, appTheme, ...legacy } = current;
   void workspaces;
   void keybindings;
+  void appTheme;
   return {
     ...legacy,
     schemaVersion: 3,
@@ -181,7 +182,7 @@ function testUnversionedTerminalConfigMigration() {
     assert.equal(result.diagnostics.configStatus, 'migrated');
     assert.equal(loadedConfig(result).terminal.fontFamily, 'FiraCode Nerd Font Mono');
     assert.equal(loadedConfig(result).terminal.theme.background, '#0c0c0c');
-    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 7);
+    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 8);
     assert(result.diagnostics.warnings.some((warning) => warning.includes('were imported')));
     const preserved = fs.readdirSync(directory)
       .find((name) => name.startsWith('config.json.pre-migration-'));
@@ -215,7 +216,7 @@ function testSchemaTwoColorArrayMigration() {
     fs.writeFileSync(store.configPath, `${JSON.stringify(schemaTwo)}\n`);
 
     const result = store.load({});
-    assert.equal(loadedConfig(result).schemaVersion, 7);
+    assert.equal(loadedConfig(result).schemaVersion, 8);
     assert.equal(loadedConfig(result).terminal.theme.purple, named.purple);
     assert.equal(loadedConfig(result).terminal.theme.brightPurple, named.brightPurple);
     assert.equal(loadedConfig(result).terminal.theme.name, 'NeonCode Default');
@@ -236,7 +237,7 @@ function testSchemaOneImportsPreservedLegacyAppearance() {
     }));
 
     const result = store.load({});
-    assert.equal(loadedConfig(result).schemaVersion, 7);
+    assert.equal(loadedConfig(result).schemaVersion, 8);
     assert.equal(sessionAt(workspaceAt(loadedConfig(result))).title, 'Keep Me');
     assert.equal(loadedConfig(result).terminal.fontFamily, 'Legacy Font');
     assert.equal(loadedConfig(result).terminal.fontSize, 17);
@@ -256,13 +257,13 @@ function testLegacyMigration() {
     }));
     const result = store.load({});
     assert.equal(result.diagnostics.configStatus, 'migrated');
-    assert.equal(loadedConfig(result).schemaVersion, 7);
+    assert.equal(loadedConfig(result).schemaVersion, 8);
     assert.equal(loadedConfig(result).hub.endpoint, 'ws://127.0.0.1:45000/ws');
     assert.equal(loadedConfig(result).persistence.onWindowClose, 'kill');
     assert.equal(loadedConfig(result).persistence.confirmBeforeClosingTab, false);
     assert.equal(loadedConfig(result).persistence.confirmBeforeClosingTerminal, false);
     assert.equal(workspaceAt(loadedConfig(result)).sessions.length, 1);
-    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 7);
+    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 8);
   });
 }
 
@@ -342,12 +343,13 @@ function testSchemaFourKeybindingMigration() {
   withStore((store, directory) => {
     fs.mkdirSync(directory, { recursive: true });
     const current = defaultConfig();
-    const { keybindings, ...schemaFourConfig } = current;
+    const { keybindings, appTheme, ...schemaFourConfig } = current;
     const schemaFour: Record<string, unknown> = {
       ...schemaFourConfig,
       persistence: { onWindowClose: current.persistence.onWindowClose },
     };
     void keybindings;
+    void appTheme;
     schemaFour.workspaces = current.workspaces.map((workspace) => {
       const { path: workspacePath, defaultLaunchProfile, ...legacyWorkspace } = workspace;
       void workspacePath;
@@ -357,9 +359,9 @@ function testSchemaFourKeybindingMigration() {
     fs.writeFileSync(store.configPath, `${JSON.stringify({ ...schemaFour, schemaVersion: 4 })}\n`);
     const result = store.load({});
     assert.equal(result.diagnostics.configStatus, 'migrated');
-    assert.equal(loadedConfig(result).schemaVersion, 7);
+    assert.equal(loadedConfig(result).schemaVersion, 8);
     assert.deepEqual(loadedConfig(result).keybindings, { overrides: [] });
-    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 7);
+    assert.equal(readJson<DesktopConfig>(store.configPath).schemaVersion, 8);
     assert(fs.readdirSync(directory).some((name) => name.startsWith('config.json.pre-migration-')));
   });
 }
@@ -383,6 +385,7 @@ function testSettingsSaveMergesStoredConfigAndBacksUp() {
     assert.equal(settings.sessionPrefix, created.sessionPrefix);
     settings.sessionPrefix = 'saved-prefix';
     settings.terminal.fontSize = 18;
+    settings.appTheme.accent = '#ff66dd';
     settings.keybindings.overrides = [{
       command: { id: 'settings.open' },
       binding: {
@@ -392,6 +395,7 @@ function testSettingsSaveMergesStoredConfigAndBacksUp() {
     const saved = store.saveSettings(settings);
     assert.equal(saved.sessionPrefix, 'saved-prefix');
     assert.equal(saved.terminal.fontSize, 18);
+    assert.equal(saved.appTheme.accent, '#ff66dd');
     assert.deepEqual(saved.launchProfiles, previous.launchProfiles);
     assert.deepEqual(saved.workspaces, previous.workspaces);
     assert.equal(readJson<DesktopConfig>(store.configBackupPath).sessionPrefix, created.sessionPrefix);
@@ -440,8 +444,10 @@ function testSettingsSaveValidationAndAtomicFailure() {
 }
 
 function schemaFiveConfig(config = defaultConfig()): unknown {
+  const { appTheme, ...legacyConfig } = config;
+  void appTheme;
   return {
-    ...config,
+    ...legacyConfig,
     schemaVersion: 5,
     persistence: { onWindowClose: config.persistence.onWindowClose },
     workspaces: config.workspaces.map((workspace) => {
@@ -469,7 +475,7 @@ function testSchemaFiveWorkspaceMigration() {
   workspace.sessions[1]!.launchProfile = 'second';
   const migrated = validateConfig(schemaFiveConfig(config));
   assert.equal(migrated.migrationSource, 'schema_5');
-  assert.equal(migrated.value.schemaVersion, 7);
+  assert.equal(migrated.value.schemaVersion, 8);
   assert.equal(workspaceAt(migrated.value).id, 'preserved-id');
   assert.equal(workspaceAt(migrated.value).name, 'Preserved Name');
   assert.equal(workspaceAt(migrated.value).defaultLaunchProfile, 'first');
@@ -580,7 +586,7 @@ function testSchemaThreeWorkspaceMigration() {
   const legacy = schemaThreeConfig();
   legacy.sessions[0]!.title = 'Migrated Shell';
   const result = validateConfig(legacy);
-  assert.equal(result.value.schemaVersion, 7);
+  assert.equal(result.value.schemaVersion, 8);
   assert.equal(workspaceAt(result.value).id, 'default');
   assert.equal(workspaceAt(result.value).layout.columns, 2);
   assert.equal(sessionAt(workspaceAt(result.value)).title, 'Migrated Shell');

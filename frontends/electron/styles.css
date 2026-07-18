@@ -1,11 +1,21 @@
+:root {
+  --nc-sidebar-bg: #0f172a;
+  --nc-app-bg: #0b1020;
+  --nc-terminal-bg: #0c0c0c;
+  --nc-text: #d1d5db;
+  --nc-accent: #ff4fd8;
+  --nc-secondary-accent: #8a2c72;
+  --nc-tertiary-accent: #3a173f;
+}
+
 html,
 body {
   margin: 0;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #0c0c0c;
-  color: #d1d5db;
+  background: var(--nc-terminal-bg);
+  color: var(--nc-text);
   font-family: "Segoe UI", system-ui, sans-serif;
 }
 
@@ -17,13 +27,13 @@ body > header {
   align-items: center;
   gap: 14px;
   padding: 0 14px;
-  background: #0b1020;
+  background: var(--nc-app-bg);
   border-bottom: 1px solid #1f2937;
   user-select: none;
 }
 
 .app-brand {
-  color: #ff4fd8;
+  color: var(--nc-accent);
   letter-spacing: 0.01em;
 }
 
@@ -47,7 +57,7 @@ body > header span,
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #d1d5db;
+  color: var(--nc-text);
   font: inherit;
   font-size: 12px;
   background: #111827;
@@ -77,7 +87,7 @@ body > header span,
 .settings-button:hover {
   color: #fff1fb;
   background: #1f2937;
-  border-color: #ff4fd8;
+  border-color: var(--nc-accent);
 }
 
 .command-search-button:focus-visible,
@@ -85,7 +95,7 @@ body > header span,
 .command-palette-close:focus-visible,
 .command-palette-input:focus-visible,
 .command-palette-option:focus-visible {
-  outline: 2px solid #ff4fd8;
+  outline: 2px solid var(--nc-accent);
   outline-offset: 2px;
 }
 
@@ -95,7 +105,7 @@ body > header span,
   font: inherit;
   font-size: 10px;
   background: #2a1333;
-  border: 1px solid #8a2c72;
+  border: 1px solid var(--nc-secondary-accent);
   border-radius: 999px;
 }
 
@@ -134,7 +144,7 @@ body > header span,
 .workspace-sidebar {
   min-width: 0;
   padding: 10px 8px;
-  background: #0f172a;
+  background: var(--nc-sidebar-bg);
   border-right: 1px solid #374151;
   user-select: none;
 }
@@ -155,8 +165,8 @@ body > header span,
   color: #fff1fb;
   font: inherit;
   font-size: 12px;
-  background: #3a173f;
-  border: 1px solid #8a2c72;
+  background: var(--nc-tertiary-accent);
+  border: 1px solid var(--nc-secondary-accent);
   border-radius: 4px;
   cursor: pointer;
 }
@@ -166,7 +176,7 @@ body > header span,
 }
 
 .workspace-create-button:focus-visible {
-  outline: 2px solid #ff4fd8;
+  outline: 2px solid var(--nc-accent);
   outline-offset: 2px;
 }
 
@@ -204,14 +214,14 @@ body > header span,
 }
 
 .workspace-button:focus-visible {
-  outline: 2px solid #ff4fd8;
+  outline: 2px solid var(--nc-accent);
   outline-offset: 1px;
 }
 
 .workspace-button[aria-current="true"] {
   color: #fff1fb;
-  background: #3a173f;
-  border-color: #8a2c72;
+  background: var(--nc-tertiary-accent);
+  border-color: var(--nc-secondary-accent);
 }
 
 .workspace-button:disabled {
@@ -265,7 +275,7 @@ body > header span,
 .workspace-status[data-state="detached"],
 .workspace-status[data-state="available"],
 .workspace-status[data-state="in_use"] {
-  color: #ff4fd8;
+  color: var(--nc-accent);
 }
 
 .workspace-status[data-state="error"],
@@ -303,12 +313,12 @@ body > header span,
 
 .workspace-action-menu button:hover {
   color: #fff1fb;
-  background: #3a173f;
-  border-color: #8a2c72;
+  background: var(--nc-tertiary-accent);
+  border-color: var(--nc-secondary-accent);
 }
 
 .workspace-action-menu button:focus-visible {
-  outline: 2px solid #ff4fd8;
+  outline: 2px solid var(--nc-accent);
   outline-offset: 1px;
 }
 
@@ -344,7 +354,7 @@ main {
   min-height: 0;
   display: grid;
   padding: 0;
-  background: #0c0c0c;
+  background: var(--nc-terminal-bg);
 }
 
 .terminal-workspace {
@@ -419,13 +429,13 @@ main {
 
 .workspace-tab[aria-selected="true"] {
   color: #fff1fb;
-  background: #3a173f;
-  border-color: #8a2c72;
+  background: var(--nc-tertiary-accent);
+  border-color: var(--nc-secondary-accent);
 }
 
 .workspace-tab:focus-visible,
 .workspace-tab-close:focus-visible {
-  outline: 2px solid #ff4fd8;
+  outline: 2px solid var(--nc-accent);
   outline-offset: 1px;
 }
 
@@ -502,8 +512,8 @@ main {
 
 .layout-separator:hover,
 .layout-separator:focus-visible {
-  background: #8a2c72;
-  box-shadow: inset 0 0 0 2px #ff4fd8;
+  background: var(--nc-secondary-accent);
+  box-shadow: inset 0 0 0 2px var(--nc-accent);
 }
 
 .terminal-pane {
@@ -513,12 +523,12 @@ main {
   min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr);
-  background: #0c0c0c;
+  background: var(--nc-terminal-bg);
   border: 0;
 }
 
 .terminal-pane[data-active="true"] {
-  box-shadow: inset 0 0 0 1px #ff4fd8;
+  box-shadow: inset 0 0 0 1px var(--nc-accent);
 }
 
 .terminal-pane[data-active="true"] .pane-title {
@@ -575,7 +585,7 @@ main {
 }
 
 .pane-control:focus-visible {
-  outline: 2px solid #ff4fd8;
+  outline: 2px solid var(--nc-accent);
   outline-offset: 1px;
 }
 
@@ -606,7 +616,7 @@ main {
   gap: 3px;
   min-width: 76px;
   padding: 4px;
-  background: #0f172a;
+  background: var(--nc-sidebar-bg);
   border: 1px solid #475569;
   border-radius: 4px;
   box-shadow: 0 8px 20px rgb(0 0 0 / 55%);
@@ -655,6 +665,33 @@ main {
   border-radius: 0;
 }
 
+.xterm-viewport::-webkit-scrollbar,
+.command-palette-results::-webkit-scrollbar,
+.settings-content::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.xterm-viewport::-webkit-scrollbar-track,
+.command-palette-results::-webkit-scrollbar-track,
+.settings-content::-webkit-scrollbar-track {
+  background: var(--nc-terminal-bg);
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb,
+.command-palette-results::-webkit-scrollbar-thumb,
+.settings-content::-webkit-scrollbar-thumb {
+  background: var(--nc-secondary-accent);
+  border: 2px solid var(--nc-terminal-bg);
+  border-radius: 999px;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb:hover,
+.command-palette-results::-webkit-scrollbar-thumb:hover,
+.settings-content::-webkit-scrollbar-thumb:hover {
+  background: var(--nc-accent);
+}
+
 .command-palette-overlay[hidden] {
   display: none;
 }
@@ -679,7 +716,7 @@ main {
   gap: 8px;
   padding: 14px;
   color: #e2e8f0;
-  background: #0f172a;
+  background: var(--nc-sidebar-bg);
   border: 1px solid #475569;
   border-radius: 8px;
   box-shadow: 0 18px 54px rgb(0 0 0 / 55%);
@@ -751,8 +788,8 @@ main {
 }
 
 .command-palette-option[aria-selected="true"] {
-  background: #3a173f;
-  border-color: #8a2c72;
+  background: var(--nc-tertiary-accent);
+  border-color: var(--nc-secondary-accent);
 }
 
 .command-palette-option:disabled {
@@ -828,7 +865,7 @@ main {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   color: #e2e8f0;
-  background: #0f172a;
+  background: var(--nc-sidebar-bg);
   border: 1px solid #475569;
   border-radius: 8px;
   box-shadow: 0 18px 54px rgb(0 0 0 / 60%);
@@ -893,14 +930,14 @@ main {
 
 .settings-tab[aria-selected="true"] {
   color: #fff1fb;
-  background: #3a173f;
-  border-color: #8a2c72;
+  background: var(--nc-tertiary-accent);
+  border-color: var(--nc-secondary-accent);
 }
 
 .settings-primary-button {
   color: #fff1fb;
-  background: #8a2c72;
-  border-color: #ff4fd8;
+  background: var(--nc-secondary-accent);
+  border-color: var(--nc-accent);
 }
 
 .settings-tab:focus-visible,
@@ -909,7 +946,7 @@ main {
 .keybinding-action:focus-visible,
 .settings-general input:focus-visible,
 .settings-general select:focus-visible {
-  outline: 2px solid #ff4fd8;
+  outline: 2px solid var(--nc-accent);
   outline-offset: 2px;
 }
 
@@ -1064,7 +1101,7 @@ main {
   width: min(560px, 100%);
   display: grid;
   color: #e2e8f0;
-  background: #0f172a;
+  background: var(--nc-sidebar-bg);
   border: 1px solid #475569;
   border-radius: 8px;
   box-shadow: 0 18px 54px rgb(0 0 0 / 60%);
@@ -1153,8 +1190,8 @@ main {
 
 .workspace-dialog-primary {
   color: #fff1fb;
-  background: #8a2c72;
-  border-color: #ff4fd8;
+  background: var(--nc-secondary-accent);
+  border-color: var(--nc-accent);
 }
 
 .workspace-dialog-primary:disabled,
@@ -1167,7 +1204,7 @@ main {
 .workspace-dialog-secondary:focus-visible,
 .workspace-dialog-content input:focus-visible,
 .workspace-dialog-content select:focus-visible {
-  outline: 2px solid #ff4fd8;
+  outline: 2px solid var(--nc-accent);
   outline-offset: 2px;
 }
 
