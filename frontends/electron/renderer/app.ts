@@ -650,6 +650,7 @@ export class NeonCodeApp {
     requiredElement(this.document, 'workspace-create-button').addEventListener('click', () => {
       void this.dispatchCommand({ id: 'workspace.createDialog' });
     });
+    this.document.addEventListener('click', () => this.closeWorkspaceMenus());
     requiredElement(this.document, 'tab-create-button').addEventListener('click', () => {
       void this.dispatchCommand({ id: 'tab.createDefault' });
     });
@@ -2240,8 +2241,9 @@ export class NeonCodeApp {
       status.className = 'workspace-status';
       status.dataset.testid = `workspace-status-${workspace.id}`;
       button.append(identity, status);
-      button.addEventListener('click', () => {
-        this.dispatchCommand({ id: 'workspace.open', args: { workspaceId: workspace.id } });
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        this.toggleWorkspaceMenu(workspace.id);
       });
       const acknowledge = this.document.createElement('button');
       acknowledge.type = 'button';
@@ -2265,7 +2267,50 @@ export class NeonCodeApp {
       tabHost.setAttribute('role', 'tablist');
       tabHost.setAttribute('aria-label', `${workspace.name} tabs`);
       tabHost.hidden = workspace.id !== this.activeWorkspaceId;
-      entry.append(button, tabHost, acknowledge);
+      const menu = this.document.createElement('div');
+      menu.className = 'workspace-action-menu';
+      menu.dataset.testid = `workspace-menu-${workspace.id}`;
+      menu.setAttribute('role', 'menu');
+      menu.hidden = true;
+      menu.addEventListener('click', (event) => event.stopPropagation());
+      const menuButton = (label: string, action: () => void): HTMLButtonElement => {
+        const item = this.document.createElement('button');
+        item.type = 'button';
+        item.setAttribute('role', 'menuitem');
+        item.textContent = label;
+        item.addEventListener('click', () => {
+          this.closeWorkspaceMenus();
+          action();
+        });
+        return item;
+      };
+      menu.append(
+        menuButton('Open workspace', () => {
+          void this.dispatchCommand({ id: 'workspace.open', args: { workspaceId: workspace.id } });
+        }),
+        menuButton('New tab', () => {
+          void this.dispatchCommand({ id: 'workspace.open', args: { workspaceId: workspace.id } })
+            .then((result) => {
+              if (result.status === 'completed') return this.dispatchCommand({ id: 'tab.createDefault' });
+              return result;
+            });
+        }),
+        menuButton('Rename workspace…', () => {
+          void this.dispatchCommand({ id: 'workspace.open', args: { workspaceId: workspace.id } })
+            .then((result) => {
+              if (result.status === 'completed') return this.dispatchCommand({ id: 'workspace.renameDialog' });
+              return result;
+            });
+        }),
+        menuButton('Delete workspace…', () => {
+          void this.dispatchCommand({ id: 'workspace.open', args: { workspaceId: workspace.id } })
+            .then((result) => {
+              if (result.status === 'completed') return this.dispatchCommand({ id: 'workspace.deleteDialog' });
+              return result;
+            });
+        }),
+      );
+      entry.append(button, tabHost, menu, acknowledge);
       this.workspaceList.append(entry);
     }
     this.updateWorkspaceStatuses();
@@ -2287,6 +2332,23 @@ export class NeonCodeApp {
         delete host.dataset.testid;
       }
     }
+  }
+
+  closeWorkspaceMenus(exceptWorkspaceId: string | null = null): void {
+    for (const menu of this.workspaceList.querySelectorAll<HTMLElement>('.workspace-action-menu')) {
+      const workspaceId = menu.closest<HTMLElement>('.workspace-entry')?.dataset.workspaceId ?? null;
+      if (workspaceId !== exceptWorkspaceId) menu.hidden = true;
+    }
+  }
+
+  toggleWorkspaceMenu(workspaceId: string): void {
+    const menu = this.workspaceList.querySelector<HTMLElement>(
+      `.workspace-entry[data-workspace-id="${workspaceId}"] .workspace-action-menu`,
+    );
+    if (!menu) return;
+    const nextHidden = !menu.hidden;
+    this.closeWorkspaceMenus(workspaceId);
+    menu.hidden = nextHidden;
   }
 
   attentionFor(session: NormalizedSessionSummary, title: string): WorkspaceAttention | null {
@@ -2483,6 +2545,7 @@ export class NeonCodeApp {
     }
 
     this.switching = true;
+    this.closeWorkspaceMenus();
     this.updateWorkspaceSelector();
     this.setStatus(`Switching to ${workspace.name}...`);
     try {

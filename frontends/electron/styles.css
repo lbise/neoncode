@@ -273,6 +273,45 @@ body > header span,
   color: #f87171;
 }
 
+.workspace-action-menu {
+  display: grid;
+  gap: 2px;
+  margin: 2px 4px 6px;
+  padding: 4px;
+  background: #111827;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  box-shadow: 0 10px 24px rgb(0 0 0 / 35%);
+}
+
+.workspace-action-menu[hidden] {
+  display: none;
+}
+
+.workspace-action-menu button {
+  width: 100%;
+  padding: 5px 7px;
+  color: #cbd5e1;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.workspace-action-menu button:hover {
+  color: #fff1fb;
+  background: #3a173f;
+  border-color: #8a2c72;
+}
+
+.workspace-action-menu button:focus-visible {
+  outline: 2px solid #ff4fd8;
+  outline-offset: 1px;
+}
+
 .workspace-attention-button {
   justify-self: end;
   margin: -3px 8px 6px;
