@@ -30,7 +30,12 @@ import {
   listCommandMetadata,
   validateCommandInvocation,
 } from './shared/command-catalog';
-import { validateWorkspaceLayoutState } from './shared/layout-model';
+import {
+  orderedPaneLeaves,
+  orderedSplitIds,
+  reconcileWorkspaceLayout,
+  validateWorkspaceLayoutState,
+} from './shared/layout-model';
 import type {
   DesktopBootstrapResult,
   DesktopState,
@@ -383,6 +388,46 @@ function appControlCapabilities(): unknown {
   };
 }
 
+function appControlLayoutSnapshot(): unknown {
+  const config = bootstrapResult.config;
+  const configuredWorkspaceIds = new Set((config?.workspaces ?? []).map((workspace) => workspace.id));
+  const activeWorkspaceId = configuredWorkspaceIds.has(desktopState.activeWorkspaceId ?? '')
+    ? desktopState.activeWorkspaceId
+    : config?.workspaces[0]?.id ?? null;
+  return {
+    ok: true,
+    protocolVersion: 1,
+    appVersion: app.getVersion(),
+    activeWorkspaceId,
+    workspaces: (config?.workspaces ?? []).map((workspace) => {
+      const reconciliation = reconcileWorkspaceLayout({
+        name: workspace.name,
+        layout: workspace.layout,
+        sessions: workspace.sessions.map((session) => ({ id: session.id, title: session.title })),
+      }, desktopState.workspaceLayouts[workspace.id]);
+      const sessionTitles = new Map(workspace.sessions.map((session) => [session.id, session.title]));
+      return {
+        id: workspace.id,
+        name: workspace.name,
+        active: workspace.id === activeWorkspaceId,
+        tabs: reconciliation.state.tabs.map((tab) => ({
+          tabId: tab.tabId,
+          title: tab.title,
+          active: tab.tabId === reconciliation.state.activeTabId,
+          focusedPaneId: tab.focusedPaneId,
+          panes: orderedPaneLeaves(tab.root).map((pane) => ({
+            paneId: pane.paneId,
+            sessionKey: pane.sessionKey,
+            title: sessionTitles.get(pane.sessionKey) ?? pane.sessionKey,
+            focused: pane.paneId === tab.focusedPaneId,
+          })),
+          splitIds: orderedSplitIds(tab.root),
+        })),
+      };
+    }),
+  };
+}
+
 function appControlWorkspaceList(): unknown {
   const workspaces = bootstrapResult.config?.workspaces ?? [];
   return {
@@ -455,6 +500,10 @@ async function handleAppControlRequest(
     }
     if (request.method === 'GET' && request.url === '/v1/workspaces') {
       writeJsonResponse(response, 200, appControlWorkspaceList());
+      return;
+    }
+    if (request.method === 'GET' && request.url === '/v1/layout') {
+      writeJsonResponse(response, 200, appControlLayoutSnapshot());
       return;
     }
     if (request.method === 'POST' && request.url === '/v1/workspaces/open') {

@@ -329,6 +329,42 @@ fn run_workspace_command(arguments: &[String]) -> Result<()> {
 fn run_tab_command(arguments: &[String]) -> Result<()> {
     let subcommand = arguments.get(1).map(String::as_str).unwrap_or("help");
     match subcommand {
+        "list" | "ls" => {
+            let requested_workspace = arguments.get(2).map(String::as_str);
+            let layout = app_control_request("GET", "/v1/layout", None)?;
+            let active_workspace = layout["activeWorkspaceId"].as_str().unwrap_or("");
+            let workspaces = layout["workspaces"]
+                .as_array()
+                .ok_or_else(|| anyhow!("invalid app-control layout snapshot"))?;
+            let mut printed = false;
+            for workspace in workspaces {
+                let workspace_id = workspace["id"].as_str().unwrap_or("<unknown>");
+                if requested_workspace
+                    .map(|requested| requested != workspace_id)
+                    .unwrap_or(workspace_id != active_workspace)
+                {
+                    continue;
+                }
+                let tabs = workspace["tabs"]
+                    .as_array()
+                    .ok_or_else(|| anyhow!("invalid app-control tab list"))?;
+                for tab in tabs {
+                    let tab_id = tab["tabId"].as_str().unwrap_or("<unknown>");
+                    let title = tab["title"].as_str().unwrap_or(tab_id);
+                    let active = workspace_id == active_workspace && tab["active"] == true;
+                    let marker = if active { "*" } else { " " };
+                    println!("{marker} {workspace_id}\t{tab_id}\t{title}");
+                    printed = true;
+                }
+            }
+            if !printed && requested_workspace.is_some() {
+                bail!(
+                    "workspace not found: {}",
+                    requested_workspace.unwrap_or_default()
+                );
+            }
+            Ok(())
+        }
         "create" => {
             if arguments.len() < 7 {
                 bail!(
@@ -405,7 +441,7 @@ fn run_tab_command(arguments: &[String]) -> Result<()> {
             Ok(())
         }
         _ => bail!(
-            "unknown tab command {subcommand:?}; use 'neoncode tab create|open|rename|move|close'"
+            "unknown tab command {subcommand:?}; use 'neoncode tab list|create|open|rename|move|close'"
         ),
     }
 }
@@ -413,6 +449,54 @@ fn run_tab_command(arguments: &[String]) -> Result<()> {
 fn run_pane_command(arguments: &[String]) -> Result<()> {
     let subcommand = arguments.get(1).map(String::as_str).unwrap_or("help");
     match subcommand {
+        "list" | "ls" => {
+            let requested_workspace = arguments.get(2).map(String::as_str);
+            let layout = app_control_request("GET", "/v1/layout", None)?;
+            let active_workspace = layout["activeWorkspaceId"].as_str().unwrap_or("");
+            let workspaces = layout["workspaces"]
+                .as_array()
+                .ok_or_else(|| anyhow!("invalid app-control layout snapshot"))?;
+            let mut printed = false;
+            for workspace in workspaces {
+                let workspace_id = workspace["id"].as_str().unwrap_or("<unknown>");
+                if requested_workspace
+                    .map(|requested| requested != workspace_id)
+                    .unwrap_or(workspace_id != active_workspace)
+                {
+                    continue;
+                }
+                let tabs = workspace["tabs"]
+                    .as_array()
+                    .ok_or_else(|| anyhow!("invalid app-control pane list"))?;
+                for tab in tabs {
+                    let tab_id = tab["tabId"].as_str().unwrap_or("<unknown>");
+                    let tab_active = tab["active"] == true;
+                    let panes = tab["panes"]
+                        .as_array()
+                        .ok_or_else(|| anyhow!("invalid app-control pane list"))?;
+                    for pane in panes {
+                        let pane_id = pane["paneId"].as_str().unwrap_or("<unknown>");
+                        let session_key = pane["sessionKey"].as_str().unwrap_or(pane_id);
+                        let title = pane["title"].as_str().unwrap_or(session_key);
+                        let focused = workspace_id == active_workspace
+                            && tab_active
+                            && pane["focused"] == true;
+                        let marker = if focused { "*" } else { " " };
+                        println!(
+                            "{marker} {workspace_id}\t{tab_id}\t{pane_id}\t{session_key}\t{title}"
+                        );
+                        printed = true;
+                    }
+                }
+            }
+            if !printed && requested_workspace.is_some() {
+                bail!(
+                    "workspace not found: {}",
+                    requested_workspace.unwrap_or_default()
+                );
+            }
+            Ok(())
+        }
         "focus" => {
             if arguments.len() != 3 {
                 bail!("usage: neoncode pane focus <pane-id>");
@@ -496,7 +580,7 @@ fn run_pane_command(arguments: &[String]) -> Result<()> {
             Ok(())
         }
         _ => bail!(
-            "unknown pane command {subcommand:?}; use 'neoncode pane focus|focus-index|split|resize|close|kill|restart'"
+            "unknown pane command {subcommand:?}; use 'neoncode pane list|focus|focus-index|split|resize|close|kill|restart'"
         ),
     }
 }
@@ -557,6 +641,6 @@ fn app_control_request(method: &str, path: &str, body: Option<Value>) -> Result<
 
 fn print_help() {
     println!(
-        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
+        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode tab list [workspace-id]\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane list [workspace-id]\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
     );
 }

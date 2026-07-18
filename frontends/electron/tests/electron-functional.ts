@@ -357,6 +357,35 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
   }
   assert(rejectedUiOnlyCommand, 'app-control accepted a UI-only command');
 
+  const layout = await appControlRequest(configDirectory, 'GET', '/v1/layout');
+  assert(layout.ok === true, 'app-control layout snapshot did not succeed');
+  assert(layout.activeWorkspaceId === 'default', 'app-control layout snapshot reported wrong active workspace');
+  const layoutWorkspaces = layout.workspaces;
+  assert(Array.isArray(layoutWorkspaces), 'app-control layout snapshot omitted workspaces');
+  const defaultLayout = layoutWorkspaces.find((workspace) => (
+    workspace && typeof workspace === 'object' && (workspace as { id?: unknown }).id === 'default'
+  ));
+  assert(defaultLayout && typeof defaultLayout === 'object', 'app-control layout snapshot omitted default workspace');
+  const defaultTabs = (defaultLayout as { tabs?: unknown }).tabs;
+  assert(Array.isArray(defaultTabs), 'app-control layout snapshot omitted tabs');
+  assert(
+    defaultTabs.some((tab) => (
+      tab && typeof tab === 'object' && (tab as { tabId?: unknown }).tabId === 'tab-Development'
+    )),
+    'app-control layout snapshot omitted seeded tab id',
+  );
+  const seededTab = defaultTabs.find((tab) => (
+    tab && typeof tab === 'object' && (tab as { tabId?: unknown }).tabId === 'tab-Development'
+  ));
+  const seededPanes = seededTab && typeof seededTab === 'object' ? (seededTab as { panes?: unknown }).panes : undefined;
+  assert(Array.isArray(seededPanes), 'app-control layout snapshot omitted panes');
+  assert(
+    seededPanes.some((pane) => (
+      pane && typeof pane === 'object' && (pane as { paneId?: unknown }).paneId === 'shell'
+    )),
+    'app-control layout snapshot omitted seeded pane id',
+  );
+
   const list = await appControlRequest(configDirectory, 'GET', '/v1/workspaces');
   assert(list.ok === true, 'app-control workspace list did not succeed');
   const workspaces = list.workspaces;
