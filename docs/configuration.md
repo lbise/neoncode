@@ -11,7 +11,7 @@ NeonCode stores user-level Electron configuration and app-owned window state und
 
 Electron main owns all filesystem access. The sandboxed renderer receives only a validated bootstrap object through the preload bridge. The hub capability token is never written to these files.
 
-Configuration is read at startup. The keyboard-accessible Settings dialog edits the supported General and Keyboard fields through validated main-process IPC. The workspace dialog creates, renames, and deletes durable workspace definitions without a restart. Keybinding overrides and close-confirmation toggles apply immediately after Save; endpoint, session prefix, app-window close policy, and terminal appearance are explicitly restart-required in this slice.
+Configuration is read at startup. The keyboard-accessible Settings dialog edits the supported General and Keyboard fields through validated main-process IPC. The workspace dialog creates, renames, and deletes durable workspace definitions without a restart. Keybinding overrides and close-confirmation toggles apply immediately after Save; endpoint and terminal appearance are explicitly restart-required in this slice. Session prefix and app-window close policy remain JSON-only advanced settings rather than primary UI controls.
 
 ## Version 7 schema
 
@@ -106,7 +106,7 @@ Changing/removing a configured ID does not kill an already detached hub session 
 
 ## Settings and keybindings
 
-Open Settings with the visible header button or run **Open Settings** from the command palette; no Settings shortcut is required. The General section edits the loopback hub endpoint, session prefix, app-window close policy, optional tab/terminal close confirmations, terminal font family/size, cursor blink, and terminal background/foreground colors. Close-confirmation toggles and keybindings apply immediately after Save; endpoint, session prefix, app-window close policy, and terminal appearance take effect after restart. Environment overrides remain process-local and are never copied into `config.json` by a Settings save.
+Open Settings with the visible header button or run **Open Settings** from the command palette; no Settings shortcut is required. The General section edits the loopback hub endpoint, optional tab/terminal close confirmations, terminal font family/size, cursor blink, and terminal background/foreground colors. Close-confirmation toggles and keybindings apply immediately after Save; endpoint and terminal appearance take effect after restart. Session prefix and app-window close policy are advanced JSON settings preserved by Settings saves but not exposed in the primary UI. Environment overrides remain process-local and are never copied into `config.json` by a Settings save.
 
 `keybindings.overrides` contains at most 64 entries. Each entry identifies one exact typed command invocation and either supplies one physical `KeyboardEvent.code` combination with exact `altKey`, `ctrlKey`, `metaKey`, and `shiftKey` booleans, or uses `null` to unbind it:
 

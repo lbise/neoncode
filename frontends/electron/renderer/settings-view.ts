@@ -78,8 +78,6 @@ export class SettingsView {
   private readonly errorElement: HTMLElement;
   private readonly statusElement: HTMLElement;
   private readonly endpoint: HTMLInputElement;
-  private readonly sessionPrefix: HTMLInputElement;
-  private readonly closePolicy: HTMLSelectElement;
   private readonly confirmBeforeClosingTab: HTMLInputElement;
   private readonly confirmBeforeClosingTerminal: HTMLInputElement;
   private readonly fontFamily: HTMLInputElement;
@@ -127,8 +125,6 @@ export class SettingsView {
     this.errorElement = requiredElement(documentRef, 'settings-error');
     this.statusElement = requiredElement(documentRef, 'settings-status');
     this.endpoint = requiredElement<HTMLInputElement>(documentRef, 'settings-endpoint');
-    this.sessionPrefix = requiredElement<HTMLInputElement>(documentRef, 'settings-session-prefix');
-    this.closePolicy = requiredElement<HTMLSelectElement>(documentRef, 'settings-close-policy');
     this.confirmBeforeClosingTab = requiredElement<HTMLInputElement>(documentRef, 'settings-confirm-before-closing-tab');
     this.confirmBeforeClosingTerminal = requiredElement<HTMLInputElement>(documentRef, 'settings-confirm-before-closing-terminal');
     this.fontFamily = requiredElement<HTMLInputElement>(documentRef, 'settings-font-family');
@@ -233,8 +229,6 @@ export class SettingsView {
 
   private populateGeneral(settings: DesktopSettings): void {
     this.endpoint.value = settings.hub.endpoint;
-    this.sessionPrefix.value = settings.sessionPrefix;
-    this.closePolicy.value = settings.persistence.onWindowClose;
     this.confirmBeforeClosingTab.checked = settings.persistence.confirmBeforeClosingTab;
     this.confirmBeforeClosingTerminal.checked = settings.persistence.confirmBeforeClosingTerminal;
     this.fontFamily.value = settings.terminal.fontFamily;
@@ -250,9 +244,9 @@ export class SettingsView {
     const fontSize = Number.parseInt(this.fontSize.value, 10);
     return {
       hub: { endpoint: this.endpoint.value },
-      sessionPrefix: this.sessionPrefix.value,
+      sessionPrefix: snapshot.settings.sessionPrefix,
       persistence: {
-        onWindowClose: this.closePolicy.value === 'kill' ? 'kill' : 'detach',
+        onWindowClose: snapshot.settings.persistence.onWindowClose,
         confirmBeforeClosingTab: this.confirmBeforeClosingTab.checked,
         confirmBeforeClosingTerminal: this.confirmBeforeClosingTerminal.checked,
       },
