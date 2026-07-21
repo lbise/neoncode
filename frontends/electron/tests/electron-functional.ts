@@ -539,6 +539,8 @@ async function verifySettingsUi(page: Page): Promise<void> {
   );
   assert(await page.getByTestId('settings-general-tab').getAttribute('aria-selected') === 'true', 'General section was not selected');
   assert((await page.locator('.restart-badge').allTextContents()).every((text) => text === 'Restart required'), 'General restart labels were incomplete');
+  assert(await page.locator('.live-badge').textContent() === 'Live after save', 'Settings did not distinguish live-applied fields');
+  assert((await page.locator('#settings-advanced-heading').textContent()) === 'Diagnostics & advanced', 'Settings advanced note section was missing');
   await page.keyboard.press('Escape');
   assert(await overlay.isHidden(), 'Escape did not close button-opened Settings');
   assert(await page.getByTestId('workspace-tab-settings').count() === 0, 'Settings workspace tab did not close');
@@ -552,10 +554,21 @@ async function verifySettingsUi(page: Page): Promise<void> {
 
   const generalTab = page.getByTestId('settings-general-tab');
   assert(await generalTab.evaluate((element) => element === document.activeElement), 'Settings did not receive keyboard focus');
+  assert(await page.getByTestId('settings-font-family-choice').inputValue() === 'Consolas, monospace', 'default font family dropdown was not selected');
+  assert(await page.getByTestId('settings-font-family').isHidden(), 'custom font input was visible for preset font family');
+  await page.getByTestId('settings-font-family-choice').selectOption('custom');
+  assert(await page.getByTestId('settings-font-family').isVisible(), 'custom font input did not appear');
+  await page.getByTestId('settings-font-family').fill('Test Mono, monospace');
+  await page.getByTestId('settings-font-family-choice').selectOption('Consolas, monospace');
+  assert(await page.getByTestId('settings-font-family').isHidden(), 'custom font input did not hide after choosing a preset font');
+  await page.getByTestId('settings-font-size').selectOption('18');
+  assert(await page.getByTestId('settings-font-size').inputValue() === '18', 'font size dropdown did not accept preset size');
   assert(await page.getByTestId('settings-theme-preset').inputValue() === 'graphite', 'default theme preset was not selected');
   await page.getByTestId('settings-theme-preset').selectOption('tokyo-night');
   assert(await page.getByTestId('settings-terminal-background').inputValue() === '#09090d', 'theme preset did not populate color fields');
-  await page.getByTestId('settings-accent').fill('#8b949e');
+  assert(await page.getByTestId('settings-terminal-background-picker').inputValue() === '#09090d', 'theme preset did not sync color picker');
+  await page.getByTestId('settings-accent-picker').fill('#8b949e');
+  assert(await page.getByTestId('settings-accent').inputValue() === '#8b949e', 'color picker did not sync hex text field');
   await generalTab.focus();
   await page.keyboard.press('Tab');
   await page.keyboard.press('Enter');

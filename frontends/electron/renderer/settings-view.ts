@@ -109,6 +109,61 @@ function matchingPresetId(theme: AppTheme): string {
   return APP_THEME_PRESETS.find((preset) => themeMatchesPreset(theme, preset))?.id ?? 'custom';
 }
 
+const COMMON_FONT_FAMILIES = [
+  'Consolas, monospace',
+  'Cascadia Mono, monospace',
+  'Cascadia Code, monospace',
+  'JetBrains Mono, monospace',
+  'Fira Code, monospace',
+  'Source Code Pro, monospace',
+  'Ubuntu Mono, monospace',
+  'DejaVu Sans Mono, monospace',
+  'Menlo, monospace',
+  'Monaco, monospace',
+  'monospace',
+];
+
+const FONT_SIZE_OPTIONS = [10, 11, 12, 13, 14, 15, 16, 18, 20, 22, 24, 28, 32];
+
+function normalizedHexColor(value: string): string {
+  const trimmed = value.trim();
+  return /^#[0-9a-fA-F]{6}$/u.test(trimmed) ? trimmed.toLowerCase() : trimmed;
+}
+
+function pickerColor(value: string): string {
+  const normalized = normalizedHexColor(value);
+  return /^#[0-9a-f]{6}$/u.test(normalized) ? normalized : '#000000';
+}
+
+function primaryFontFamily(value: string): string {
+  return value.split(',')[0]?.trim().replace(/^['"]|['"]$/gu, '') ?? value;
+}
+
+function quotedFontFamily(value: string): string {
+  return `"${value.replace(/["\\]/gu, '')}"`;
+}
+
+function measuredWidth(context: CanvasRenderingContext2D, fontFamily: string): number {
+  context.font = `14px ${fontFamily}`;
+  return context.measureText('mmmmmmmmmiiiiiiiii000000000').width;
+}
+
+function likelyInstalledFontFamilies(documentRef: Document): string[] {
+  const canvas = documentRef.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) return COMMON_FONT_FAMILIES;
+  const mono = measuredWidth(context, 'monospace');
+  const sans = measuredWidth(context, 'sans-serif');
+  const serif = measuredWidth(context, 'serif');
+  const detected = COMMON_FONT_FAMILIES.filter((family) => {
+    if (family === 'monospace') return true;
+    const primary = quotedFontFamily(primaryFontFamily(family));
+    const width = measuredWidth(context, `${primary}, monospace`);
+    return width !== mono && width !== sans && width !== serif;
+  });
+  return [...new Set([...detected, ...COMMON_FONT_FAMILIES])];
+}
+
 function button(documentRef: Document, text: string, testId: string): HTMLButtonElement {
   const result = documentRef.createElement('button');
   result.type = 'button';
@@ -144,19 +199,30 @@ export class SettingsView {
   private readonly statusElement: HTMLElement;
   private readonly confirmBeforeClosingTab: HTMLInputElement;
   private readonly confirmBeforeClosingTerminal: HTMLInputElement;
+  private readonly fontFamilyChoice: HTMLSelectElement;
+  private readonly fontFamilyCustomLabel: HTMLElement;
   private readonly fontFamily: HTMLInputElement;
-  private readonly fontSize: HTMLInputElement;
+  private readonly fontSize: HTMLSelectElement;
   private readonly cursorBlink: HTMLInputElement;
   private readonly background: HTMLInputElement;
+  private readonly backgroundPicker: HTMLInputElement;
   private readonly foreground: HTMLInputElement;
+  private readonly foregroundPicker: HTMLInputElement;
   private readonly themePreset: HTMLSelectElement;
   private readonly sidebarBackground: HTMLInputElement;
+  private readonly sidebarBackgroundPicker: HTMLInputElement;
   private readonly appBackground: HTMLInputElement;
+  private readonly appBackgroundPicker: HTMLInputElement;
   private readonly terminalBackground: HTMLInputElement;
+  private readonly terminalBackgroundPicker: HTMLInputElement;
   private readonly textColor: HTMLInputElement;
+  private readonly textColorPicker: HTMLInputElement;
   private readonly accent: HTMLInputElement;
+  private readonly accentPicker: HTMLInputElement;
   private readonly secondaryAccent: HTMLInputElement;
+  private readonly secondaryAccentPicker: HTMLInputElement;
   private readonly tertiaryAccent: HTMLInputElement;
+  private readonly tertiaryAccentPicker: HTMLInputElement;
   private snapshot: SettingsSnapshot | null = null;
   private draftOverrides: KeybindingOverride[] = [];
   private recordingCommand: CommandInvocation | null = null;
@@ -200,32 +266,49 @@ export class SettingsView {
     this.statusElement = requiredElement(documentRef, 'settings-status');
     this.confirmBeforeClosingTab = requiredElement<HTMLInputElement>(documentRef, 'settings-confirm-before-closing-tab');
     this.confirmBeforeClosingTerminal = requiredElement<HTMLInputElement>(documentRef, 'settings-confirm-before-closing-terminal');
+    this.fontFamilyChoice = requiredElement<HTMLSelectElement>(documentRef, 'settings-font-family-choice');
+    this.fontFamilyCustomLabel = requiredElement<HTMLElement>(documentRef, 'settings-font-family-custom-label');
     this.fontFamily = requiredElement<HTMLInputElement>(documentRef, 'settings-font-family');
-    this.fontSize = requiredElement<HTMLInputElement>(documentRef, 'settings-font-size');
+    this.fontSize = requiredElement<HTMLSelectElement>(documentRef, 'settings-font-size');
     this.cursorBlink = requiredElement<HTMLInputElement>(documentRef, 'settings-cursor-blink');
     this.background = requiredElement<HTMLInputElement>(documentRef, 'settings-background');
+    this.backgroundPicker = requiredElement<HTMLInputElement>(documentRef, 'settings-background-picker');
     this.foreground = requiredElement<HTMLInputElement>(documentRef, 'settings-foreground');
+    this.foregroundPicker = requiredElement<HTMLInputElement>(documentRef, 'settings-foreground-picker');
     this.themePreset = requiredElement<HTMLSelectElement>(documentRef, 'settings-theme-preset');
     this.sidebarBackground = requiredElement<HTMLInputElement>(documentRef, 'settings-sidebar-background');
+    this.sidebarBackgroundPicker = requiredElement<HTMLInputElement>(documentRef, 'settings-sidebar-background-picker');
     this.appBackground = requiredElement<HTMLInputElement>(documentRef, 'settings-app-background');
+    this.appBackgroundPicker = requiredElement<HTMLInputElement>(documentRef, 'settings-app-background-picker');
     this.terminalBackground = requiredElement<HTMLInputElement>(documentRef, 'settings-terminal-background');
+    this.terminalBackgroundPicker = requiredElement<HTMLInputElement>(documentRef, 'settings-terminal-background-picker');
     this.textColor = requiredElement<HTMLInputElement>(documentRef, 'settings-text-color');
+    this.textColorPicker = requiredElement<HTMLInputElement>(documentRef, 'settings-text-color-picker');
     this.accent = requiredElement<HTMLInputElement>(documentRef, 'settings-accent');
+    this.accentPicker = requiredElement<HTMLInputElement>(documentRef, 'settings-accent-picker');
     this.secondaryAccent = requiredElement<HTMLInputElement>(documentRef, 'settings-secondary-accent');
+    this.secondaryAccentPicker = requiredElement<HTMLInputElement>(documentRef, 'settings-secondary-accent-picker');
     this.tertiaryAccent = requiredElement<HTMLInputElement>(documentRef, 'settings-tertiary-accent');
+    this.tertiaryAccentPicker = requiredElement<HTMLInputElement>(documentRef, 'settings-tertiary-accent-picker');
 
+    this.populateFontOptions();
+    this.populateFontSizeOptions();
     this.populateThemePresetOptions();
+    this.fontFamilyChoice.addEventListener('change', () => this.applySelectedFontFamily());
+    this.fontFamily.addEventListener('input', () => this.syncFontFamilySelection());
     this.themePreset.addEventListener('change', () => this.applySelectedThemePreset());
-    for (const input of [
-      this.sidebarBackground,
-      this.appBackground,
-      this.terminalBackground,
-      this.textColor,
-      this.accent,
-      this.secondaryAccent,
-      this.tertiaryAccent,
-    ]) {
-      input.addEventListener('input', () => this.syncThemePresetSelection());
+    for (const [text, picker, onTextInput] of [
+      [this.background, this.backgroundPicker, undefined],
+      [this.foreground, this.foregroundPicker, undefined],
+      [this.sidebarBackground, this.sidebarBackgroundPicker, () => this.syncThemePresetSelection()],
+      [this.appBackground, this.appBackgroundPicker, () => this.syncThemePresetSelection()],
+      [this.terminalBackground, this.terminalBackgroundPicker, () => this.syncThemePresetSelection()],
+      [this.textColor, this.textColorPicker, () => this.syncThemePresetSelection()],
+      [this.accent, this.accentPicker, () => this.syncThemePresetSelection()],
+      [this.secondaryAccent, this.secondaryAccentPicker, () => this.syncThemePresetSelection()],
+      [this.tertiaryAccent, this.tertiaryAccentPicker, () => this.syncThemePresetSelection()],
+    ] as Array<[HTMLInputElement, HTMLInputElement, (() => void) | undefined]>) {
+      this.bindColorInputs(text, picker, onTextInput);
     }
     this.generalTab.addEventListener('click', () => this.showPanel('general'));
     this.keyboardTab.addEventListener('click', () => this.showPanel('keyboard'));
@@ -260,6 +343,7 @@ export class SettingsView {
       this.renderKeybindings();
       this.statusElement.textContent = '';
       this.setBusy(false);
+      this.syncFontFamilySelection();
       this.generalTab.focus({ preventScroll: true });
     } catch (error) {
       this.showError(`Settings could not be loaded: ${errorMessage(error)}`);
@@ -322,6 +406,67 @@ export class SettingsView {
     this.keyboardPanel.hidden = general;
   }
 
+  private populateFontOptions(): void {
+    this.fontFamilyChoice.replaceChildren();
+    for (const family of likelyInstalledFontFamilies(this.document)) {
+      const option = this.document.createElement('option');
+      option.value = family;
+      option.textContent = family;
+      this.fontFamilyChoice.append(option);
+    }
+    const custom = this.document.createElement('option');
+    custom.value = 'custom';
+    custom.textContent = 'Custom…';
+    this.fontFamilyChoice.append(custom);
+  }
+
+  private populateFontSizeOptions(): void {
+    this.fontSize.replaceChildren();
+    for (const size of FONT_SIZE_OPTIONS) {
+      const option = this.document.createElement('option');
+      option.value = String(size);
+      option.textContent = `${size}px`;
+      this.fontSize.append(option);
+    }
+  }
+
+  private ensureFontSizeOption(size: number): void {
+    const value = String(size);
+    if ([...this.fontSize.options].some((option) => option.value === value)) return;
+    const option = this.document.createElement('option');
+    option.value = value;
+    option.textContent = `${size}px`;
+    const next = [...this.fontSize.options].find((candidate) => Number(candidate.value) > size);
+    this.fontSize.insertBefore(option, next ?? null);
+  }
+
+  private bindColorInputs(text: HTMLInputElement, picker: HTMLInputElement, onTextInput?: () => void): void {
+    text.addEventListener('input', () => {
+      picker.value = pickerColor(text.value);
+      onTextInput?.();
+    });
+    picker.addEventListener('input', () => {
+      text.value = picker.value;
+      text.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  private syncColorPickers(): void {
+    for (const [text, picker] of [
+      [this.background, this.backgroundPicker],
+      [this.foreground, this.foregroundPicker],
+      [this.sidebarBackground, this.sidebarBackgroundPicker],
+      [this.appBackground, this.appBackgroundPicker],
+      [this.terminalBackground, this.terminalBackgroundPicker],
+      [this.textColor, this.textColorPicker],
+      [this.accent, this.accentPicker],
+      [this.secondaryAccent, this.secondaryAccentPicker],
+      [this.tertiaryAccent, this.tertiaryAccentPicker],
+    ] as Array<[HTMLInputElement, HTMLInputElement]>) {
+      picker.value = pickerColor(text.value);
+    }
+  }
+
   private populateThemePresetOptions(): void {
     this.themePreset.replaceChildren();
     for (const preset of APP_THEME_PRESETS) {
@@ -334,6 +479,31 @@ export class SettingsView {
     custom.value = 'custom';
     custom.textContent = 'Custom';
     this.themePreset.append(custom);
+  }
+
+  private applySelectedFontFamily(): void {
+    if (this.fontFamilyChoice.value === 'custom') {
+      this.fontFamilyCustomLabel.hidden = false;
+      this.fontFamily.hidden = false;
+      this.fontFamily.disabled = false;
+      this.fontFamily.required = true;
+      return;
+    }
+    this.fontFamily.value = this.fontFamilyChoice.value;
+    this.fontFamilyCustomLabel.hidden = true;
+    this.fontFamily.hidden = true;
+    this.fontFamily.disabled = true;
+    this.fontFamily.required = false;
+  }
+
+  private syncFontFamilySelection(): void {
+    const match = COMMON_FONT_FAMILIES.find((family) => family === this.fontFamily.value);
+    this.fontFamilyChoice.value = match ?? 'custom';
+    const custom = !match;
+    this.fontFamilyCustomLabel.hidden = !custom;
+    this.fontFamily.hidden = !custom;
+    this.fontFamily.disabled = !custom;
+    this.fontFamily.required = custom;
   }
 
   private currentAppThemeDraft(): AppTheme {
@@ -358,6 +528,7 @@ export class SettingsView {
     this.accent.value = preset.theme.accent;
     this.secondaryAccent.value = preset.theme.secondaryAccent;
     this.tertiaryAccent.value = preset.theme.tertiaryAccent;
+    this.syncColorPickers();
   }
 
   private syncThemePresetSelection(): void {
@@ -368,6 +539,8 @@ export class SettingsView {
     this.confirmBeforeClosingTab.checked = settings.persistence.confirmBeforeClosingTab;
     this.confirmBeforeClosingTerminal.checked = settings.persistence.confirmBeforeClosingTerminal;
     this.fontFamily.value = settings.terminal.fontFamily;
+    this.syncFontFamilySelection();
+    this.ensureFontSizeOption(settings.terminal.fontSize);
     this.fontSize.value = String(settings.terminal.fontSize);
     this.cursorBlink.checked = settings.terminal.cursorBlink;
     this.background.value = settings.terminal.theme.background;
@@ -379,6 +552,7 @@ export class SettingsView {
     this.accent.value = settings.appTheme.accent;
     this.secondaryAccent.value = settings.appTheme.secondaryAccent;
     this.tertiaryAccent.value = settings.appTheme.tertiaryAccent;
+    this.syncColorPickers();
     this.syncThemePresetSelection();
   }
 
@@ -396,7 +570,7 @@ export class SettingsView {
       },
       terminal: {
         ...cloneSettings(snapshot.settings).terminal,
-        fontFamily: this.fontFamily.value,
+        fontFamily: this.fontFamilyChoice.value === 'custom' ? this.fontFamily.value : this.fontFamilyChoice.value,
         fontSize,
         cursorBlink: this.cursorBlink.checked,
         theme: {
@@ -596,6 +770,7 @@ export class SettingsView {
       this.showError(`Settings could not be saved: ${errorMessage(error)}`);
       this.statusElement.textContent = '';
       this.setBusy(false);
+      this.syncFontFamilySelection();
     }
   }
 }

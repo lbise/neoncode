@@ -61,23 +61,47 @@
       </div>
       <div class="settings-content">
         <section id="settings-general-panel" class="settings-panel settings-general" role="tabpanel" aria-labelledby="settings-general-tab">
-          <h3>General</h3>
-          <label class="settings-checkbox"><input id="settings-confirm-before-closing-tab" data-testid="settings-confirm-before-closing-tab" type="checkbox" /> Confirm before closing tabs</label>
-          <label class="settings-checkbox"><input id="settings-confirm-before-closing-terminal" data-testid="settings-confirm-before-closing-terminal" type="checkbox" /> Confirm before closing terminal panes</label>
-          <label>Terminal font family <span class="restart-badge">Restart required</span><input id="settings-font-family" data-testid="settings-font-family" type="text" required /></label>
-          <label>Terminal font size <span class="restart-badge">Restart required</span><input id="settings-font-size" data-testid="settings-font-size" type="number" min="8" max="32" step="1" required /></label>
-          <label class="settings-checkbox"><input id="settings-cursor-blink" data-testid="settings-cursor-blink" type="checkbox" /> Cursor blink <span class="restart-badge">Restart required</span></label>
-          <label>Terminal xterm background <span class="restart-badge">Restart required</span><input id="settings-background" data-testid="settings-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
-          <label>Terminal xterm foreground <span class="restart-badge">Restart required</span><input id="settings-foreground" data-testid="settings-foreground" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
-          <h3>Theme</h3>
-          <label class="settings-theme-preset">Theme preset<select id="settings-theme-preset" data-testid="settings-theme-preset"></select></label>
-          <label>Sidebar background<input id="settings-sidebar-background" data-testid="settings-sidebar-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
-          <label>App background<input id="settings-app-background" data-testid="settings-app-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
-          <label>Terminal surface background<input id="settings-terminal-background" data-testid="settings-terminal-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
-          <label>Text color<input id="settings-text-color" data-testid="settings-text-color" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
-          <label>Focus color<input id="settings-accent" data-testid="settings-accent" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
-          <label>Border/hover color<input id="settings-secondary-accent" data-testid="settings-secondary-accent" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
-          <label>Selected surface<input id="settings-tertiary-accent" data-testid="settings-tertiary-accent" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></label>
+          <section class="settings-card settings-card-wide" aria-labelledby="settings-appearance-heading">
+            <div class="settings-section-heading">
+              <h3 id="settings-appearance-heading">Appearance</h3>
+              <p><span class="live-badge">Live after save</span> App chrome colors update without restarting terminals.</p>
+            </div>
+            <label class="settings-field settings-card-wide">Theme preset<select id="settings-theme-preset" data-testid="settings-theme-preset"></select></label>
+            <label class="settings-field settings-color-field">Sidebar background<span class="settings-color-row"><input id="settings-sidebar-background-picker" data-testid="settings-sidebar-background-picker" type="color" aria-label="Pick sidebar background" /><input id="settings-sidebar-background" data-testid="settings-sidebar-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></span></label>
+            <label class="settings-field settings-color-field">App background<span class="settings-color-row"><input id="settings-app-background-picker" data-testid="settings-app-background-picker" type="color" aria-label="Pick app background" /><input id="settings-app-background" data-testid="settings-app-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></span></label>
+            <label class="settings-field settings-color-field">Terminal surface<span class="settings-color-row"><input id="settings-terminal-background-picker" data-testid="settings-terminal-background-picker" type="color" aria-label="Pick terminal surface background" /><input id="settings-terminal-background" data-testid="settings-terminal-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></span></label>
+            <label class="settings-field settings-color-field">Text color<span class="settings-color-row"><input id="settings-text-color-picker" data-testid="settings-text-color-picker" type="color" aria-label="Pick text color" /><input id="settings-text-color" data-testid="settings-text-color" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></span></label>
+            <label class="settings-field settings-color-field">Focus color<span class="settings-color-row"><input id="settings-accent-picker" data-testid="settings-accent-picker" type="color" aria-label="Pick focus color" /><input id="settings-accent" data-testid="settings-accent" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></span></label>
+            <label class="settings-field settings-color-field">Border/hover<span class="settings-color-row"><input id="settings-secondary-accent-picker" data-testid="settings-secondary-accent-picker" type="color" aria-label="Pick border and hover color" /><input id="settings-secondary-accent" data-testid="settings-secondary-accent" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></span></label>
+            <label class="settings-field settings-color-field">Selected surface<span class="settings-color-row"><input id="settings-tertiary-accent-picker" data-testid="settings-tertiary-accent-picker" type="color" aria-label="Pick selected surface color" /><input id="settings-tertiary-accent" data-testid="settings-tertiary-accent" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></span></label>
+          </section>
+          <section class="settings-card" aria-labelledby="settings-terminal-heading">
+            <div class="settings-section-heading">
+              <h3 id="settings-terminal-heading">Terminal</h3>
+              <p><span class="restart-badge">Restart required</span> xterm font and terminal palette changes apply on the next terminal start.</p>
+            </div>
+            <label class="settings-field">Font family <span class="restart-badge">Restart required</span><select id="settings-font-family-choice" data-testid="settings-font-family-choice"></select></label>
+            <label class="settings-field" id="settings-font-family-custom-label">Custom font family <span class="restart-badge">Restart required</span><input id="settings-font-family" data-testid="settings-font-family" type="text" required /></label>
+            <label class="settings-field">Font size <span class="restart-badge">Restart required</span><select id="settings-font-size" data-testid="settings-font-size" required></select></label>
+            <label class="settings-checkbox"><input id="settings-cursor-blink" data-testid="settings-cursor-blink" type="checkbox" /> Cursor blink <span class="restart-badge">Restart required</span></label>
+            <label class="settings-field settings-color-field">xterm background <span class="restart-badge">Restart required</span><span class="settings-color-row"><input id="settings-background-picker" data-testid="settings-background-picker" type="color" aria-label="Pick xterm background" /><input id="settings-background" data-testid="settings-background" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></span></label>
+            <label class="settings-field settings-color-field">xterm foreground <span class="restart-badge">Restart required</span><span class="settings-color-row"><input id="settings-foreground-picker" data-testid="settings-foreground-picker" type="color" aria-label="Pick xterm foreground" /><input id="settings-foreground" data-testid="settings-foreground" type="text" pattern="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?" required /></span></label>
+          </section>
+          <section class="settings-card" aria-labelledby="settings-behavior-heading">
+            <div class="settings-section-heading">
+              <h3 id="settings-behavior-heading">Workspace behavior</h3>
+              <p>Close actions kill by default; prompts are optional.</p>
+            </div>
+            <label class="settings-checkbox"><input id="settings-confirm-before-closing-tab" data-testid="settings-confirm-before-closing-tab" type="checkbox" /> Confirm before closing tabs</label>
+            <label class="settings-checkbox"><input id="settings-confirm-before-closing-terminal" data-testid="settings-confirm-before-closing-terminal" type="checkbox" /> Confirm before closing terminal panes</label>
+          </section>
+          <section class="settings-card" aria-labelledby="settings-advanced-heading">
+            <div class="settings-section-heading">
+              <h3 id="settings-advanced-heading">Diagnostics & advanced</h3>
+              <p>Hub endpoint, session prefix, launch profiles, and raw workspace JSON remain advanced file settings for now.</p>
+            </div>
+            <p class="settings-note">Edit <code>config.json</code> directly for advanced fields. NeonCode validates and reloads safe external changes live.</p>
+          </section>
         </section>
         <section id="settings-keyboard-panel" class="settings-panel settings-keyboard" role="tabpanel" aria-labelledby="settings-keyboard-tab" hidden>
           <h3>Keyboard shortcuts</h3>

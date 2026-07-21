@@ -82,7 +82,7 @@ Design direction: Hallmark minimal/system redesign. Preserve keyboard-first beha
 - [x] Apply the theme through named CSS custom properties; avoid ad hoc colors.
 - [x] Style xterm scrollbars to match the application background/theme.
 - [x] Keep advanced/internal settings hidden by default; hub endpoint and session prefix should not be normal user-editable fields.
-- [ ] Run a Settings menu cleanup phase: replace free-text choice fields with dropdowns where possible, add native color pickers for theme colors, add font-family discovery/selection, and simplify the Settings tab layout for faster scanning.
+- [x] Run a Settings menu cleanup phase: replace free-text choice fields with dropdowns where possible, add native color pickers for theme colors, add font-family discovery/selection, and simplify the Settings tab layout for faster scanning.
 
 ### Priority 4: dynamic configuration and keybinding targets
 
@@ -423,7 +423,7 @@ Status: protocol, retention, polling UI, and acknowledgement complete; CLI publi
 
 ### Immediate product priority: keyboard-first workspace cockpit
 
-Status: phases 1–6 now deliver the typed command boundary, keyboard-complete palette, persisted editable Settings/keybindings, app-created durable workspaces/tabs, complete pane split/resize/close/lifecycle controls, and authenticated local app-control CLI transport. Settings menu cleanup is the next UI polish phase.
+Status: phases 1–7 now deliver the typed command boundary, keyboard-complete palette, persisted editable Settings/keybindings, app-created durable workspaces/tabs, complete pane split/resize/close/lifecycle controls, authenticated local app-control CLI transport, and cleaned-up Settings controls/layout.
 
 #### Phase 1: shared typed command contract, results, and context
 
@@ -489,13 +489,13 @@ General endpoint/session/appearance fields and close policy are explicitly resta
 
 #### Phase 7: Settings menu cleanup and form polish
 
-- [ ] Replace free-text enum/choice settings with dropdowns where feasible, including terminal font size where bounded presets make sense and any future close/window policy selectors that remain user-facing.
-- [ ] Add font-family selection: discover likely installed monospace fonts when available, provide common fallbacks, and keep a Custom option for manual entry.
-- [ ] Replace raw hex text-only theme fields with color pickers plus validated hex text fallback for keyboard/paste workflows.
-- [ ] Group Settings into clearer sections with shorter labels/help text: Appearance, Terminal, Keyboard, Workspace behavior, and Diagnostics/advanced JSON-only notes.
-- [ ] Improve save/apply feedback so live-applied app theme changes, restart-required terminal/xterm changes, and validation errors are visually distinct.
-- [ ] Preserve the current security boundary: Settings saves still go through revision-checked main-process validation and do not expose hub endpoint/session prefix in the primary UI.
-- [ ] Cover the cleaned-up controls in unit/hidden-Electron tests, including dropdown validation, color picker values, font fallback/custom entry, and keyboard accessibility.
+- [x] Replace free-text enum/choice settings with dropdowns where feasible, including terminal font size where bounded presets make sense and any future close/window policy selectors that remain user-facing.
+- [x] Add font-family selection: discover likely installed monospace fonts when available, provide common fallbacks, and keep a Custom option for manual entry.
+- [x] Replace raw hex text-only theme fields with color pickers plus validated hex text fallback for keyboard/paste workflows.
+- [x] Group Settings into clearer sections with shorter labels/help text: Appearance, Terminal, Keyboard, Workspace behavior, and Diagnostics/advanced JSON-only notes.
+- [x] Improve save/apply feedback so live-applied app theme changes, restart-required terminal/xterm changes, and validation errors are visually distinct.
+- [x] Preserve the current security boundary: Settings saves still go through revision-checked main-process validation and do not expose hub endpoint/session prefix in the primary UI.
+- [x] Cover the cleaned-up controls in unit/hidden-Electron tests, including dropdown validation, color picker values, font fallback/custom entry, and keyboard accessibility.
 
 Current defaults include `Ctrl+Shift+T` for a new tab, `Ctrl+PageUp/PageDown` for tab navigation, `Alt+Shift+=`/`Alt+Shift+-` for side-by-side/stacked splits, and `Alt+Shift+Arrow` for directional border resize. Close/kill/detach/restart remain unbound. `F6`/`Shift+F6`, `Alt+1..9`, and `Ctrl+Shift+P` remain defaults.
 
