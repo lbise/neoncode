@@ -350,6 +350,12 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
   );
   assert(
     commands.some((command) => (
+      command && typeof command === 'object' && (command as { id?: unknown }).id === 'pane.interrupt'
+    )),
+    'app-control capabilities omitted pane interrupt command',
+  );
+  assert(
+    commands.some((command) => (
       command && typeof command === 'object' && (command as { id?: unknown }).id === 'pane.focusIndex'
     )),
     'app-control capabilities omitted externally eligible pane focus command',
@@ -440,6 +446,15 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
     command: { id: 'pane.sendEnter', args: { paneId: 'shell', text: `printf '${sendExpected}'` } },
   });
   await waitForOutput(page, 'shell', sendExpected);
+  const interruptResponse = await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
+    command: { id: 'pane.interrupt', args: { paneId: 'shell' } },
+  });
+  assert(interruptResponse.ok === true, 'app-control pane interrupt did not succeed');
+  assert(
+    interruptResponse.result && typeof interruptResponse.result === 'object'
+      && (interruptResponse.result as { status?: unknown }).status === 'completed',
+    'app-control pane interrupt did not complete',
+  );
   const capture = await appControlRequest(configDirectory, 'GET', '/v1/panes/shell/capture');
   assert(capture.ok === true, 'app-control pane capture did not succeed');
   const captureResult = capture.result;
@@ -1203,6 +1218,7 @@ async function runFirstLaunchChecks(
       'pane.focusIndex',
       'pane.send',
       'pane.sendEnter',
+      'pane.interrupt',
       'pane.split',
       'split.resize',
       'pane.close',

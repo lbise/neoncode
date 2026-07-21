@@ -28,6 +28,7 @@ export const COMMAND_IDS = Object.freeze([
   'pane.focusIndex',
   'pane.send',
   'pane.sendEnter',
+  'pane.interrupt',
   'pane.split',
   'split.resize',
   'pane.close',
@@ -170,6 +171,7 @@ export interface CommandArgumentMap {
   'pane.focusIndex': PaneFocusIndexCommandArgs;
   'pane.send': PaneSendCommandArgs;
   'pane.sendEnter': PaneSendCommandArgs;
+  'pane.interrupt': PaneFocusCommandArgs;
   'pane.split': PaneSplitCommandArgs;
   'split.resize': SplitResizeCommandArgs;
   'pane.close': PaneCloseCommandArgs;
@@ -264,6 +266,7 @@ export interface CommandResultMap {
   'pane.focusIndex': CommandOperationResult;
   'pane.send': CommandOperationResult;
   'pane.sendEnter': CommandOperationResult;
+  'pane.interrupt': CommandOperationResult;
   'pane.split': CommandOperationResult;
   'split.resize': CommandOperationResult;
   'pane.close': CommandOperationResult;
@@ -571,6 +574,15 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     category: 'Pane',
     context: 'pane',
     searchTerms: ['terminal', 'input', 'type', 'enter', 'automation'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'pane.interrupt': Object.freeze({
+    id: 'pane.interrupt',
+    title: 'Interrupt Pane Command',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'input', 'ctrl-c', 'cancel', 'automation'],
     owningLayer: 'renderer',
     externalInvocation: true,
   }),
@@ -946,6 +958,11 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
         throw new Error(`Invalid ${value.id} command arguments`);
       }
       return { id: value.id, args: { paneId: value.args.paneId, text: value.args.text } };
+    }
+    case 'pane.interrupt': {
+      if (!hasExactKeys(value, ['id', 'args'])) throw new Error('Invalid pane.interrupt command invocation');
+      const args = validateTargetArgs(value.args, 'paneId');
+      return { id: value.id, args };
     }
     case 'pane.split': {
       if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)

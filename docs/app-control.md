@@ -69,12 +69,13 @@ For dogfooding and automation, use bounded text input commands instead of synthe
 ./dev cli pane send shell "printf hello-"
 ./dev cli pane send-enter shell "world"
 ./dev cli wait pane shell running 30
+./dev cli pane interrupt shell
 ./dev cli pane send-enter shell "printf 'tests done\\n'"
 ./dev cli wait output shell "tests done" 30
 ./dev cli pane tail shell
 ```
 
-`pane send` writes text without Enter. `pane send-enter` writes text followed by Enter. The app-control validator accepts bounded text and rejects control characters; use explicit higher-level verbs rather than sending raw terminal escape/control sequences. `wait pane <pane-id> running` polls until a visible pane is started/attached. `wait output` polls the bounded recent-output capture until text appears or the timeout expires. Wait timeouts default to 30 seconds and accept integer durations such as `500ms`, `10s`, `2m`, or `1h`; a bare number is seconds.
+`pane send` writes text without Enter. `pane send-enter` writes text followed by Enter. `pane interrupt` sends the high-level Ctrl+C/interrupt action to a running visible pane. The app-control validator accepts bounded text and rejects control characters; use explicit higher-level verbs rather than sending raw terminal escape/control sequences. `wait pane <pane-id> running` polls until a visible pane is started/attached. `wait output` polls the bounded recent-output capture until text appears or the timeout expires. Wait timeouts default to 30 seconds and accept integer durations such as `500ms`, `10s`, `2m`, or `1h`; a bare number is seconds.
 
 ## Generic command execution
 

@@ -59,6 +59,7 @@ export interface CommandHandlers {
   'pane.focusIndex': (args: PaneFocusIndexCommandArgs) => void | Promise<void>;
   'pane.send': (args: PaneSendCommandArgs) => void | Promise<void>;
   'pane.sendEnter': (args: PaneSendCommandArgs) => void | Promise<void>;
+  'pane.interrupt': (args: PaneFocusCommandArgs) => void | Promise<void>;
   'pane.split': (args: PaneSplitCommandArgs) => void | Promise<void>;
   'split.resize': (args: SplitResizeCommandArgs) => void | Promise<void>;
   'pane.close': (args: PaneCloseCommandArgs) => void | Promise<void>;
@@ -107,6 +108,7 @@ export interface CommandEnablement {
   'pane.focusIndex'?: (args: PaneFocusIndexCommandArgs) => CommandDisabledReason | null;
   'pane.send'?: (args: PaneSendCommandArgs) => CommandDisabledReason | null;
   'pane.sendEnter'?: (args: PaneSendCommandArgs) => CommandDisabledReason | null;
+  'pane.interrupt'?: (args: PaneFocusCommandArgs) => CommandDisabledReason | null;
   'pane.split'?: (args: PaneSplitCommandArgs) => CommandDisabledReason | null;
   'split.resize'?: (args: SplitResizeCommandArgs) => CommandDisabledReason | null;
   'pane.close'?: (args: PaneCloseCommandArgs) => CommandDisabledReason | null;
@@ -256,6 +258,9 @@ export class CommandRegistry {
       case 'pane.sendEnter':
         await this.handlers['pane.sendEnter'](invocation.args);
         return completed();
+      case 'pane.interrupt':
+        await this.handlers['pane.interrupt'](invocation.args);
+        return completed();
       case 'pane.split':
         await this.handlers['pane.split'](invocation.args);
         return completed();
@@ -361,6 +366,8 @@ export class CommandRegistry {
         return this.enablement['pane.send']?.(command.args) ?? null;
       case 'pane.sendEnter':
         return this.enablement['pane.sendEnter']?.(command.args) ?? null;
+      case 'pane.interrupt':
+        return this.enablement['pane.interrupt']?.(command.args) ?? null;
       case 'pane.split':
         return this.enablement['pane.split']?.(command.args) ?? null;
       case 'split.resize':

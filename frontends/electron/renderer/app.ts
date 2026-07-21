@@ -556,6 +556,7 @@ export class NeonCodeApp {
       'pane.focusIndex': (args) => this.focusPaneByIndex(args),
       'pane.send': (args) => this.sendPaneText(args, false),
       'pane.sendEnter': (args) => this.sendPaneText(args, true),
+      'pane.interrupt': (args) => this.interruptPane(args),
       'pane.split': (args) => this.splitPane(args),
       'split.resize': (args) => this.resizeSplit(args),
       'pane.close': (args) => this.closePane(args),
@@ -610,6 +611,7 @@ export class NeonCodeApp {
       'pane.focusIndex': (args) => this.paneIndexCommandDisabledReason(args),
       'pane.send': (args) => this.sendPaneTextDisabledReason(args),
       'pane.sendEnter': (args) => this.sendPaneTextDisabledReason(args),
+      'pane.interrupt': (args) => this.paneCommandDisabledReason(args.paneId),
       'pane.split': (args) => this.splitPaneDisabledReason(args),
       'split.resize': (args) => this.resizeSplitDisabledReason(args),
       'pane.close': (args) => this.closePaneDisabledReason(args),
@@ -2195,6 +2197,13 @@ export class NeonCodeApp {
     if (!pane) throw new Error(`unknown visible pane: ${args.paneId}`);
     const sent = pane.sendTerminalText(enter ? `${args.text}\r` : args.text, enter ? 'app_control_enter' : 'app_control');
     if (!sent) throw new Error(`pane input was not sent: ${args.paneId}`);
+  }
+
+  interruptPane(args: { paneId: string }): void {
+    const pane = this.panes.find((candidate) => candidate.paneId === args.paneId);
+    if (!pane) throw new Error(`unknown visible pane: ${args.paneId}`);
+    const sent = pane.sendTerminalBytes(new Uint8Array([3]), 'app_control_interrupt');
+    if (!sent) throw new Error(`pane interrupt was not sent: ${args.paneId}`);
   }
 
   focusNextPane(): void {

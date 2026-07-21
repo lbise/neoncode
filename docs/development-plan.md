@@ -484,7 +484,7 @@ General endpoint/session/appearance fields and close policy are explicitly resta
 - [x] Add a dedicated local app-control endpoint owned by the desktop application, not by the PTY hub protocol.
 - [x] Authenticate the local transport with a per-run OS-protected descriptor token and strict request/result validation.
 - [x] Expose bounded app-control commands (`workspace.list`, `workspace.open`, and generic externally eligible command execution) with concrete arguments and version/capability negotiation.
-- [x] Extend `neoncode` CLI app status, workspace list/open/create/rename/delete, layout discovery (`tab list`, `pane list`), pane capture/tail/wait, typed tab/pane verbs including bounded terminal input (`pane send`, `pane send-enter`), plus generic `commands`/`command <id> [json-args]` over that transport.
+- [x] Extend `neoncode` CLI app status, workspace list/open/create/rename/delete, layout discovery (`tab list`, `pane list`), pane capture/tail/wait, typed tab/pane verbs including bounded terminal input (`pane send`, `pane send-enter`, `pane interrupt`), plus generic `commands`/`command <id> [json-args]` over that transport.
 - [x] Keep `neoncode-hub` layout-agnostic: it continues to own PTY/session lifecycle while Electron owns workspaces, tabs, splits, palette, and presentation.
 
 #### Phase 7: Settings menu cleanup and form polish

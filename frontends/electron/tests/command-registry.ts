@@ -40,6 +40,7 @@ async function run(): Promise<void> {
     'pane.focusIndex': ({ index }) => { calls.push(`pane.focusIndex:${index}`); },
     'pane.send': ({ paneId, text }) => { calls.push(`pane.send:${paneId}:${text}`); },
     'pane.sendEnter': ({ paneId, text }) => { calls.push(`pane.sendEnter:${paneId}:${text}`); },
+    'pane.interrupt': ({ paneId }) => { calls.push(`pane.interrupt:${paneId}`); },
     'pane.split': ({ splitId }) => { calls.push(`pane.split:${splitId}`); },
     'split.resize': ({ delta }) => { calls.push(`split.resize:${delta}`); },
     'pane.close': ({ paneId }) => { calls.push(`pane.close:${paneId}`); },
@@ -94,6 +95,7 @@ async function run(): Promise<void> {
       'pane.focusIndex',
       'pane.send',
       'pane.sendEnter',
+      'pane.interrupt',
       'pane.split',
       'split.resize',
       'pane.close',
@@ -183,6 +185,7 @@ async function run(): Promise<void> {
   await registry.execute('pane.focusIndex', { index: 1 });
   await registry.execute('pane.send', { paneId: 'tasks', text: 'echo hi' });
   await registry.execute('pane.sendEnter', { paneId: 'tasks', text: 'pwd' });
+  await registry.execute('pane.interrupt', { paneId: 'tasks' });
   await registry.execute('pane.split', {
     workspaceId: 'review', paneId: 'tasks', sessionId: 'agent', splitId: 'split-agent',
     title: 'Agent', launchProfile: 'shell', direction: 'horizontal', position: 'after',
@@ -232,6 +235,7 @@ async function run(): Promise<void> {
     'pane.focusIndex:1',
     'pane.send:tasks:echo hi',
     'pane.sendEnter:tasks:pwd',
+    'pane.interrupt:tasks',
     'pane.split:split-agent',
     'split.resize:0.05',
     'pane.close:tasks',
@@ -283,6 +287,7 @@ async function run(): Promise<void> {
     'pane.focusIndex': () => {},
     'pane.send': () => {},
     'pane.sendEnter': () => {},
+    'pane.interrupt': () => {},
     'pane.split': () => {},
     'split.resize': () => {},
     'pane.close': () => {},

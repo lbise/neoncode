@@ -48,6 +48,9 @@ const validInvocations: CommandInvocation[] = [
   { id: 'tab.closeDialog' },
   { id: 'pane.focus', args: { paneId: 'tasks' } },
   { id: 'pane.focusIndex', args: { index: 1 } },
+  { id: 'pane.send', args: { paneId: 'tasks', text: 'echo hi' } },
+  { id: 'pane.sendEnter', args: { paneId: 'tasks', text: 'pwd' } },
+  { id: 'pane.interrupt', args: { paneId: 'tasks' } },
   { id: 'pane.split', args: {
     workspaceId: 'review', paneId: 'tasks', sessionId: 'review-agent', splitId: 'split-agent',
     title: 'Agent', launchProfile: 'default-shell', direction: 'horizontal', position: 'after',
@@ -128,6 +131,8 @@ for (const invalid of [
   { id: 'pane.focus', args: { paneId: 'bad\nvalue' } },
   { id: 'pane.focus', args: { paneId: 'x'.repeat(129) } },
   { id: 'pane.focusIndex', args: { index: 8 } },
+  { id: 'pane.send', args: { paneId: 'tasks', text: '\u0003' } },
+  { id: 'pane.interrupt', args: { paneId: 'bad value' } },
   { id: 'pane.splitHorizontal', args: {} },
   { id: 'pane.split', args: {
     workspaceId: 'review', paneId: 'tasks', sessionId: 'new', splitId: 'split', title: 'New',

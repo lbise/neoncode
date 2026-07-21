@@ -809,6 +809,18 @@ fn run_pane_command(arguments: &[String]) -> Result<()> {
             println!("sent text to pane {}", arguments[2]);
             Ok(())
         }
+        "interrupt" => {
+            if arguments.len() != 3 {
+                bail!("usage: neoncode pane interrupt <pane-id>");
+            }
+            let result = app_control_execute_command(
+                "pane.interrupt",
+                Some(json!({ "paneId": arguments[2] })),
+            )?;
+            require_completed(&result, "pane interrupt")?;
+            println!("interrupted pane {}", arguments[2]);
+            Ok(())
+        }
         "split" => {
             if arguments.len() < 10 {
                 bail!(
@@ -869,7 +881,7 @@ fn run_pane_command(arguments: &[String]) -> Result<()> {
             Ok(())
         }
         _ => bail!(
-            "unknown pane command {subcommand:?}; use 'neoncode pane list|capture|tail|focus|focus-index|send|send-enter|split|resize|close|kill|restart'"
+            "unknown pane command {subcommand:?}; use 'neoncode pane list|capture|tail|focus|focus-index|send|send-enter|interrupt|split|resize|close|kill|restart'"
         ),
     }
 }
@@ -930,7 +942,7 @@ fn app_control_request(method: &str, path: &str, body: Option<Value>) -> Result<
 
 fn print_help() {
     println!(
-        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode app status\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode workspace create <workspace-id> <session-id> <launch-profile> <name> <title>\n  neoncode workspace rename <workspace-id> <name>\n  neoncode workspace delete <workspace-id> [kill|detach]\n  neoncode tab list [workspace-id]\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane list [workspace-id]\n  neoncode pane capture <pane-id>\n  neoncode pane tail <pane-id>\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane send <pane-id> <text>\n  neoncode pane send-enter <pane-id> <text>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode wait output <pane-id> <text> [timeout-duration]\n  neoncode wait pane <pane-id> running [timeout-duration]\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
+        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode app status\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode workspace create <workspace-id> <session-id> <launch-profile> <name> <title>\n  neoncode workspace rename <workspace-id> <name>\n  neoncode workspace delete <workspace-id> [kill|detach]\n  neoncode tab list [workspace-id]\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane list [workspace-id]\n  neoncode pane capture <pane-id>\n  neoncode pane tail <pane-id>\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane send <pane-id> <text>\n  neoncode pane send-enter <pane-id> <text>\n  neoncode pane interrupt <pane-id>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode wait output <pane-id> <text> [timeout-duration]\n  neoncode wait pane <pane-id> running [timeout-duration]\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
     );
 }
 
