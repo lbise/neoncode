@@ -315,6 +315,7 @@ Persistent sessions and sessions explicitly detached before disconnect are left 
 ./dev cli workspace delete scratch-ws
 ./dev cli tab list
 ./dev cli pane list
+./dev cli wait pane shell running 30
 ./dev cli pane send-enter shell "printf 'hello from app-control\\n'"
 ./dev cli wait output shell "hello from app-control" 30
 ./dev cli pane tail shell

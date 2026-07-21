@@ -68,12 +68,13 @@ For dogfooding and automation, use bounded text input commands instead of synthe
 ```bash
 ./dev cli pane send shell "printf hello-"
 ./dev cli pane send-enter shell "world"
+./dev cli wait pane shell running 30
 ./dev cli pane send-enter shell "printf 'tests done\\n'"
 ./dev cli wait output shell "tests done" 30
 ./dev cli pane tail shell
 ```
 
-`pane send` writes text without Enter. `pane send-enter` writes text followed by Enter. The app-control validator accepts bounded text and rejects control characters; use explicit higher-level verbs rather than sending raw terminal escape/control sequences. `wait output` polls the bounded recent-output capture until text appears or the timeout expires.
+`pane send` writes text without Enter. `pane send-enter` writes text followed by Enter. The app-control validator accepts bounded text and rejects control characters; use explicit higher-level verbs rather than sending raw terminal escape/control sequences. `wait pane <pane-id> running` polls until a visible pane is started/attached. `wait output` polls the bounded recent-output capture until text appears or the timeout expires.
 
 ## Generic command execution
 
