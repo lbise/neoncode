@@ -392,13 +392,42 @@ fn parse_timeout(value: Option<&String>) -> Result<Duration> {
     let Some(value) = value else {
         return Ok(Duration::from_secs(30));
     };
+    parse_duration(value)
+}
+
+fn parse_duration(value: &str) -> Result<Duration> {
     let raw = value.trim();
-    let seconds = raw
-        .strip_suffix('s')
-        .unwrap_or(raw)
-        .parse::<u64>()
-        .context("timeout must be an integer number of seconds, optionally suffixed with s")?;
+    if raw.is_empty() {
+        bail!("timeout must not be empty");
+    }
+    if let Some(milliseconds) = raw.strip_suffix("ms") {
+        let milliseconds = parse_duration_amount(milliseconds, "milliseconds")?;
+        return Ok(Duration::from_millis(milliseconds));
+    }
+    let (amount, multiplier, unit) = if let Some(seconds) = raw.strip_suffix('s') {
+        (seconds, 1, "seconds")
+    } else if let Some(minutes) = raw.strip_suffix('m') {
+        (minutes, 60, "minutes")
+    } else if let Some(hours) = raw.strip_suffix('h') {
+        (hours, 60 * 60, "hours")
+    } else {
+        (raw, 1, "seconds")
+    };
+    let amount = parse_duration_amount(amount, unit)?;
+    let seconds = amount
+        .checked_mul(multiplier)
+        .ok_or_else(|| anyhow!("timeout is too large"))?;
     Ok(Duration::from_secs(seconds))
+}
+
+fn parse_duration_amount(value: &str, unit: &str) -> Result<u64> {
+    let amount = value
+        .parse::<u64>()
+        .with_context(|| format!("timeout must be an integer number of {unit}"))?;
+    if amount == 0 {
+        bail!("timeout must be greater than zero");
+    }
+    Ok(amount)
 }
 
 fn require_completed(result: &Value, action: &str) -> Result<()> {
@@ -504,7 +533,7 @@ fn run_wait_command(arguments: &[String]) -> Result<()> {
     match subcommand {
         "output" => {
             if arguments.len() < 4 {
-                bail!("usage: neoncode wait output <pane-id> <text> [timeout-seconds]");
+                bail!("usage: neoncode wait output <pane-id> <text> [timeout-duration]");
             }
             let pane_id = &arguments[2];
             let text = &arguments[3];
@@ -528,7 +557,7 @@ fn run_wait_command(arguments: &[String]) -> Result<()> {
         }
         "pane" => {
             if arguments.len() < 4 || arguments[3] != "running" {
-                bail!("usage: neoncode wait pane <pane-id> running [timeout-seconds]");
+                bail!("usage: neoncode wait pane <pane-id> running [timeout-duration]");
             }
             let pane_id = &arguments[2];
             let timeout = parse_timeout(arguments.get(4))?;
@@ -901,6 +930,28 @@ fn app_control_request(method: &str, path: &str, body: Option<Value>) -> Result<
 
 fn print_help() {
     println!(
-        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode app status\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode workspace create <workspace-id> <session-id> <launch-profile> <name> <title>\n  neoncode workspace rename <workspace-id> <name>\n  neoncode workspace delete <workspace-id> [kill|detach]\n  neoncode tab list [workspace-id]\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane list [workspace-id]\n  neoncode pane capture <pane-id>\n  neoncode pane tail <pane-id>\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane send <pane-id> <text>\n  neoncode pane send-enter <pane-id> <text>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode wait output <pane-id> <text> [timeout-seconds]\n  neoncode wait pane <pane-id> running [timeout-seconds]\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
+        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode app status\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode workspace create <workspace-id> <session-id> <launch-profile> <name> <title>\n  neoncode workspace rename <workspace-id> <name>\n  neoncode workspace delete <workspace-id> [kill|detach]\n  neoncode tab list [workspace-id]\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane list [workspace-id]\n  neoncode pane capture <pane-id>\n  neoncode pane tail <pane-id>\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane send <pane-id> <text>\n  neoncode pane send-enter <pane-id> <text>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode wait output <pane-id> <text> [timeout-duration]\n  neoncode wait pane <pane-id> running [timeout-duration]\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_wait_duration_units() {
+        assert_eq!(parse_duration("500ms").unwrap(), Duration::from_millis(500));
+        assert_eq!(parse_duration("30").unwrap(), Duration::from_secs(30));
+        assert_eq!(parse_duration("30s").unwrap(), Duration::from_secs(30));
+        assert_eq!(parse_duration("2m").unwrap(), Duration::from_secs(120));
+        assert_eq!(parse_duration("1h").unwrap(), Duration::from_secs(3600));
+    }
+
+    #[test]
+    fn rejects_invalid_wait_duration_units() {
+        assert!(parse_duration("").is_err());
+        assert!(parse_duration("0s").is_err());
+        assert!(parse_duration("1.5s").is_err());
+        assert!(parse_duration("10seconds").is_err());
+    }
 }

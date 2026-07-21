@@ -74,7 +74,7 @@ For dogfooding and automation, use bounded text input commands instead of synthe
 ./dev cli pane tail shell
 ```
 
-`pane send` writes text without Enter. `pane send-enter` writes text followed by Enter. The app-control validator accepts bounded text and rejects control characters; use explicit higher-level verbs rather than sending raw terminal escape/control sequences. `wait pane <pane-id> running` polls until a visible pane is started/attached. `wait output` polls the bounded recent-output capture until text appears or the timeout expires.
+`pane send` writes text without Enter. `pane send-enter` writes text followed by Enter. The app-control validator accepts bounded text and rejects control characters; use explicit higher-level verbs rather than sending raw terminal escape/control sequences. `wait pane <pane-id> running` polls until a visible pane is started/attached. `wait output` polls the bounded recent-output capture until text appears or the timeout expires. Wait timeouts default to 30 seconds and accept integer durations such as `500ms`, `10s`, `2m`, or `1h`; a bare number is seconds.
 
 ## Generic command execution
 
