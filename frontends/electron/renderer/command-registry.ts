@@ -12,6 +12,7 @@ import {
   type PaneCloseCommandArgs,
   type PaneFocusCommandArgs,
   type PaneFocusIndexCommandArgs,
+  type PaneSendCommandArgs,
   type PaneSplitCommandArgs,
   type PaneTargetCommandArgs,
   type SplitResizeCommandArgs,
@@ -56,6 +57,8 @@ export interface CommandHandlers {
   'tab.closeDialog': () => void | Promise<void>;
   'pane.focus': (args: PaneFocusCommandArgs) => void | Promise<void>;
   'pane.focusIndex': (args: PaneFocusIndexCommandArgs) => void | Promise<void>;
+  'pane.send': (args: PaneSendCommandArgs) => void | Promise<void>;
+  'pane.sendEnter': (args: PaneSendCommandArgs) => void | Promise<void>;
   'pane.split': (args: PaneSplitCommandArgs) => void | Promise<void>;
   'split.resize': (args: SplitResizeCommandArgs) => void | Promise<void>;
   'pane.close': (args: PaneCloseCommandArgs) => void | Promise<void>;
@@ -102,6 +105,8 @@ export interface CommandEnablement {
   'tab.closeDialog'?: () => CommandDisabledReason | null;
   'pane.focus'?: (args: PaneFocusCommandArgs) => CommandDisabledReason | null;
   'pane.focusIndex'?: (args: PaneFocusIndexCommandArgs) => CommandDisabledReason | null;
+  'pane.send'?: (args: PaneSendCommandArgs) => CommandDisabledReason | null;
+  'pane.sendEnter'?: (args: PaneSendCommandArgs) => CommandDisabledReason | null;
   'pane.split'?: (args: PaneSplitCommandArgs) => CommandDisabledReason | null;
   'split.resize'?: (args: SplitResizeCommandArgs) => CommandDisabledReason | null;
   'pane.close'?: (args: PaneCloseCommandArgs) => CommandDisabledReason | null;
@@ -245,6 +250,12 @@ export class CommandRegistry {
       case 'pane.focusIndex':
         await this.handlers['pane.focusIndex'](invocation.args);
         return completed();
+      case 'pane.send':
+        await this.handlers['pane.send'](invocation.args);
+        return completed();
+      case 'pane.sendEnter':
+        await this.handlers['pane.sendEnter'](invocation.args);
+        return completed();
       case 'pane.split':
         await this.handlers['pane.split'](invocation.args);
         return completed();
@@ -346,6 +357,10 @@ export class CommandRegistry {
         return this.enablement['pane.focus']?.(command.args) ?? null;
       case 'pane.focusIndex':
         return this.enablement['pane.focusIndex']?.(command.args) ?? null;
+      case 'pane.send':
+        return this.enablement['pane.send']?.(command.args) ?? null;
+      case 'pane.sendEnter':
+        return this.enablement['pane.sendEnter']?.(command.args) ?? null;
       case 'pane.split':
         return this.enablement['pane.split']?.(command.args) ?? null;
       case 'split.resize':

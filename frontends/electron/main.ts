@@ -373,6 +373,7 @@ function readJsonRequest(request: http.IncomingMessage, maxBytes = 16 * 1024): P
 
 const APP_CONTROL_FEATURES = Object.freeze([
   'capabilities.read',
+  'status.read',
   'workspaces.read',
   'workspaces.open',
   'layout.read',
@@ -397,12 +398,55 @@ function appControlCapabilities(): unknown {
   };
 }
 
-function appControlLayoutSnapshot(): unknown {
+function currentAppControlContext(): unknown {
   const config = bootstrapResult.config;
   const configuredWorkspaceIds = new Set((config?.workspaces ?? []).map((workspace) => workspace.id));
   const activeWorkspaceId = configuredWorkspaceIds.has(desktopState.activeWorkspaceId ?? '')
     ? desktopState.activeWorkspaceId
     : config?.workspaces[0]?.id ?? null;
+  const workspace = (config?.workspaces ?? []).find((candidate) => candidate.id === activeWorkspaceId);
+  if (!workspace) {
+    return { activeWorkspaceId: null, activeWorkspaceName: null, activeTabId: null, activeTabTitle: null, activePaneId: null };
+  }
+  const reconciliation = reconcileWorkspaceLayout({
+    name: workspace.name,
+    layout: workspace.layout,
+    sessions: workspace.sessions.map((session) => ({ id: session.id, title: session.title })),
+  }, desktopState.workspaceLayouts[workspace.id]);
+  const activeTab = reconciliation.state.tabs.find((tab) => tab.tabId === reconciliation.state.activeTabId);
+  return {
+    activeWorkspaceId: workspace.id,
+    activeWorkspaceName: workspace.name,
+    activeTabId: activeTab?.tabId ?? null,
+    activeTabTitle: activeTab?.title ?? null,
+    activePaneId: activeTab?.focusedPaneId ?? null,
+  };
+}
+
+function activeWorkspaceIdForAppControl(): string | null {
+  const context = currentAppControlContext();
+  return typeof context === 'object' && context !== null && 'activeWorkspaceId' in context
+    ? context.activeWorkspaceId as string | null
+    : null;
+}
+
+function appControlStatus(): unknown {
+  return {
+    ok: true,
+    protocolVersion: 1,
+    appVersion: app.getVersion(),
+    pid: process.pid,
+    configRevision,
+    descriptorPath: appControlDescriptorPath(),
+    diagnostics: structuredClone(bootstrapResult.diagnostics),
+    features: [...APP_CONTROL_FEATURES],
+    context: currentAppControlContext(),
+  };
+}
+
+function appControlLayoutSnapshot(): unknown {
+  const config = bootstrapResult.config;
+  const activeWorkspaceId = activeWorkspaceIdForAppControl();
   return {
     ok: true,
     protocolVersion: 1,
@@ -444,7 +488,7 @@ function appControlWorkspaceList(): unknown {
     protocolVersion: 1,
     appVersion: app.getVersion(),
     configRevision,
-    activeWorkspaceId: desktopState.activeWorkspaceId,
+    activeWorkspaceId: activeWorkspaceIdForAppControl(),
     workspaces: workspaces.map((workspace) => ({
       id: workspace.id,
       name: workspace.name,
@@ -474,7 +518,7 @@ async function dispatchAppControlCommand(command: unknown): Promise<unknown> {
     appControlPending.set(requestId, { resolve, reject, timeout });
     window.webContents.send('neoncode:app-control-command', { requestId, command: invocation });
   });
-  return { ok: true, result };
+  return { ok: true, result, context: currentAppControlContext() };
 }
 
 async function dispatchAppControlWorkspaceOpen(workspaceId: string): Promise<unknown> {
@@ -505,6 +549,10 @@ async function handleAppControlRequest(
   try {
     if (request.method === 'GET' && request.url === '/v1/capabilities') {
       writeJsonResponse(response, 200, appControlCapabilities());
+      return;
+    }
+    if (request.method === 'GET' && request.url === '/v1/status') {
+      writeJsonResponse(response, 200, appControlStatus());
       return;
     }
     if (request.method === 'GET' && request.url === '/v1/workspaces') {

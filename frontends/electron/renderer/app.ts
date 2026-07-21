@@ -26,6 +26,7 @@ import {
   type CommandOperationResult,
   type PaneCloseCommandArgs,
   type PaneFocusIndexCommandArgs,
+  type PaneSendCommandArgs,
   type PaneSplitCommandArgs,
   type PaneTargetCommandArgs,
   type SplitResizeCommandArgs,
@@ -553,6 +554,8 @@ export class NeonCodeApp {
       'tab.closeDialog': () => this.requestActiveTabClose(),
       'pane.focus': ({ paneId }) => this.focusPane(paneId),
       'pane.focusIndex': (args) => this.focusPaneByIndex(args),
+      'pane.send': (args) => this.sendPaneText(args, false),
+      'pane.sendEnter': (args) => this.sendPaneText(args, true),
       'pane.split': (args) => this.splitPane(args),
       'split.resize': (args) => this.resizeSplit(args),
       'pane.close': (args) => this.closePane(args),
@@ -605,6 +608,8 @@ export class NeonCodeApp {
       'tab.closeDialog': () => this.tabDialogDisabledReason('close'),
       'pane.focus': ({ paneId }) => this.paneCommandDisabledReason(paneId),
       'pane.focusIndex': (args) => this.paneIndexCommandDisabledReason(args),
+      'pane.send': (args) => this.sendPaneTextDisabledReason(args),
+      'pane.sendEnter': (args) => this.sendPaneTextDisabledReason(args),
       'pane.split': (args) => this.splitPaneDisabledReason(args),
       'split.resize': (args) => this.resizeSplitDisabledReason(args),
       'pane.close': (args) => this.closePaneDisabledReason(args),
@@ -1006,6 +1011,13 @@ export class NeonCodeApp {
     const activeTab = this.activeLayoutTab();
     const pane = activeTab ? orderedPaneLeaves(activeTab.root)[index] : undefined;
     return pane ? this.paneCommandDisabledReason(pane.paneId) : 'Pane is unavailable';
+  }
+
+  sendPaneTextDisabledReason(args: PaneSendCommandArgs): CommandDisabledReason | null {
+    const focusReason = this.paneCommandDisabledReason(args.paneId);
+    if (focusReason !== null) return focusReason;
+    const pane = this.panes.find((candidate) => candidate.paneId === args.paneId);
+    return pane?.state.started ? null : 'Pane is not running';
   }
 
   paneTargetDisabledReason(args: PaneTargetCommandArgs): CommandDisabledReason | null {
@@ -2144,6 +2156,13 @@ export class NeonCodeApp {
     const tab = this.activeLayoutTab();
     const target = tab ? orderedPaneLeaves(tab.root)[index] : undefined;
     if (target) this.focusPane(target.paneId);
+  }
+
+  sendPaneText(args: PaneSendCommandArgs, enter: boolean): void {
+    const pane = this.panes.find((candidate) => candidate.paneId === args.paneId);
+    if (!pane) throw new Error(`unknown visible pane: ${args.paneId}`);
+    const sent = pane.sendTerminalText(enter ? `${args.text}\r` : args.text, enter ? 'app_control_enter' : 'app_control');
+    if (!sent) throw new Error(`pane input was not sent: ${args.paneId}`);
   }
 
   focusNextPane(): void {

@@ -26,6 +26,8 @@ export const COMMAND_IDS = Object.freeze([
   'tab.closeDialog',
   'pane.focus',
   'pane.focusIndex',
+  'pane.send',
+  'pane.sendEnter',
   'pane.split',
   'split.resize',
   'pane.close',
@@ -116,6 +118,11 @@ export interface PaneTargetCommandArgs {
   paneId: string;
 }
 
+export interface PaneSendCommandArgs {
+  paneId: string;
+  text: string;
+}
+
 export interface PaneSplitCommandArgs extends PaneTargetCommandArgs {
   sessionId: string;
   splitId: string;
@@ -161,6 +168,8 @@ export interface CommandArgumentMap {
   'tab.closeDialog': undefined;
   'pane.focus': PaneFocusCommandArgs;
   'pane.focusIndex': PaneFocusIndexCommandArgs;
+  'pane.send': PaneSendCommandArgs;
+  'pane.sendEnter': PaneSendCommandArgs;
   'pane.split': PaneSplitCommandArgs;
   'split.resize': SplitResizeCommandArgs;
   'pane.close': PaneCloseCommandArgs;
@@ -206,6 +215,7 @@ export type CommandDisabledReason =
   | 'No active pane is available'
   | 'No other pane is available'
   | 'Pane is unavailable'
+  | 'Pane is not running'
   | 'Pane is not in the active tab'
   | 'Pane limit reached'
   | 'Split is unavailable'
@@ -252,6 +262,8 @@ export interface CommandResultMap {
   'tab.closeDialog': CommandOperationResult;
   'pane.focus': CommandOperationResult;
   'pane.focusIndex': CommandOperationResult;
+  'pane.send': CommandOperationResult;
+  'pane.sendEnter': CommandOperationResult;
   'pane.split': CommandOperationResult;
   'split.resize': CommandOperationResult;
   'pane.close': CommandOperationResult;
@@ -544,6 +556,24 @@ const CATALOG: Readonly<Record<CommandId, Readonly<CommandMetadata>>> = Object.f
     owningLayer: 'renderer',
     externalInvocation: true,
   }),
+  'pane.send': Object.freeze({
+    id: 'pane.send',
+    title: 'Send Text to Pane',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'input', 'type', 'automation'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
+  'pane.sendEnter': Object.freeze({
+    id: 'pane.sendEnter',
+    title: 'Send Text and Enter to Pane',
+    category: 'Pane',
+    context: 'pane',
+    searchTerms: ['terminal', 'input', 'type', 'enter', 'automation'],
+    owningLayer: 'renderer',
+    externalInvocation: true,
+  }),
   'pane.split': Object.freeze({
     id: 'pane.split',
     title: 'Split Pane',
@@ -712,6 +742,13 @@ function isWorkspacePath(value: unknown): value is string | null {
     && value.length > 0
     && new TextEncoder().encode(value).length <= 4096
     && !/[\u0000-\u001f\u007f-\u009f]/u.test(value));
+}
+
+function isBoundedTerminalInputText(value: unknown): value is string {
+  return typeof value === 'string'
+    && value.length > 0
+    && new TextEncoder().encode(value).length <= 4096
+    && !/[\u0000-\u001f\u007f-\u009f]/u.test(value);
 }
 
 function validateTargetArgs(value: unknown, key: 'workspaceId' | 'paneId'): Record<typeof key, string> {
@@ -899,6 +936,16 @@ export function validateCommandInvocation(value: unknown): CommandInvocation {
     case 'pane.focusIndex': {
       if (!hasExactKeys(value, ['id', 'args'])) throw new Error('Invalid pane.focusIndex command invocation');
       return { id: value.id, args: validateIndexArgs(value.args, 8) };
+    }
+    case 'pane.send':
+    case 'pane.sendEnter': {
+      if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)
+          || !hasExactKeys(value.args, ['paneId', 'text'])
+          || !isBoundedIdentifier(value.args.paneId)
+          || !isBoundedTerminalInputText(value.args.text)) {
+        throw new Error(`Invalid ${value.id} command arguments`);
+      }
+      return { id: value.id, args: { paneId: value.args.paneId, text: value.args.text } };
     }
     case 'pane.split': {
       if (!hasExactKeys(value, ['id', 'args']) || !isRecord(value.args)

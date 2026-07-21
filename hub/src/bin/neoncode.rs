@@ -47,6 +47,9 @@ async fn run() -> Result<()> {
     if command == "pane" || command == "panes" {
         return run_pane_command(&arguments);
     }
+    if command == "app" {
+        return run_app_command(&arguments);
+    }
 
     let token =
         neoncode_hub::load_capability_token().context("load neoncode-hub capability token")?;
@@ -236,6 +239,57 @@ fn app_control_descriptor_path() -> Result<PathBuf> {
             .or_else(|_| env::var("HOME").map(|home| PathBuf::from(home).join(".config")))
             .context("XDG_CONFIG_HOME and HOME are not set")?;
         Ok(base.join("NeonCode").join("app-control.json"))
+    }
+}
+
+fn run_app_command(arguments: &[String]) -> Result<()> {
+    let subcommand = arguments.get(1).map(String::as_str).unwrap_or("status");
+    match subcommand {
+        "status" => {
+            let response = app_control_request("GET", "/v1/status", None)?;
+            let context = &response["context"];
+            println!("app: connected");
+            println!(
+                "version: {}",
+                response["appVersion"].as_str().unwrap_or("unknown")
+            );
+            println!("pid: {}", response["pid"].as_i64().unwrap_or_default());
+            println!(
+                "config revision: {}",
+                response["configRevision"].as_i64().unwrap_or_default()
+            );
+            println!(
+                "descriptor: {}",
+                response["descriptorPath"].as_str().unwrap_or("unknown")
+            );
+            println!(
+                "active workspace: {} ({})",
+                context["activeWorkspaceId"].as_str().unwrap_or("none"),
+                context["activeWorkspaceName"].as_str().unwrap_or("unknown"),
+            );
+            println!(
+                "active tab: {} ({})",
+                context["activeTabId"].as_str().unwrap_or("none"),
+                context["activeTabTitle"].as_str().unwrap_or("unknown"),
+            );
+            println!(
+                "active pane: {}",
+                context["activePaneId"].as_str().unwrap_or("none")
+            );
+            let features = response["features"]
+                .as_array()
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(",")
+                })
+                .unwrap_or_default();
+            println!("features: {features}");
+            Ok(())
+        }
+        _ => bail!("unknown app command {subcommand:?}; use 'neoncode app status'"),
     }
 }
 
@@ -591,6 +645,24 @@ fn run_pane_command(arguments: &[String]) -> Result<()> {
             println!("focused pane index {index}");
             Ok(())
         }
+        "send" | "send-enter" | "sendEnter" => {
+            if arguments.len() < 4 {
+                bail!("usage: neoncode pane {subcommand} <pane-id> <text>");
+            }
+            let text = arguments[3..].join(" ");
+            let command_id = if subcommand == "send" {
+                "pane.send"
+            } else {
+                "pane.sendEnter"
+            };
+            let result = app_control_execute_command(
+                command_id,
+                Some(json!({ "paneId": arguments[2], "text": text })),
+            )?;
+            require_completed(&result, &format!("pane {subcommand}"))?;
+            println!("sent text to pane {}", arguments[2]);
+            Ok(())
+        }
         "split" => {
             if arguments.len() < 10 {
                 bail!(
@@ -651,7 +723,7 @@ fn run_pane_command(arguments: &[String]) -> Result<()> {
             Ok(())
         }
         _ => bail!(
-            "unknown pane command {subcommand:?}; use 'neoncode pane list|focus|focus-index|split|resize|close|kill|restart'"
+            "unknown pane command {subcommand:?}; use 'neoncode pane list|focus|focus-index|send|send-enter|split|resize|close|kill|restart'"
         ),
     }
 }
@@ -712,6 +784,6 @@ fn app_control_request(method: &str, path: &str, body: Option<Value>) -> Result<
 
 fn print_help() {
     println!(
-        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode workspace create <workspace-id> <session-id> <launch-profile> <name> <title>\n  neoncode workspace rename <workspace-id> <name>\n  neoncode workspace delete <workspace-id> [kill|detach]\n  neoncode tab list [workspace-id]\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane list [workspace-id]\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
+        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode app status\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode workspace create <workspace-id> <session-id> <launch-profile> <name> <title>\n  neoncode workspace rename <workspace-id> <name>\n  neoncode workspace delete <workspace-id> [kill|detach]\n  neoncode tab list [workspace-id]\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane list [workspace-id]\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane send <pane-id> <text>\n  neoncode pane send-enter <pane-id> <text>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
     );
 }

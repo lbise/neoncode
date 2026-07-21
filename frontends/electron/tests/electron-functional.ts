@@ -343,6 +343,12 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
   assert(Array.isArray(commands), 'app-control capabilities omitted commands');
   assert(
     commands.some((command) => (
+      command && typeof command === 'object' && (command as { id?: unknown }).id === 'pane.sendEnter'
+    )),
+    'app-control capabilities omitted pane send-enter command',
+  );
+  assert(
+    commands.some((command) => (
       command && typeof command === 'object' && (command as { id?: unknown }).id === 'pane.focusIndex'
     )),
     'app-control capabilities omitted externally eligible pane focus command',
@@ -390,6 +396,16 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
     'app-control layout snapshot omitted seeded pane id',
   );
 
+  const status = await appControlRequest(configDirectory, 'GET', '/v1/status');
+  assert(status.ok === true, 'app-control status did not succeed');
+  assert(status.configRevision !== undefined, 'app-control status omitted config revision');
+  const statusContext = status.context;
+  assert(
+    statusContext && typeof statusContext === 'object'
+      && (statusContext as { activeWorkspaceId?: unknown }).activeWorkspaceId === 'default',
+    'app-control status reported wrong active workspace',
+  );
+
   const list = await appControlRequest(configDirectory, 'GET', '/v1/workspaces');
   assert(list.ok === true, 'app-control workspace list did not succeed');
   const workspaces = list.workspaces;
@@ -405,14 +421,24 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
   await waitForActivePane(page, 'review', 'review-shell');
   await appControlRequest(configDirectory, 'POST', '/v1/workspaces/open', { workspaceId: 'default' });
   await waitForActivePane(page, 'default', 'shell');
-  await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
+  const focusTasks = await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
     command: { id: 'pane.focusIndex', args: { index: 1 } },
   });
   await waitForActivePane(page, 'default', 'tasks');
+  assert(
+    focusTasks.context && typeof focusTasks.context === 'object'
+      && (focusTasks.context as { activePaneId?: unknown }).activePaneId === 'tasks',
+    'app-control command response omitted active pane context',
+  );
   await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
     command: { id: 'pane.focusIndex', args: { index: 0 } },
   });
   await waitForActivePane(page, 'default', 'shell');
+  const sendExpected = `app-control-send-${Date.now()}`;
+  await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
+    command: { id: 'pane.sendEnter', args: { paneId: 'shell', text: `printf '${sendExpected}'` } },
+  });
+  await waitForOutput(page, 'shell', sendExpected);
   await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
     command: {
       id: 'tab.create',
@@ -1164,6 +1190,8 @@ async function runFirstLaunchChecks(
       'tab.closeDialog',
       'pane.focus',
       'pane.focusIndex',
+      'pane.send',
+      'pane.sendEnter',
       'pane.split',
       'split.resize',
       'pane.close',
