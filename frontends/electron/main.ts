@@ -48,6 +48,7 @@ import type {
   AppTheme,
   WorkspaceCatalogSnapshot,
   AppControlCommandResponse,
+  AppControlQueryResponse,
 } from './shared/types';
 import type { WorkspaceLayoutState } from './shared/layout-model';
 import { loadHubToken, type HubTokenResult } from './token-loader';
@@ -377,6 +378,7 @@ const APP_CONTROL_FEATURES = Object.freeze([
   'workspaces.read',
   'workspaces.open',
   'layout.read',
+  'pane.capture',
   'commands.execute',
 ]);
 
@@ -528,6 +530,23 @@ async function dispatchAppControlWorkspaceOpen(workspaceId: string): Promise<unk
   return dispatchAppControlCommand({ id: 'workspace.open', args: { workspaceId } });
 }
 
+async function dispatchAppControlQuery(query: unknown): Promise<unknown> {
+  const window = mainWindow;
+  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
+    throw new Error('NeonCode renderer is not available');
+  }
+  const requestId = crypto.randomUUID();
+  const result = await new Promise<unknown>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      appControlPending.delete(requestId);
+      reject(new Error('app-control query timed out'));
+    }, 5000);
+    appControlPending.set(requestId, { resolve, reject, timeout });
+    window.webContents.send('neoncode:app-control-query', { requestId, query });
+  });
+  return { ok: true, result, context: currentAppControlContext() };
+}
+
 function validWorkspaceId(value: unknown): value is string {
   return typeof value === 'string'
     && /^[a-zA-Z0-9._:-]{1,64}$/.test(value)
@@ -561,6 +580,14 @@ async function handleAppControlRequest(
     }
     if (request.method === 'GET' && request.url === '/v1/layout') {
       writeJsonResponse(response, 200, appControlLayoutSnapshot());
+      return;
+    }
+    const captureMatch = request.url?.match(/^\/v1\/panes\/([A-Za-z0-9._-]{1,64})\/capture$/u);
+    if (request.method === 'GET' && captureMatch?.[1]) {
+      writeJsonResponse(response, 200, await dispatchAppControlQuery({
+        type: 'pane.capture',
+        paneId: captureMatch[1],
+      }));
       return;
     }
     if (request.method === 'POST' && request.url === '/v1/workspaces/open') {
@@ -892,6 +919,18 @@ ipcMain.on('neoncode:app-control-result', (event, response: unknown) => {
   requireCurrentRenderer(event.sender);
   if (response === null || typeof response !== 'object' || Array.isArray(response)) return;
   const document = response as Partial<AppControlCommandResponse>;
+  if (typeof document.requestId !== 'string') return;
+  const pending = appControlPending.get(document.requestId);
+  if (!pending) return;
+  clearTimeout(pending.timeout);
+  appControlPending.delete(document.requestId);
+  pending.resolve(document.result ?? { status: 'failed', message: 'renderer returned no result' });
+});
+
+ipcMain.on('neoncode:app-control-query-result', (event, response: unknown) => {
+  requireCurrentRenderer(event.sender);
+  if (response === null || typeof response !== 'object' || Array.isArray(response)) return;
+  const document = response as Partial<AppControlQueryResponse>;
   if (typeof document.requestId !== 'string') return;
   const pending = appControlPending.get(document.requestId);
   if (!pending) return;

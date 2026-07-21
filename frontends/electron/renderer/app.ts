@@ -714,6 +714,9 @@ export class NeonCodeApp {
     this.window.neoncodeDesktop.onAppControlCommand((request) => {
       void this.handleAppControlCommand(request.requestId, request.command);
     });
+    this.window.neoncodeDesktop.onAppControlQuery((request) => {
+      this.handleAppControlQuery(request.requestId, request.query);
+    });
     this.applyAppTheme();
     this.syncPublicConfiguration();
     this.workspaceSessionStates = new Map(
@@ -787,6 +790,35 @@ export class NeonCodeApp {
   async handleAppControlCommand(requestId: string, command: CommandInvocation): Promise<void> {
     const result = await this.dispatchCommand(command);
     this.window.neoncodeDesktop.completeAppControlCommand({ requestId, result });
+  }
+
+  handleAppControlQuery(requestId: string, query: { type: 'pane.capture'; paneId: string }): void {
+    try {
+      if (query.type !== 'pane.capture') throw new Error('unsupported app-control query');
+      const pane = this.panes.find((candidate) => candidate.paneId === query.paneId);
+      if (!pane) throw new Error(`unknown visible pane: ${query.paneId}`);
+      this.window.neoncodeDesktop.completeAppControlQuery({
+        requestId,
+        result: {
+          status: 'completed',
+          paneId: pane.paneId,
+          sessionKey: pane.sessionKey,
+          lifecycle: pane.state.lifecycle,
+          started: pane.state.started,
+          inputEvents: pane.state.inputEvents,
+          outputEvents: pane.state.outputEvents,
+          firstOutputSeq: pane.state.firstOutputSeq,
+          lastOutputSeq: pane.state.lastOutputSeq,
+          outputGap: pane.state.publicPane.outputGap,
+          recentOutput: pane.state.publicPane.recentOutput,
+        },
+      });
+    } catch (error) {
+      this.window.neoncodeDesktop.completeAppControlQuery({
+        requestId,
+        result: { status: 'failed', message: errorMessage(error) },
+      });
+    }
   }
 
   async dispatchCommand(command: CommandInvocation): Promise<CommandDispatchResult> {

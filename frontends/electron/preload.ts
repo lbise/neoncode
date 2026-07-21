@@ -4,6 +4,8 @@ import type { WorkspaceLayoutState } from './shared/layout-model';
 import type {
   AppControlCommandCallback,
   AppControlCommandResponse,
+  AppControlQueryCallback,
+  AppControlQueryResponse,
   ConfigChangedCallback,
   NeoncodeDesktopApi,
   PrepareCloseCallback,
@@ -32,6 +34,10 @@ function isConfigChangedCallback(value: unknown): value is ConfigChangedCallback
 }
 
 function isAppControlCommandCallback(value: unknown): value is AppControlCommandCallback {
+  return typeof value === 'function';
+}
+
+function isAppControlQueryCallback(value: unknown): value is AppControlQueryCallback {
   return typeof value === 'function';
 }
 
@@ -143,6 +149,21 @@ const desktopApi = Object.freeze({
 
   completeAppControlCommand(response: AppControlCommandResponse): void {
     ipcRenderer.send('neoncode:app-control-result', structuredClone(response));
+  },
+
+  onAppControlQuery(callback: AppControlQueryCallback): () => void {
+    if (!isAppControlQueryCallback(callback)) {
+      throw new TypeError('app-control query callback must be a function');
+    }
+    const listener = (_event: IpcRendererEvent, payload: unknown): void => {
+      void callback(structuredClone(payload) as Parameters<AppControlQueryCallback>[0]);
+    };
+    ipcRenderer.on('neoncode:app-control-query', listener);
+    return () => ipcRenderer.removeListener('neoncode:app-control-query', listener);
+  },
+
+  completeAppControlQuery(response: AppControlQueryResponse): void {
+    ipcRenderer.send('neoncode:app-control-query-result', structuredClone(response));
   },
 
   onPrepareClose(callback: PrepareCloseCallback): void {

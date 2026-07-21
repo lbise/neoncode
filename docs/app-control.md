@@ -12,9 +12,11 @@ The CLI reads the per-run descriptor from the platform config directory, or from
 ./dev cli workspace list
 ./dev cli tab list
 ./dev cli pane list
+./dev cli pane capture shell
+./dev cli pane tail shell
 ```
 
-`app status` prints the app version, pid, config revision, descriptor path, advertised features, and active workspace/tab/pane context.
+`app status` prints the app version, pid, config revision, descriptor path, advertised features, and active workspace/tab/pane context. `pane capture` returns a bounded JSON snapshot for a visible pane, including lifecycle, sequence counters, and recent output. `pane tail` prints only the recent output text.
 
 ## Workspaces
 
@@ -67,9 +69,11 @@ For dogfooding and automation, use bounded text input commands instead of synthe
 ./dev cli pane send shell "printf hello-"
 ./dev cli pane send-enter shell "world"
 ./dev cli pane send-enter shell "printf 'tests done\\n'"
+./dev cli wait output shell "tests done" 30
+./dev cli pane tail shell
 ```
 
-`pane send` writes text without Enter. `pane send-enter` writes text followed by Enter. The app-control validator accepts bounded text and rejects control characters; use explicit higher-level verbs rather than sending raw terminal escape/control sequences.
+`pane send` writes text without Enter. `pane send-enter` writes text followed by Enter. The app-control validator accepts bounded text and rejects control characters; use explicit higher-level verbs rather than sending raw terminal escape/control sequences. `wait output` polls the bounded recent-output capture until text appears or the timeout expires.
 
 ## Generic command execution
 

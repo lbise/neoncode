@@ -316,6 +316,8 @@ Persistent sessions and sessions explicitly detached before disconnect are left 
 ./dev cli tab list
 ./dev cli pane list
 ./dev cli pane send-enter shell "printf 'hello from app-control\\n'"
+./dev cli wait output shell "hello from app-control" 30
+./dev cli pane tail shell
 ./dev cli tab create default scratch scratch-session default-shell Scratch
 ./dev cli tab open default scratch
 ./dev cli pane focus-index 1
@@ -325,7 +327,7 @@ Persistent sessions and sessions explicitly detached before disconnect are left 
 ./dev cli notify shell info "Tests complete" "All checks passed"
 ```
 
-`status` prints bounded hub aggregate counts, `sessions` emits authenticated hub JSON summaries, and `notify` publishes retained generation-safe workspace attention. `app status`, `workspace list/open/create/rename/delete`, layout discovery (`tab list`, `pane list`), typed `tab` and `pane` verbs including bounded terminal input (`pane send`, `pane send-enter`), `commands`, and `command <id> [json-args]` talk to `%APPDATA%\\NeonCode\\app-control.json` (or the platform equivalent) and ask the running Electron app to execute externally eligible renderer command-registry entries; the hub remains layout-agnostic. The desktop app-control capabilities response advertises protocol version, feature names such as `status.read`/`layout.read`/`commands.execute`, and the externally invocable command IDs; the CLI verifies advertised commands before dispatch. See `docs/app-control.md` for recipes.
+`status` prints bounded hub aggregate counts, `sessions` emits authenticated hub JSON summaries, and `notify` publishes retained generation-safe workspace attention. `app status`, `workspace list/open/create/rename/delete`, layout discovery (`tab list`, `pane list`), pane capture/tail/wait, typed `tab` and `pane` verbs including bounded terminal input (`pane send`, `pane send-enter`), `commands`, and `command <id> [json-args]` talk to `%APPDATA%\\NeonCode\\app-control.json` (or the platform equivalent) and ask the running Electron app to execute externally eligible renderer command-registry entries; the hub remains layout-agnostic. The desktop app-control capabilities response advertises protocol version, feature names such as `status.read`/`layout.read`/`pane.capture`/`commands.execute`, and the externally invocable command IDs; the CLI verifies advertised commands before dispatch. See `docs/app-control.md` for recipes.
 
 ## Manual smoke test
 

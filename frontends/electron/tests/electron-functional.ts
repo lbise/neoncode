@@ -338,6 +338,7 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
   const features = capabilities.features;
   assert(Array.isArray(features), 'app-control capabilities omitted features');
   assert(features.includes('layout.read'), 'app-control capabilities omitted layout feature');
+  assert(features.includes('pane.capture'), 'app-control capabilities omitted pane capture feature');
   assert(features.includes('commands.execute'), 'app-control capabilities omitted command execution feature');
   const commands = capabilities.commands;
   assert(Array.isArray(commands), 'app-control capabilities omitted commands');
@@ -439,6 +440,16 @@ async function verifyAppControlWorkspaceApi(instance: ElectronTestInstance): Pro
     command: { id: 'pane.sendEnter', args: { paneId: 'shell', text: `printf '${sendExpected}'` } },
   });
   await waitForOutput(page, 'shell', sendExpected);
+  const capture = await appControlRequest(configDirectory, 'GET', '/v1/panes/shell/capture');
+  assert(capture.ok === true, 'app-control pane capture did not succeed');
+  const captureResult = capture.result;
+  assert(
+    captureResult && typeof captureResult === 'object'
+      && (captureResult as { paneId?: unknown }).paneId === 'shell'
+      && typeof (captureResult as { recentOutput?: unknown }).recentOutput === 'string'
+      && ((captureResult as { recentOutput: string }).recentOutput.includes(sendExpected)),
+    'app-control pane capture omitted recent output',
+  );
   await appControlRequest(configDirectory, 'POST', '/v1/commands/execute', {
     command: {
       id: 'tab.create',
@@ -1104,7 +1115,7 @@ async function runFirstLaunchChecks(
   assert(rendererSecurity.openedWindow === false, 'renderer opened an external window');
   assert(rendererSecurity.permission === 'denied', `notification permission was ${rendererSecurity.permission}`);
   assert(
-    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['completeAppControlCommand', 'config', 'getSettings', 'getWorkspaceCatalog', 'onAppControlCommand', 'onConfigChanged', 'onPrepareClose', 'readClipboardText', 'saveSettings', 'saveWorkspaceCatalog', 'saveWorkspaceLayout', 'setActiveWorkspace', 'writeClipboardText']),
+    JSON.stringify(rendererSecurity.desktopKeys) === JSON.stringify(['completeAppControlCommand', 'completeAppControlQuery', 'config', 'getSettings', 'getWorkspaceCatalog', 'onAppControlCommand', 'onAppControlQuery', 'onConfigChanged', 'onPrepareClose', 'readClipboardText', 'saveSettings', 'saveWorkspaceCatalog', 'saveWorkspaceLayout', 'setActiveWorkspace', 'writeClipboardText']),
     `unexpected preload API surface: ${rendererSecurity.desktopKeys.join(',')}`,
   );
 

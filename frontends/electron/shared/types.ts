@@ -482,7 +482,18 @@ export interface AppControlCommandResponse {
   result: CommandDispatchResult;
 }
 
+export interface AppControlQueryRequest {
+  requestId: string;
+  query: { type: 'pane.capture'; paneId: string };
+}
+
+export interface AppControlQueryResponse {
+  requestId: string;
+  result: unknown;
+}
+
 export type AppControlCommandCallback = (request: AppControlCommandRequest) => void | Promise<void>;
+export type AppControlQueryCallback = (request: AppControlQueryRequest) => void | Promise<void>;
 
 export interface NeoncodeDesktopApi {
   readonly config: unknown;
@@ -497,6 +508,8 @@ export interface NeoncodeDesktopApi {
   onConfigChanged(callback: ConfigChangedCallback): () => void;
   onAppControlCommand(callback: AppControlCommandCallback): () => void;
   completeAppControlCommand(response: AppControlCommandResponse): void;
+  onAppControlQuery(callback: AppControlQueryCallback): () => void;
+  completeAppControlQuery(response: AppControlQueryResponse): void;
   onPrepareClose(callback: PrepareCloseCallback): void;
 }
 

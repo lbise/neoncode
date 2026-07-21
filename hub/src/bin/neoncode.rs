@@ -3,6 +3,8 @@ use std::{
     io::{Read, Write},
     net::TcpStream,
     path::PathBuf,
+    thread,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -49,6 +51,9 @@ async fn run() -> Result<()> {
     }
     if command == "app" {
         return run_app_command(&arguments);
+    }
+    if command == "wait" {
+        return run_wait_command(&arguments);
     }
 
     let token =
@@ -353,6 +358,44 @@ fn app_control_require_command(id: &str) -> Result<()> {
     Ok(())
 }
 
+fn app_control_capture_pane(pane_id: &str) -> Result<Value> {
+    if !is_bounded_identifier(pane_id) {
+        bail!(
+            "pane id must contain only ASCII letters, digits, '.', '_', or '-' and be at most 64 bytes"
+        );
+    }
+    let response = app_control_request("GET", &format!("/v1/panes/{pane_id}/capture"), None)?;
+    let result = response["result"].clone();
+    if result["status"] != "completed" {
+        bail!(
+            "pane capture failed: {}",
+            result["message"].as_str().unwrap_or("unknown error")
+        );
+    }
+    Ok(result)
+}
+
+fn is_bounded_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
+        })
+}
+
+fn parse_timeout(value: Option<&String>) -> Result<Duration> {
+    let Some(value) = value else {
+        return Ok(Duration::from_secs(30));
+    };
+    let raw = value.trim();
+    let seconds = raw
+        .strip_suffix('s')
+        .unwrap_or(raw)
+        .parse::<u64>()
+        .context("timeout must be an integer number of seconds, optionally suffixed with s")?;
+    Ok(Duration::from_secs(seconds))
+}
+
 fn require_completed(result: &Value, action: &str) -> Result<()> {
     let status = result["status"].as_str().unwrap_or("unknown");
     if status != "completed" {
@@ -448,6 +491,37 @@ fn run_workspace_command(arguments: &[String]) -> Result<()> {
         _ => bail!(
             "unknown workspace command {subcommand:?}; use 'neoncode workspace list|open|create|rename|delete'"
         ),
+    }
+}
+
+fn run_wait_command(arguments: &[String]) -> Result<()> {
+    let subcommand = arguments.get(1).map(String::as_str).unwrap_or("help");
+    match subcommand {
+        "output" => {
+            if arguments.len() < 4 {
+                bail!("usage: neoncode wait output <pane-id> <text> [timeout-seconds]");
+            }
+            let pane_id = &arguments[2];
+            let text = &arguments[3];
+            let timeout = parse_timeout(arguments.get(4))?;
+            let deadline = Instant::now() + timeout;
+            loop {
+                let capture = app_control_capture_pane(pane_id)?;
+                if capture["recentOutput"]
+                    .as_str()
+                    .map(|output| output.contains(text))
+                    .unwrap_or(false)
+                {
+                    println!("matched output in pane {pane_id}");
+                    return Ok(());
+                }
+                if Instant::now() >= deadline {
+                    bail!("timed out waiting for output in pane {pane_id}: {text}");
+                }
+                thread::sleep(Duration::from_millis(100));
+            }
+        }
+        _ => bail!("unknown wait command {subcommand:?}; use 'neoncode wait output'"),
     }
 }
 
@@ -622,6 +696,22 @@ fn run_pane_command(arguments: &[String]) -> Result<()> {
             }
             Ok(())
         }
+        "capture" => {
+            if arguments.len() != 3 {
+                bail!("usage: neoncode pane capture <pane-id>");
+            }
+            let capture = app_control_capture_pane(&arguments[2])?;
+            println!("{}", serde_json::to_string_pretty(&capture)?);
+            Ok(())
+        }
+        "tail" => {
+            if arguments.len() != 3 {
+                bail!("usage: neoncode pane tail <pane-id>");
+            }
+            let capture = app_control_capture_pane(&arguments[2])?;
+            print!("{}", capture["recentOutput"].as_str().unwrap_or(""));
+            Ok(())
+        }
         "focus" => {
             if arguments.len() != 3 {
                 bail!("usage: neoncode pane focus <pane-id>");
@@ -723,7 +813,7 @@ fn run_pane_command(arguments: &[String]) -> Result<()> {
             Ok(())
         }
         _ => bail!(
-            "unknown pane command {subcommand:?}; use 'neoncode pane list|focus|focus-index|send|send-enter|split|resize|close|kill|restart'"
+            "unknown pane command {subcommand:?}; use 'neoncode pane list|capture|tail|focus|focus-index|send|send-enter|split|resize|close|kill|restart'"
         ),
     }
 }
@@ -784,6 +874,6 @@ fn app_control_request(method: &str, path: &str, body: Option<Value>) -> Result<
 
 fn print_help() {
     println!(
-        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode app status\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode workspace create <workspace-id> <session-id> <launch-profile> <name> <title>\n  neoncode workspace rename <workspace-id> <name>\n  neoncode workspace delete <workspace-id> [kill|detach]\n  neoncode tab list [workspace-id]\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane list [workspace-id]\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane send <pane-id> <text>\n  neoncode pane send-enter <pane-id> <text>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
+        "NeonCode CLI\n\n  neoncode status\n  neoncode sessions\n  neoncode app status\n  neoncode workspace list\n  neoncode workspace open <workspace-id>\n  neoncode workspace create <workspace-id> <session-id> <launch-profile> <name> <title>\n  neoncode workspace rename <workspace-id> <name>\n  neoncode workspace delete <workspace-id> [kill|detach]\n  neoncode tab list [workspace-id]\n  neoncode tab create <workspace-id> <tab-id> <session-id> <launch-profile> <title>\n  neoncode tab open <workspace-id> <tab-id>\n  neoncode tab rename <workspace-id> <tab-id> <title>\n  neoncode tab move <workspace-id> <tab-id> <to-index>\n  neoncode tab close <workspace-id> <tab-id>\n  neoncode pane list [workspace-id]\n  neoncode pane capture <pane-id>\n  neoncode pane tail <pane-id>\n  neoncode pane focus <pane-id>\n  neoncode pane focus-index <index>\n  neoncode pane send <pane-id> <text>\n  neoncode pane send-enter <pane-id> <text>\n  neoncode pane split <workspace-id> <pane-id> <session-id> <split-id> <horizontal|vertical> <before|after> <launch-profile> <title>\n  neoncode pane resize <workspace-id> <split-id> <delta>\n  neoncode pane close <workspace-id> <pane-id>\n  neoncode pane kill <workspace-id> <pane-id>\n  neoncode pane restart <workspace-id> <pane-id>\n  neoncode wait output <pane-id> <text> [timeout-seconds]\n  neoncode commands\n  neoncode command <command-id> [json-args]\n  neoncode notify <session-id> <info|warning|error> <title> <message>"
     );
 }
