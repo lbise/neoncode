@@ -1,0 +1,5 @@
+5424d36d6cb6b1dd6a66d7afa05ef8fe41d581800e8fd67c42a1b4bcfa24d2ec  /tmp/neoncode-ui-screenshots-20260722-080514/01-main-terminal-cockpit.png
+75562e25fa98197e381070e3397d9a1fdd2fffece835b9301768d04f67158ef7  /tmp/neoncode-ui-screenshots-20260722-080514/02-settings-general.png
+b0308bd0a36ceb0c95133a53f571c76ffc9e05163742da29c74e442a39f73034  /tmp/neoncode-ui-screenshots-20260722-080514/03-settings-keyboard.png
+7ed0a9f982e26e06b0a90d90b5bc2189f5874bc39adb094712028ad4ea029e5f  /tmp/neoncode-ui-screenshots-20260722-080514/04-settings-appearance-terminal.png
+8cd13b76b25ec133b2a563bccc1ca0e2b0fc61fa26a9f4569a16e9c2fb14d3ba  /tmp/neoncode-ui-screenshots-20260722-080514/neoncode-ui-screenshots.tar.gz
